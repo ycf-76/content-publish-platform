@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>手账风发文要求</title>
+<style>
+  /* 全局重置 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #f0f2f5; display: flex; justify-content: center; padding: 20px; font-family: -apple-system, "PingFang SC", sans-serif; }
+
+  /* 1. 外层底板（带活页孔模拟） */
+  .board {
+    position: relative;
+    width: 100%;
+    max-width: 375px;
+    background: #E6F7F4; /* 浅蓝绿底色 */
+    border-radius: 20px;
+    padding: 30px 15px 40px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+    overflow: visible; /* 允许里面的贴纸探出头 */
+  }
+
+  /* 利用绝对定位模拟左侧的三个活页孔 */
+  .hole {
+    position: absolute;
+    left: -12px;
+    width: 16px;
+    height: 16px;
+    background: #f0f2f5; /* 与外部背景融合 */
+    border-radius: 50%;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.2); /* 打孔的内阴影 */
+    z-index: 10;
+  }
+  .hole:nth-child(1) { top: 40px; }
+  .hole:nth-child(2) { top: 130px; }
+  .hole:nth-child(3) { top: 220px; }
+  /* 右侧的孔 */
+  .hole-right {
+    position: absolute;
+    right: -12px;
+    width: 16px;
+    height: 16px;
+    background: #f0f2f5;
+    border-radius: 50%;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.2);
+    z-index: 10;
+  }
+  .hole-right:nth-child(4) { top: 40px; }
+  .hole-right:nth-child(5) { top: 130px; }
+  .hole-right:nth-child(6) { top: 220px; }
+
+  /* 2. 顶部黄色卡纸（核心：倾斜 + 三层阴影） */
+  .header-paper {
+    position: relative;
+    width: 85%;
+    margin: 10px auto;
+    background: #FDF8DC; /* 浅黄色 */
+    padding: 25px 15px 20px;
+    border-radius: 14px;
+    border: 2px solid #E9D6A7;
+    /* 关键：倾斜-1度 */
+    transform: rotate(-1deg);
+    /* 关键：多层阴影制造纸张厚度感 */
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.02),
+      0 6px 12px rgba(0,0,0,0.05),
+      inset 0 1px 0 rgba(255,255,255,0.8);
+    text-align: center;
+  }
+  .header-title {
+    font-size: 26px;
+    font-weight: 900;
+    position: relative;
+    letter-spacing: 2px;
+  }
+  .header-title span { background: #000; color:#fff; padding: 0 4px; }
+  .header-sub {
+    font-size: 11px;
+    color: #666;
+    letter-spacing: 1px;
+    margin-top: 4px;
+    font-weight: 600;
+  }
+
+  /* 3. 模拟黄色胶带（核心：正片叠底混合 + 绝对定位压盖） */
+  .tape {
+    position: absolute;
+    top: -15px;
+    left: 35%;
+    width: 80px;
+    height: 28px;
+    background: #F2D048;
+    border-radius: 4px;
+    /* 关键：旋转12度，与背景纸张形成错位 */
+    transform: rotate(12deg);
+    /* 关键：mix-blend-mode 半透明叠加在纸面 */
+    mix-blend-mode: multiply;
+    opacity: 0.9;
+    z-index: 5;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  /* 4. “基本要求” 标签 */
+  .tag-label {
+    display: inline-block;
+    background: #fff;
+    padding: 8px 16px;
+    border-radius: 8px;
+    margin-top: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    font-weight: bold;
+    font-size: 16px;
+    transform: rotate(0.5deg); /* 反方向微调 */
+    position: relative;
+    z-index: 2;
+  }
+
+  /* 5. 列表项（白色虚线框卡片） */
+  .item {
+    display: flex;
+    align-items: flex-start;
+    background: #F9FCFB; /* 非常浅的卡片底色 */
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 14px;
+    /* 白色虚线边框，模拟手账贴纸 */
+    border: 2px dashed rgba(255, 255, 255, 0.9);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.02);
+    position: relative;
+    /* 每个卡片微调不同的倾斜，打破死板 */
+    transform: rotate(-0.3deg);
+  }
+  .item:nth-child(even) { transform: rotate(0.8deg); }
+
+  /* 左侧色块编号 */
+  .badge {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: bold;
+    border-radius: 4px;
+    margin-right: 12px;
+    font-size: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .bg-yellow { background: #F4DE3A; }
+  .bg-blue   { background: #6ABCF4; }
+  .bg-green  { background: #A7E577; }
+  .bg-purple { background: #CC8EE6; }
+
+  /* 文本样式 */
+  .content {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #333;
+    flex: 1;
+  }
+  .bold { font-weight: bold; }
+  .hl-blue { color: #3A7CA5; font-weight: bold; }
+
+</style>
+</head>
+<body>
+
+<div class="board">
+  <!-- 左侧活页孔 -->
+  <div class="hole"></div><div class="hole"></div><div class="hole"></div>
+  <!-- 右侧活页孔 -->
+  <div class="hole-right"></div><div class="hole-right"></div><div class="hole-right"></div>
+
+  <!-- 顶部卡片 -->
+  <div class="header-paper">
+    <div class="tape"></div> <!-- 这个就是那条黄色的纸胶带 -->
+    <h1 class="header-title">【01】发文要求</h1>
+    <div class="header-sub">PUBLISHING CONTENT GUIDELINES!</div>
+  </div>
+
+  <div style="text-align: center;">
+    <div class="tag-label">✅ 基本要求：</div>
+  </div>
+
+  <!-- 列表 1 -->
+  <div class="item">
+    <div class="badge bg-yellow">1</div>
+    <div class="content">
+      图文笔记，图片不少于3张，展示好物的细节、功能、优势 / 种草原因或背景故事、使用场景等。
+    </div>
+  </div>
+
+  <!-- 列表 2 -->
+  <div class="item">
+    <div class="badge bg-blue">2</div>
+    <div class="content">
+      视频笔记，时长不少于20s，展示好物的细节、功能、优势 / 种草原因或背景故事、使用场景等。
+    </div>
+  </div>
+
+  <!-- 列表 3 -->
+  <div class="item">
+    <div class="badge bg-green">3</div>
+    <div class="content">
+      正文包含：必须提及<span class="bold">购买自小红书市集</span>，并<span class="hl-blue">艾特店铺账号</span>（非小红书店铺稿件不通过、艾特非店铺不通过）
+    </div>
+  </div>
+
+  <!-- 列表 4 -->
+  <div class="item">
+    <div class="badge bg-purple">4</div>
+    <div class="content">
+      投稿需紧扣活动主题，笔记活动结束后<span class="bold">不删除</span>，笔记状态需<span class="hl-blue">公开可见</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,199 @@
+﻿/* ============================================================
+   灏忕孩涔﹂鏍艰鐩栧眰锛圶HS Theme Overlay锛?   涓昏壊锛?FF2442锛堢孩锛? #FF2442锛堢矇锛夋笎鍙?   搴旂敤鑼冨洿锛氭墍鏈?mint-* 绫诲悕鐨勫崱鐗囧拰鎸夐挳
+   鍘?mint 缁夸綔涓鸿緟鍔╄壊淇濈暀锛屾柊涓婚鑹茬粺涓€涓哄皬绾功绾?   ============================================================ */
+:root {
+  --xhs-red: #FF2442;
+  --xhs-red-dark: #FF2442;
+  --xhs-pink: #FF2442;
+  --xhs-pink-soft: #FFE4E8;
+  --xhs-gradient: linear-gradient(135deg, #FF2442 0%, #FF2442 100%);
+  --xhs-gradient-hover: linear-gradient(135deg, #FF2442 0%, #FF2442 100%);
+  --xhs-shadow: 0 4px 14px rgba(255, 36, 66, 0.30);
+  --xhs-shadow-hover: 0 8px 22px rgba(255, 36, 66, 0.40);
+  --xhs-shadow-card: 0 2px 8px rgba(255, 36, 66, 0.08);
+  --xhs-shadow-card-hover: 0 8px 20px rgba(255, 36, 66, 0.15);
+  --xhs-border: rgba(255, 36, 66, 0.20);
+  --xhs-border-hover: rgba(255, 36, 66, 0.45);
+}
+
+/* ===== 涓绘寜閽細灏忕孩涔︾孩 ===== */
+.mint-btn-primary {
+  background: #FF2442;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(255, 36, 66, 0.25);
+}
+.mint-btn-primary:hover {
+  background: #E6203C;
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+  transform: translateY(-1px);
+}
+.mint-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(255, 36, 66, 0.2);
+}
+
+/* ===== Ghost 鎸夐挳锛氱矇鑹茶蒋鑳屾櫙 + 绾㈠瓧 ===== */
+.mint-btn-ghost {
+  background: var(--xhs-pink-soft);
+  color: var(--xhs-red);
+}
+.mint-btn-ghost:hover {
+  background: #FFD1D8;
+  color: var(--xhs-red-dark);
+}
+
+/* ===== Outline 鎸夐挳 ===== */
+.mint-btn-outline {
+  background: transparent;
+  color: #4B5563;
+  border: 1px solid #E5E7EB;
+}
+.mint-btn-outline:hover {
+  border-color: #FF2442;
+  color: #FF2442;
+  background: rgba(255, 36, 66, 0.04);
+}
+
+/* ===== 灏忓昂瀵告寜閽彉浣撳悓鏍峰簲鐢?===== */
+.mint-btn-sm.mint-btn-primary { box-shadow: 0 2px 6px rgba(255, 36, 66, 0.2); }
+
+/* ===== 鍙戦€佹寜閽?/ 閲嶅紑鎸夐挳 ===== */
+.mint-send-btn {
+  background: #FF2442;
+  box-shadow: 0 2px 6px rgba(255, 36, 66, 0.3);
+}
+.mint-send-btn:hover {
+  background: #E6203C;
+  box-shadow: 0 4px 10px rgba(255, 36, 66, 0.35);
+  transform: translateY(-1px);
+}
+.mint-dialog-reopen {
+  background: var(--xhs-gradient);
+  box-shadow: 0 4px 20px rgba(255, 36, 66, 0.35);
+}
+.mint-dialog-reopen:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 28px rgba(255, 36, 66, 0.45);
+}
+
+/* ===== 骞冲彴 chip 婵€娲绘€侊細灏忕孩涔︾孩 ===== */
+.wf-platform-chip.is-active {
+  background: var(--xhs-gradient);
+  border-color: transparent;
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(255, 36, 66, 0.30);
+}
+.wf-platform-chip.is-active:hover {
+  background: var(--xhs-gradient-hover);
+  color: #FFFFFF;
+}
+
+/* ============================================================
+   鏆楄壊涓婚涓嬬殑鎸夐挳閫傞厤锛堜粎鎸夐挳锛屽叾浣欎繚鎸佽杽鑽风豢璇箟鑹诧級
+   ============================================================ */
+.mint-shell.dark-theme .mint-btn-primary {
+  background: var(--xhs-gradient);
+  box-shadow: 0 4px 14px rgba(255, 36, 66, 0.40);
+}
+.mint-shell.dark-theme .mint-btn-primary:hover {
+  background: var(--xhs-gradient-hover);
+  box-shadow: 0 8px 22px rgba(255, 36, 66, 0.50);
+}
+.mint-shell.dark-theme .mint-btn-ghost {
+  background: rgba(255, 36, 66, 0.15);
+  color: #FF2442;
+}
+.mint-shell.dark-theme .mint-btn-ghost:hover {
+  background: rgba(255, 36, 66, 0.25);
+  color: #FF8A95;
+}
+.mint-shell.dark-theme .mint-send-btn {
+  background: var(--xhs-gradient);
+  box-shadow: 0 2px 6px rgba(255, 36, 66, 0.40);
+}
+/* ===== 鍥剧墖棰勮妯℃€佹锛坙ightbox锛?===== */
+.wf-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: wf-preview-fade 0.2s ease-out;
+}
+@keyframes wf-preview-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.wf-preview-container {
+  position: relative;
+  max-width: 95vw;
+  max-height: 95vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wf-preview-img {
+  max-width: 95vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  image-rendering: auto;
+  image-rendering: -webkit-optimize-contrast;
+}
+.wf-preview-close {
+  position: absolute;
+  top: -44px;
+  right: -8px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #FFFFFF;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.wf-preview-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+.wf-preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 64px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.wf-preview-nav:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.wf-preview-prev { left: -56px; }
+.wf-preview-next { right: -56px; }
+.wf-preview-counter {
+  position: absolute;
+  bottom: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  letter-spacing: 1px;
+}

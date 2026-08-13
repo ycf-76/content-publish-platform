@@ -1,0 +1,22 @@
+agent_id: search
+role: ???????
+model: deepseek-v3
+skills:
+  - xhs_search
+executor: single_shot
+hard_rules:
+  - name: search_result_non_empty
+    check: "len(results) > 0"
+  - name: rate_limit_check
+    check: "daily_calls < 100"
+soft_semantic: null
+recovery:
+  max_attempts: 3
+  strategies:
+    # 策略1：原样重试（应对网络抖动等瞬时错误）
+    - type: retry
+    # 策略2：拓宽搜索关键词（应对搜索结果为空，如"科技类"→"科技"）
+    - type: broaden_keyword
+    # 策略3：切 V3 降级（应对 V3 自身过载，理论上极少触发；保持同模型重试一次）
+    - type: switch_model
+      fallback_model: deepseek-v3

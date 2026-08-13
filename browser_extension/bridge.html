@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>MCP 桥接页面</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; background: #f8fafc; color: #1e293b; }
+    h1 { font-size: 22px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 16px 0; }
+    .status { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.online { background: #10b981; }
+    .dot.offline { background: #ef4444; }
+    .dot.waiting { background: #f59e0b; }
+    #log { font-family: 'Cascadia Code', monospace; font-size: 12px; line-height: 1.6; max-height: 400px; overflow-y: auto; background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; }
+    .log-info { color: #93c5fd; }
+    .log-success { color: #6ee7b7; }
+    .log-error { color: #fca5a5; }
+    .log-warn { color: #fcd34d; }
+    .btn { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn:hover { opacity: 0.85; }
+    .hint { font-size: 13px; color: #64748b; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>MCP 桥接页面</h1>
+
+  <div class="card">
+    <div class="status">
+      <span id="bridge-dot" class="dot offline"></span>
+      <span id="bridge-status">正在连接后端...</span>
+    </div>
+    <div class="hint">此页面作为后端与浏览器扩展的中继站，请保持此标签页打开。</div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+      <button class="btn btn-primary" id="btn-reconnect">重新连接</button>
+      <span style="font-size:13px; color:#64748b;">后端地址：</span>
+      <input id="backend-url" value="http://127.0.0.1:8000" style="flex:1; padding:6px 10px; border:1px solid #e2e8f0; border-radius:6px; font-size:13px;">
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <script src="bridge.js"></script>
+</body>
+</html>

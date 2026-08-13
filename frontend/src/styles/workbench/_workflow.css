@@ -1,0 +1,135 @@
+﻿/* ===== 鑺傜偣闂磋繛鎺ョ嚎锛堝瀭鐩存祦鍚戯級 ===== */
+.wf-connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  position: relative;
+  color: #CBD5E1;
+}
+.wf-connector::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: #E2E8F0;
+  transform: translateX(-50%);
+}
+.wf-connector i {
+  position: relative;
+  z-index: 1;
+  background: #FFFFFF;
+  padding: 2px 0;
+}
+/* 瀹℃牳鑺傜偣杩炴帴绾匡細鐞ョ弨鑹?+ 鏍囩 */
+.wf-connector-review {
+  color: #D97706;
+}
+.wf-connector-review::before {
+  background: #FCD34D;
+}
+.wf-connector-label {
+  position: relative;
+  z-index: 1;
+  background: #FFFFFF;
+  padding: 0 8px;
+  font-size: 10px;
+  color: #D97706;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  margin-left: 4px;
+}
+/* 杩炴帴绾跨姸鎬侊細active 灏忕孩涔︾孩 / blocked 绾㈣壊铏氱嚎 */
+.wf-connector-active::before { background: #FF2442; }
+.wf-connector-active { color: #FF2442; }
+.wf-connector-blocked::before {
+  background: repeating-linear-gradient(to bottom, #EF4444 0, #EF4444 3px, transparent 3px, transparent 6px);
+}
+.wf-connector-blocked { color: #EF4444; }
+
+/* ===== 鐘舵€佸姩鏁堬紙鍘籄I鍖栵細鍏嬪埗锛屼粎蹇呰鐘舵€侊級 ===== */
+
+/* running 鍛煎惛鐏?*/
+.wf-state-running .wf-status-badge .mint-status-dot {
+  animation: wfBreathe 2s ease-in-out infinite;
+}
+@keyframes wfBreathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* error 鎶栧姩锛堜竴娆℃€э級 */
+.wf-state-error {
+  animation: wfShake 0.4s ease-out;
+}
+@keyframes wfShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* awaiting_review 閾冮摏鑴夊姩 */
+.wf-state-awaiting_review .wf-status-badge .mint-status-dot {
+  animation: wfBellPulse 1.5s ease-in-out infinite;
+}
+@keyframes wfBellPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  50% { transform: scale(1.3); box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); }
+}
+
+/* suspended 缂撴參闂儊 */
+@keyframes wfBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 瀹℃牳鑺傜偣楂樹寒锛坕mage_review / final_review锛?*/
+.wf-node-review {
+  border-color: #FCD34D;
+  background: #FFFBEB;
+}
+.wf-node-review:hover {
+  border-color: #F59E0B;
+}
+
+/* 鏆楄壊涓婚閫傞厤 */
+.mint-shell.dark-theme .wf-overview-bar,
+.mint-shell.dark-theme .wf-node-card,
+.mint-shell.dark-theme .wf-placeholder,
+.mint-shell.dark-theme .wf-output,
+.mint-shell.dark-theme .wf-checklist,
+.mint-shell.dark-theme .wf-node-meta,
+.mint-shell.dark-theme .wf-empty-hint {
+  background: rgba(30, 30, 30, 0.9) !important;
+  border-color: rgba(80, 80, 80, 0.3) !important;
+  color: #E2E8F0;
+}
+.mint-shell.dark-theme .wf-overview-title,
+.mint-shell.dark-theme .wf-output-content,
+.mint-shell.dark-theme .wf-overview-stat-num {
+  color: #F1F5F9;
+}
+.mint-shell.dark-theme .wf-overview-sub,
+.mint-shell.dark-theme .wf-overview-stat-label,
+.mint-shell.dark-theme .wf-output-label,
+.mint-shell.dark-theme .wf-node-meta,
+.mint-shell.dark-theme .wf-placeholder,
+.mint-shell.dark-theme .wf-empty-hint {
+  color: #94A3B8;
+}
+.mint-shell.dark-theme .wf-node-key {
+  background: rgba(80, 80, 80, 0.3);
+  color: #94A3B8;
+}
+.mint-shell.dark-theme .wf-connector::before {
+  background: rgba(80, 80, 80, 0.4);
+}
+.mint-shell.dark-theme .wf-connector i,
+.mint-shell.dark-theme .wf-connector-label {
+  background: rgba(30, 30, 30, 0.9);
+}
+.mint-shell.dark-theme .wf-node-review {
+  background: rgba(50, 40, 20, 0.6) !important;
+}

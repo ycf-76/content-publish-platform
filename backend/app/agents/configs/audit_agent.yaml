@@ -1,0 +1,20 @@
+agent_id: audit
+role: ???????
+model: deepseek-v3
+skills: []
+executor: single_shot
+hard_rules: []
+soft_semantic:
+  enabled: true
+  quality_check_prompt: |
+    ????????
+    - ????????
+    - ??????????
+recovery:
+  max_attempts: 3
+  strategies:
+    # 策略1：原样重试（应对审核 LLM 瞬时失败）
+    - type: retry
+    # 策略2：切 V3 降级（应对 V3 自身过载，理论占位）
+    - type: switch_model
+      fallback_model: deepseek-v3

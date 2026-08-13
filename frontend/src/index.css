@@ -1,0 +1,40 @@
+:root {
+  --ma-blue-50: #EFF4FF; --ma-blue-100: #DBE6FE; --ma-blue-200: #BFD3FE;
+  --ma-blue-300: #93B4FD; --ma-blue-400: #608CFA; --ma-blue-500: #3B6CF6;
+  --ma-blue-600: #2B52E0; --ma-blue-700: #2342B8; --ma-blue-800: #1F3891; --ma-blue-900: #1C2F6E;
+  --ma-background: #FFFFFF; --ma-foreground: #111827;
+  --ma-card: #FFFFFF; --ma-card-foreground: #111827;
+  --ma-primary: #3B6CF6; --ma-primary-foreground: #FFFFFF;
+  --ma-secondary: #F7F8FA; --ma-secondary-foreground: #4B5563;
+  --ma-muted: #F7F8FA; --ma-muted-foreground: #9CA3AF;
+  --ma-accent: #EFF4FF; --ma-accent-foreground: #2342B8;
+  --ma-border: #E5E7EB; --ma-text-primary: #111827;
+  --ma-text-secondary: #4B5563; --ma-text-tertiary: #9CA3AF;
+  --ma-bg-base: #FFFFFF; --ma-bg-subtle: #F7F8FA;
+  --ma-border-default: #E5E7EB; --ma-border-strong: #D1D5DB;
+  --ma-status-pending: #9CA3AF; --ma-status-running: #FF2442;
+  --ma-status-passed: #10B981; --ma-status-error: #EF4444; --ma-status-awaiting: #F59E0B;
+  --ma-status-rejected: #EF4444; --ma-status-suspended: #8B5CF6; --ma-status-terminated: #4B5563;
+  --ma-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --ma-font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  --ma-font-xs: .75rem; --ma-font-sm: .875rem; --ma-font-base: 1rem;
+  --ma-font-md: 1.125rem; --ma-font-lg: 1.25rem; --ma-font-xl: 1.5rem; --ma-font-2xl: 1.875rem;
+  --ma-space-1: 4px; --ma-space-2: 8px; --ma-space-3: 12px; --ma-space-4: 16px;
+  --ma-space-6: 24px; --ma-space-8: 32px; --ma-space-10: 40px; --ma-space-12: 48px;
+  --ma-radius-sm: 4px; --ma-radius-md: 8px; --ma-radius-lg: 12px; --ma-radius-full: 9999px;
+  --ma-shadow-xs: 0 1px 2px rgba(17,24,39,0.04);
+  --ma-shadow-sm: 0 1px 3px rgba(17,24,39,0.06);
+  --ma-shadow-md: 0 4px 12px rgba(17,24,39,0.08);
+  --ma-shadow-focus: 0 0 0 3px rgba(59,108,246,0.15);
+  --ma-ease-out: cubic-bezier(0,0,0.2,1);
+  --ma-ease-spring: cubic-bezier(0.16,1,0.3,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--ma-font-sans);font-size:var(--ma-font-sm);color:var(--ma-text-primary);background:var(--ma-bg-base);line-height:1.6}
+a{color:var(--ma-primary);text-decoration:none;transition:color .15s var(--ma-ease-out)}
+a:hover{color:var(--ma-blue-600)}
+:root{--aside-width:260px;--header-height:56px}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 0 rgba(59,108,246,0.4)}50%{box-shadow:0 0 0 6px rgba(59,108,246,0)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}

@@ -1,0 +1,422 @@
+﻿/* ===== Premium Agent Flow - Dribbble绾т骇鍝佽川鎰?===== */
+
+/* ---- 璁捐绯荤粺鍙橀噺 ---- */
+:root {
+  --pf-brand: #5E6AD2;
+  --pf-success: #10B981;
+  --pf-warning: #F59E0B;
+  --pf-bg-start: #f8fafc;
+  --pf-bg-end: #eef2f6;
+  --pf-card: rgba(255, 255, 255, 0.85);
+  --pf-text-title: #0B1222;
+  --pf-text-body: #334155;
+  --pf-text-muted: #94A3B8;
+  --pf-border: #E2E8F0;
+  --pf-border-active: #5E6AD2;
+  --pf-shadow-sm: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+  --pf-shadow-hover: 0 4px 12px rgba(94,106,210,0.15), 0 20px 40px rgba(0,0,0,0.08);
+  --pf-shadow-success: 0 4px 12px rgba(16,185,129,0.15), 0 20px 40px rgba(0,0,0,0.08);
+  --pf-radius: 12px;
+  --pf-transition: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- 瀹瑰櫒 ---- */
+.premium-flow-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px;
+  background: radial-gradient(ellipse at top, var(--pf-bg-start) 0%, var(--pf-bg-end) 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  backdrop-filter: blur(12px);
+  animation: pfFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pfFadeIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---- 椤堕儴鐘舵€佹爮 ---- */
+.premium-flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+}
+
+.flow-status-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.flow-pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pf-text-muted);
+  transition: var(--pf-transition);
+}
+
+.flow-pulse-indicator.active {
+  background: var(--pf-brand);
+  box-shadow: 0 0 0 4px rgba(94, 106, 210, 0.2);
+  animation: pfPulse 2s ease-in-out infinite;
+}
+
+@keyframes pfPulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(94, 106, 210, 0.2); }
+  50% { box-shadow: 0 0 0 8px rgba(94, 106, 210, 0); }
+}
+
+.flow-status-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pf-text-body);
+  letter-spacing: -0.01em;
+}
+
+.flow-progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flow-step-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pf-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-progress-track {
+  width: 120px;
+  height: 4px;
+  background: rgba(226, 232, 240, 0.8);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.flow-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--pf-brand) 0%, #8B5CF6 100%);
+  border-radius: 2px;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- 娴佺▼鍥剧敾甯?---- */
+.premium-flow-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 20px 0;
+}
+
+/* ---- 鑺傜偣鍖呰 ---- */
+.flow-node-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  opacity: 0;
+  animation: pfNodeAppear 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.flow-node-wrapper:nth-child(1) { animation-delay: 0.1s; }
+.flow-node-wrapper:nth-child(2) { animation-delay: 0.2s; }
+.flow-node-wrapper:nth-child(3) { animation-delay: 0.3s; }
+.flow-node-wrapper:nth-child(4) { animation-delay: 0.4s; }
+.flow-node-wrapper:nth-child(5) { animation-delay: 0.5s; }
+
+@keyframes pfNodeAppear {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- 鑺傜偣鍗＄墖 - 鏋佺畝鍥炬爣鐗?---- */
+.flow-node {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  box-shadow: none;
+  backdrop-filter: none;
+  transition: var(--pf-transition);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flow-node:hover {
+  transform: scale(1.1);
+}
+
+/* 鍏夋檿鏁堟灉 */
+.node-glow {
+  position: absolute;
+  inset: -8px;
+  background: radial-gradient(circle at center, rgba(94, 106, 210, 0.2) 0%, transparent 70%);
+  opacity: 0;
+  transition: var(--pf-transition);
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+/* ---- 鑺傜偣鍥炬爣 ---- */
+.node-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.node-icon-wrapper {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  transition: var(--pf-transition);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.node-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--pf-text-muted);
+  transition: var(--pf-transition);
+}
+
+.node-check {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  color: var(--pf-success);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: var(--pf-transition);
+}
+
+.node-text,
+.node-log {
+  display: none;
+}
+
+/* ---- 鍔犺浇鍣?---- */
+.node-loader {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+  transition: var(--pf-transition);
+}
+
+.node-loader svg {
+  width: 100%;
+  height: 100%;
+  animation: pfSpin 1s linear infinite;
+}
+
+.node-loader circle {
+  stroke: var(--pf-brand);
+  stroke-dasharray: 80;
+  stroke-dashoffset: 20;
+  stroke-linecap: round;
+  transition: stroke 0.3s;
+}
+
+@keyframes pfSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- 鑺傜偣鐘舵€侊細Running ---- */
+.flow-node[data-status="running"] {
+  transform: scale(1.15);
+}
+
+.flow-node[data-status="running"] .node-glow {
+  opacity: 1;
+}
+
+.flow-node[data-status="running"] .node-icon-wrapper {
+  background: rgba(94, 106, 210, 0.1);
+  box-shadow: 0 0 0 4px rgba(94, 106, 210, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.flow-node[data-status="running"] .node-icon {
+  color: var(--pf-brand);
+}
+
+.flow-node[data-status="running"] .node-loader {
+  opacity: 1;
+}
+
+/* ---- 鑺傜偣鐘舵€侊細Success ---- */
+.flow-node[data-status="success"] .node-icon-wrapper {
+  background: rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+}
+
+.flow-node[data-status="success"] .node-icon {
+  color: var(--pf-success);
+}
+
+.flow-node[data-status="success"] .node-check {
+  display: none;
+}
+
+@keyframes pfCheckPop {
+  0% { transform: scale(0) rotate(-45deg); }
+  70% { transform: scale(1.2) rotate(5deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* ---- 杩炵嚎 ---- */
+.flow-edge {
+  height: 60px;
+  width: 60px;
+  position: relative;
+}
+
+.edge-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.edge-path {
+  fill: none;
+  stroke: #CBD5E1;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke 0.3s;
+}
+
+.edge-particle {
+  fill: var(--pf-brand);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+/* 杩炵嚎婵€娲荤姸鎬?*/
+.flow-node-wrapper.active .edge-path {
+  stroke: var(--pf-brand);
+}
+
+.flow-node-wrapper.active .edge-particle {
+  opacity: 1;
+  animation: pfParticleFlow 1.5s ease-in-out infinite;
+}
+
+@keyframes pfParticleFlow {
+  0% { offset-distance: 0%; }
+  100% { offset-distance: 100%; }
+}
+
+/* 浣跨敤 CSS offset 瀹炵幇绮掑瓙娌胯矾寰勭Щ鍔?*/
+.flow-node-wrapper.active .edge-particle {
+  offset-path: path('M30,0 C30,40 30,40 30,80');
+  animation: pfFlow 1.2s ease-in-out infinite;
+}
+
+@keyframes pfFlow {
+  0% { offset-distance: 0%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
+/* ---- 鏃ュ織闈㈡澘 ---- */
+.premium-flow-logs {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(226, 232, 240, 0.5);
+  border-radius: var(--pf-radius);
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.logs-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pf-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+  background: rgba(241, 245, 249, 0.4);
+}
+
+.logs-content {
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 11px;
+}
+
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  animation: pfLogEntry 0.3s ease;
+}
+
+@keyframes pfLogEntry {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.log-timestamp {
+  color: var(--pf-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.log-level {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.log-level.info {
+  background: rgba(94, 106, 210, 0.1);
+  color: var(--pf-brand);
+}
+
+.log-level.success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--pf-success);
+}
+
+.log-level.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--pf-warning);
+}
+
+.log-message {
+  color: var(--pf-text-body);
+  flex: 1;
+}

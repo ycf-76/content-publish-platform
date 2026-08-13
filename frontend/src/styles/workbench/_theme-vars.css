@@ -1,0 +1,257 @@
+﻿@import "tailwindcss";
+
+/* ===== theme-vars ===== */
+/* ============================================================
+   澶氭櫤鑳戒綋灏忕孩涔﹀彂甯冨钩鍙?鈥?鍝佺墝 CSS
+   涓ユ牸渚濇嵁銆婂墠绔牱寮忚鑼?v1.0銆嬫淳鐢?   姘旇川锛氬厠鍒朵笓涓?路 鍐疯皟钃?路 宸ュ叿鍨嬶紙瀵规爣 Linear/Vercel/Raycast锛?   涓昏壊锛氬崟涓€鍐疯皟钃?#3B6CF6锛屼笉鐢ㄦ銆佷笉鐢ㄧ传绮夋笎鍙?   ============================================================ */
+
+:root {
+  /* 鈥斺€?涓昏壊闃讹紙鍐疯皟钃濓紝HSL 215掳 90% 55% 鍩哄噯锛夆€斺€?*/
+  --ma-blue-50: #EFF4FF;
+  --ma-blue-100: #DBE6FE;
+  --ma-blue-200: #BFD3FE;
+  --ma-blue-300: #93B4FD;
+  --ma-blue-400: #608CFA;
+  --ma-blue-500: #3B6CF6;  /* 鈽?涓昏壊 */
+  --ma-blue-600: #2B52E0;
+  --ma-blue-700: #2342B8;
+  --ma-blue-800: #1F3891;
+  --ma-blue-900: #1C2F6E;
+
+  /* 鈥斺€?璇箟浠ょ墝锛坒ill-html-head 妗ユ帴锛屼寒鑹叉ā寮忥級鈥斺€?*/
+  --ma-background: #FFFFFF;            /* 椤甸潰搴曡壊 bg-base */
+  --ma-foreground: #111827;            /* 涓绘枃瀛?text-primary */
+  --ma-card: #FFFFFF;                  /* 鍗＄墖鑳屾櫙 bg-elevated */
+  --ma-card-foreground: #111827;
+  --ma-popover: #FFFFFF;               /* 娴眰鑳屾櫙 */
+  --ma-popover-foreground: #111827;
+  --ma-primary: #3B6CF6;               /* 涓昏壊 blue-500 */
+  --ma-primary-foreground: #FFFFFF;
+  --ma-secondary: #F7F8FA;             /* 娆＄骇鑳屾櫙 bg-subtle锛堜腑鎬э紝闈炵嫭绔嬭壊鐩革級*/
+  --ma-secondary-foreground: #4B5563;
+  --ma-muted: #F7F8FA;                 /* 娆＄骇鑳屾櫙 */
+  --ma-muted-foreground: #9CA3AF;      /* 杈呭姪鏂囧瓧 text-tertiary */
+  --ma-accent: #EFF4FF;                /* 閫変腑鎬佽儗鏅?blue-50 tint */
+  --ma-accent-foreground: #2342B8;     /* 閫変腑鎬佹枃瀛?blue-700 */
+  --ma-destructive: #EF4444;           /* 閿欒/鎵撳洖 */
+  --ma-destructive-foreground: #FFFFFF;
+  --ma-border: #E5E7EB;                /* 榛樿杈规 */
+  --ma-input: #E5E7EB;                 /* 杈撳叆妗嗚竟妗?*/
+  --ma-ring: #3B6CF6;                  /* 鐒︾偣鐜?*/
+
+  /* 鈥斺€?渚ф爮璇箟 鈥斺€?*/
+  --ma-sidebar: #F7F8FA;               /* 渚ф爮鑳屾櫙 bg-subtle */
+  --ma-sidebar-foreground: #4B5563;    /* 渚ф爮鏂囧瓧 text-secondary */
+  --ma-sidebar-primary: #3B6CF6;
+  --ma-sidebar-primary-foreground: #FFFFFF;
+  --ma-sidebar-accent: #EFF4FF;        /* 渚ф爮閫変腑鎬?*/
+  --ma-sidebar-accent-foreground: #2342B8;
+
+  /* 鈥斺€?涓€ф枃瀛楋紙瑙勮寖鏄庣ず锛夆€斺€?*/
+  --ma-text-primary: #111827;
+  --ma-text-secondary: #4B5563;
+  --ma-text-tertiary: #9CA3AF;
+  --ma-text-disabled: #D1D5DB;
+
+  /* 鈥斺€?鑳屾櫙灞傜骇 鈥斺€?*/
+  --ma-bg-base: #FFFFFF;
+  --ma-bg-subtle: #F7F8FA;
+  --ma-bg-elevated: #FFFFFF;
+
+  /* 鈥斺€?杈规灞傜骇 鈥斺€?*/
+  --ma-border-default: #E5E7EB;
+  --ma-border-strong: #D1D5DB;
+
+  /* 鈥斺€?9 绉嶈妭鐐圭姸鎬佽壊锛堜骇鍝佽瑙夌伒榄傦級鈥斺€?*/
+  --ma-status-pending: #9CA3AF;            /* 寰呮墽琛?鐏?*/
+  --ma-status-running: #FF2442;            /* 鎵ц涓?灏忕孩涔︾孩锛堝懠鍚哥伅锛?/
+  --ma-status-awaiting: #F59E0B;           /* 寰呭鏍?鐞ョ弨锛堝皬閾冮摏锛?/
+  --ma-status-passed: #10B981;             /* 閫氳繃 缁?*/
+  --ma-status-rejected: #EF4444;           /* 鎵撳洖 绾?*/
+  --ma-status-error: #EF4444;              /* 寮傚父 绾紙鎶栧姩锛?/
+  --ma-status-suspended: #8B5CF6;          /* 鎸傝捣 绱?*/
+  --ma-status-completed: #2B52E0;          /* 瀹屾垚 钃濓紙娣憋級*/
+  --ma-status-terminated: #4B5563;         /* 缁堟 鐏帮紙娣憋級*/
+
+  /* 鈥斺€?鐩戠潱寤鸿 severity 鈥斺€?*/
+  --ma-severity-low: #3B6CF6;     /* 寤鸿鎬?钃?*/
+  --ma-severity-medium: #F59E0B;  /* 闇€鍏虫敞 鐞ョ弨 */
+  --ma-severity-high: #EF4444;    /* 蹇呴』澶勭悊 绾?*/
+
+  /* 鈥斺€?鐘舵€佽涔夛紙free-explore 鍏佽鐨勮涔夌姸鎬佽壊锛夆€斺€?*/
+  --state-success: #10B981;
+  --state-warning: #F59E0B;
+  --state-error: #EF4444;
+  --state-info: #3B6CF6;
+
+  /* 鈥斺€?瀛椾綋鏃?鈥斺€?*/
+  --ma-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --ma-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --ma-font-display: var(--ma-font-sans);
+
+  /* 鈥斺€?瀛楀彿闃舵锛坮em锛屽熀鍑?16px锛涢粯璁ゆ鏂?14px 鎻愰珮瀵嗗害锛夆€斺€?*/
+  --ma-font-xs: 0.75rem;    /* 12px 瑙掓爣/鏃堕棿鎴?*/
+  --ma-font-sm: 0.875rem;   /* 14px 榛樿姝ｆ枃 */
+  --ma-font-base: 1rem;     /* 16px 鑺傜偣鍚?*/
+  --ma-font-md: 1.125rem;   /* 18px 鍗＄墖鏍囬 */
+  --ma-font-lg: 1.25rem;    /* 20px 鍖哄潡鏍囬 */
+  --ma-font-xl: 1.5rem;     /* 24px 椤甸潰涓绘爣棰?*/
+  --ma-font-2xl: 1.875rem;  /* 30px 浠呯櫥褰曢〉/绌虹姸鎬?*/
+
+  /* 鈥斺€?闂磋窛锛?px 鍩哄噯锛夆€斺€?*/
+  --ma-space-1: 4px;
+  --ma-space-2: 8px;
+  --ma-space-3: 12px;
+  --ma-space-4: 16px;   /* 鈽?榛樿鍐呰竟璺?*/
+  --ma-space-5: 20px;
+  --ma-space-6: 24px;   /* 鈽?鍖哄潡闂磋窛 */
+  --ma-space-8: 32px;
+  --ma-space-10: 40px;
+  --ma-space-12: 48px;
+  --ma-space-16: 64px;  /* 澶у尯鍧?鑺傜偣姘村钩闂磋窛 */
+
+  /* 鈥斺€?鍦嗚锛堝垎绾э紝涓嶆互鐢ㄥぇ鍦嗚锛屾渶澶?12px锛夆€斺€?*/
+  --ma-radius-sm: 4px;    /* 杈撳叆妗?灏忔爣绛?鎸夐挳 */
+  --ma-radius-md: 8px;    /* 鍗＄墖/涓嬫媺/鑺傜偣 */
+  --ma-radius-lg: 12px;   /* 澶у崱鐗?瀵硅瘽妗?鎶藉眽 */
+  --ma-radius-xl: 12px;   /* 涓婇檺灏侀《 */
+  --ma-radius-full: 9999px; /* 鑳跺泭/鍦嗙偣/瑙掓爣 */
+
+  /* 鈥斺€?闃村奖锛堟瀬娴咃紝闈犺儗鏅壊宸〃杈惧眰绾э級鈥斺€?*/
+  --ma-shadow-xs: 0 1px 2px rgba(17, 24, 39, 0.04);
+  --ma-shadow-sm: 0 1px 3px rgba(17, 24, 39, 0.06);
+  --ma-shadow-md: 0 4px 12px rgba(17, 24, 39, 0.08);
+  --ma-shadow-lg: 0 8px 24px rgba(17, 24, 39, 0.10);
+  --ma-shadow-focus: 0 0 0 3px rgba(59, 108, 246, 0.15);
+
+  /* 鈥斺€?缂撳姩 鈥斺€?*/
+  --ma-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ma-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ma-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ma-ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 鈥斺€?z-index 灞傜骇 鈥斺€?*/
+  --ma-z-base: 0;
+  --ma-z-dropdown: 100;
+  --ma-z-sticky: 200;
+  --ma-z-node-active: 300;
+  --ma-z-popover: 400;
+  --ma-z-drawer: 500;
+  --ma-z-modal: 600;
+  --ma-z-toast: 700;
+}
+
+/* ============================================================
+   鏆楄壊妯″紡锛堣摑榛戝簳鑹?#0B0F1A锛岄潪绾粦锛?   ============================================================ */
+.dark {
+  --ma-background: #0B0F1A;
+  --ma-foreground: #F1F5F9;
+  --ma-card: #1A2233;
+  --ma-card-foreground: #F1F5F9;
+  --ma-popover: #1A2233;
+  --ma-popover-foreground: #F1F5F9;
+  --ma-primary: #3B6CF6;
+  --ma-primary-foreground: #FFFFFF;
+  --ma-secondary: #111726;
+  --ma-secondary-foreground: #CBD5E1;
+  --ma-muted: #111726;
+  --ma-muted-foreground: #64748B;
+  --ma-accent: rgba(59, 108, 246, 0.12);
+  --ma-accent-foreground: #93B4FD;
+  --ma-destructive: #F87171;
+  --ma-destructive-foreground: #0B0F1A;
+  --ma-border: #2A3245;
+  --ma-input: #2A3245;
+  --ma-ring: #608CFA;
+
+  --ma-sidebar: #111726;
+  --ma-sidebar-foreground: #CBD5E1;
+  --ma-sidebar-primary: #3B6CF6;
+  --ma-sidebar-primary-foreground: #FFFFFF;
+  --ma-sidebar-accent: rgba(59, 108, 246, 0.12);
+  --ma-sidebar-accent-foreground: #93B4FD;
+
+  --ma-text-primary: #F1F5F9;
+  --ma-text-secondary: #CBD5E1;
+  --ma-text-tertiary: #64748B;
+  --ma-text-disabled: #475569;
+
+  --ma-bg-base: #0B0F1A;
+  --ma-bg-subtle: #111726;
+  --ma-bg-elevated: #1A2233;
+
+  --ma-border-default: #2A3245;
+  --ma-border-strong: #3A4255;
+
+  /* 鏆楄壊涓嬬姸鎬佽壊鏇翠寒 */
+  --ma-status-pending: #64748B;
+  --ma-status-running: #FF4D6A;
+  --ma-status-awaiting: #FBBF24;
+  --ma-status-passed: #34D399;
+  --ma-status-rejected: #F87171;
+  --ma-status-error: #F87171;
+  --ma-status-suspended: #A78BFA;
+  --ma-status-completed: #3B6CF6;
+  --ma-status-terminated: #64748B;
+
+  --ma-severity-low: #608CFA;
+  --ma-severity-medium: #FBBF24;
+  --ma-severity-high: #F87171;
+
+  --state-success: #34D399;
+  --state-warning: #FBBF24;
+  --state-error: #F87171;
+  --state-info: #608CFA;
+
+  /* 鏆楄壊闃村奖锛氱函榛?+ 鏇撮珮閫忔槑搴?*/
+  --ma-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ma-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --ma-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --ma-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --ma-shadow-focus: 0 0 0 3px rgba(96, 140, 250, 0.25);
+}
+
+/* ============================================================
+   瀛楀彿宸ュ叿绫伙紙瑙勮寖瀛楀彿闃舵 + 琛岄珮 + 瀛楅噸锛?   浠呯敤 400/500/600 涓夋。瀛楅噸
+   ============================================================ */
+.ma-text-xs { font-size: var(--ma-font-xs); line-height: 1.5; font-weight: 400; }
+.ma-text-sm { font-size: var(--ma-font-sm); line-height: 1.5; font-weight: 400; }
+.ma-text-base { font-size: var(--ma-font-base); line-height: 1.6; font-weight: 400; }
+.ma-text-md { font-size: var(--ma-font-md); line-height: 1.5; font-weight: 500; }
+.ma-text-lg { font-size: var(--ma-font-lg); line-height: 1.4; font-weight: 600; }
+.ma-text-xl { font-size: var(--ma-font-xl); line-height: 1.3; font-weight: 600; }
+.ma-text-2xl { font-size: var(--ma-font-2xl); line-height: 1.2; font-weight: 700; }
+
+/* 鏁板瓧鐢?mono + tabular-nums */
+.ma-num { font-family: var(--ma-font-mono); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   鑺傜偣鐘舵€佸姩鏁堬紙鍏嬪埗銆佹湁鐩殑锛?   ============================================================ */
+@keyframes ma-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 108, 246, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 108, 246, 0); }
+}
+@keyframes ma-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+@keyframes ma-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+@keyframes ma-blink-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes ma-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.ma-anim-breathe { animation: ma-breathe 2s ease-in-out infinite; }
+.ma-anim-shake { animation: ma-shake 0.4s ease-out; }
+.ma-anim-pulse { animation: ma-pulse 2.5s ease-in-out infinite; }
+.ma-anim-blink { animation: ma-blink-slow 3s ease-in-out infinite; }
+.ma-anim-cursor { animation: ma-cursor-blink 1s step-end infinite; }

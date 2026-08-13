@@ -1,0 +1,18 @@
+agent_id: publish
+role: ??????
+model: null
+skills:
+  - xhs_publish
+executor: single_shot
+hard_rules: []
+soft_semantic: null
+recovery:
+  max_attempts: 3
+  strategies:
+    # 策略1：原样重试（应对发布接口瞬时失败）
+    - type: retry
+    # 策略2：刷新小红书 Token（应对 token 过期，仅 publish 节点生效）
+    - type: refresh_token
+    # 策略3：切 V3 降级（应对发布元数据 LLM 调用失败，理论占位）
+    - type: switch_model
+      fallback_model: deepseek-v3

@@ -1,0 +1,248 @@
+﻿﻿/* ===== 鏆楄壊鏄熺┖涓婚 ===== */
+.mint-shell.dark-theme {
+  background: #000000;
+  transition: background 0.5s ease;
+}
+/* 鏄熺┖绮掑瓙 canvas 鍦ㄦ殫鑹蹭笅鎻愪寒 */
+.mint-shell.dark-theme .magic-particles {
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.4));
+}
+/* 鏆楄壊涓嬪崱鐗囦粛鍙锛氫繚鎸佺幓鐠冭川鎰熶絾鍔犳繁鑳屾櫙 */
+.mint-shell.dark-theme .mint-glass,
+.mint-shell.dark-theme .mint-card,
+.mint-shell.dark-theme .mint-wf-card {
+  background: rgba(20, 20, 20, 0.85) !important;
+  border-color: rgba(80, 80, 80, 0.3) !important;
+  color: #E2E8F0;
+}
+.mint-shell.dark-theme .mint-hero-title,
+.mint-shell.dark-theme .mint-wf-title,
+.mint-shell.dark-theme .mint-logo-title {
+  color: #A5B4FC;
+}
+.mint-shell.dark-theme .mint-hero-sub,
+.mint-shell.dark-theme .mint-wf-desc,
+.mint-shell.dark-theme .mint-logo-sub,
+.mint-shell.dark-theme .mint-stat-label {
+  color: #94A3B8;
+}
+.mint-shell.dark-theme .mint-sidebar,
+.mint-shell.dark-theme .mint-config-sidebar {
+  background: rgba(10, 10, 10, 0.95);
+}
+.mint-shell.dark-theme .mint-right-toggle {
+  background: rgba(30, 30, 30, 0.85);
+  border-color: #374151;
+  color: #9CA3AF;
+}
+.mint-shell.dark-theme .mint-right-toggle:hover {
+  background: rgba(50, 50, 50, 0.95);
+  color: #60A5FA;
+  border-color: #60A5FA;
+}
+/* 鏆楄壊涓婚锛氬彸渚ч厤缃崟鍗＄墖閫傞厤 */
+.mint-shell.dark-theme .mint-config-card-header {
+  border-bottom-color: rgba(148, 163, 184, 0.15);
+}
+.mint-shell.dark-theme .mint-config-card-title,
+.mint-shell.dark-theme .mint-config-section-title {
+  color: #E2E8F0;
+}
+.mint-shell.dark-theme .mint-config-section {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+.mint-shell.dark-theme .mint-config-collapse-btn {
+  color: #64748B;
+}
+.mint-shell.dark-theme .mint-config-collapse-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: #60A5FA;
+}
+.mint-shell.dark-theme .mint-config-stat-label {
+  color: #94A3B8;
+}
+.mint-shell.dark-theme .mint-config-stat-val {
+  color: #34D399;
+}
+
+.mint-dialog {
+  position: fixed;
+  width: 340px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+}
+.mint-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: grab;
+  user-select: none;
+  border-bottom: 1px solid rgba(167,243,208,0.3);
+}
+.mint-dialog-header:active { cursor: grabbing; }
+.mint-dialog-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--mint-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.mint-dialog-icon svg { width: 16px; height: 16px; }
+.mint-dialog-title { font-size: 18px; color: #10B981; flex: 1; line-height: 1; }
+.mint-dialog-online {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.2);
+  animation: mintPulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes mintPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.mint-dialog-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.mint-dialog-btn:hover { background: rgba(16,185,129,0.1); color: #FF2442; }
+.mint-dialog-btn svg { width: 16px; height: 16px; }
+
+.mint-dialog-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.mint-dialog-body::-webkit-scrollbar { width: auto; }
+.mint-dialog-body::-webkit-scrollbar-track { background: initial; }
+.mint-dialog-body::-webkit-scrollbar-thumb { background: initial; border-radius: initial; }
+
+.mint-chat-bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mint-chat-assistant { background: #F0FDFA; color: #10B981; border-bottom-left-radius: 4px; align-self: flex-start; }
+.mint-chat-user { background: #10B981; color: #fff; border-bottom-right-radius: 4px; align-self: flex-end; }
+
+.mint-quick-commands { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 8px; }
+.mint-quick-cmd {
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: rgba(236,253,245,0.8);
+  color: #10B981;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid rgba(16,185,129,0.15);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.mint-quick-cmd:hover { background: #D1FAE5; border-color: #10B981; }
+
+.mint-dialog-input-row { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid rgba(167,243,208,0.3); }
+.mint-dialog-input {
+  flex: 1;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  background: rgba(255,255,255,0.8);
+  color: #111827;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.mint-dialog-input:focus { border-color: #6B7280; box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.15); }
+.mint-dialog-input::placeholder { color: #9CA3AF; }
+.mint-send-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: #FF2442;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.mint-send-btn:hover { background: #FF2442; }
+.mint-send-btn svg { width: 16px; height: 16px; }
+
+.mint-dialog-collapsed {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  cursor: pointer;
+  z-index: 500;
+  transition: all 0.2s;
+}
+.mint-dialog-collapsed:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.15); }
+.mint-dialog-collapsed-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--mint-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.mint-dialog-collapsed-icon svg { width: 14px; height: 14px; }
+.mint-dialog-collapsed-text { font-size: 14px; color: #10B981; font-weight: 500; }
+
+.mint-dialog-reopen {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 50%;
+  background: var(--mint-gradient);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(16,185,129,0.3);
+  z-index: 500;
+  transition: all 0.2s;
+}
+.mint-dialog-reopen:hover { transform: scale(1.05); box-shadow: 0 6px 28px rgba(16,185,129,0.4); }
+.mint-dialog-reopen svg { width: 22px; height: 22px; }
+
+.mint-hidden { display: none !important; }

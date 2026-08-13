@@ -1,0 +1,23 @@
+agent_id: copywrite
+role: ???????
+model: deepseek-r1
+skills: []
+executor: single_shot
+hard_rules: []
+soft_semantic:
+  enabled: true
+  quality_check_prompt: |
+    ???????
+    - ????????
+    - ???????
+    - ???????
+recovery:
+  max_attempts: 3
+  strategies:
+    # 策略1：原样重试（应对 R1 推理瞬时失败）
+    - type: retry
+    # 策略2：简化 prompt（应对 R1 因复杂要求崩溃）
+    - type: simplify_prompt
+    # 策略3：切 V3 降级（R1 持续不可用时降到 V3，质量换可用性）
+    - type: switch_model
+      fallback_model: deepseek-v3

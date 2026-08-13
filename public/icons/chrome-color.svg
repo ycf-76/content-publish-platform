@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <defs>
+    <clipPath id="chrome-clip"><circle cx="24" cy="24" r="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#chrome-clip)">
+    <rect width="48" height="48" fill="#fff"/>
+    <!-- three 120-degree sectors drawn as a thick ring so edges always meet -->
+    <g fill="none" stroke-width="24">
+      <circle cx="24" cy="24" r="12" stroke="#ea4335"
+        stroke-dasharray="25.13 75.4" transform="rotate(-90 24 24)"/>
+      <circle cx="24" cy="24" r="12" stroke="#fbbc04"
+        stroke-dasharray="25.13 75.4" transform="rotate(30 24 24)"/>
+      <circle cx="24" cy="24" r="12" stroke="#34a853"
+        stroke-dasharray="25.13 75.4" transform="rotate(150 24 24)"/>
+    </g>
+    <!-- blue core -->
+    <circle cx="24" cy="24" r="10.5" fill="#fff"/>
+    <circle cx="24" cy="24" r="8.5" fill="#1a73e8"/>
+  </g>
+</svg>

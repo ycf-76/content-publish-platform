@@ -1,0 +1,269 @@
+﻿/* ===== 鍗＄墖閫忔槑妯″紡 ===== */
+/* 鐢变晶鏍忔寜閽Е鍙戯紝缁?mint-shell 鍔?.cards-transparent 绫?*/
+/* 瑕嗙洊鎵€鏈夊崱鐗囩被瀹瑰櫒鐨勮儗鏅?杈规/闃村奖/妯＄硦锛岃绮掑瓙鑳屾櫙閫忓嚭 */
+/* 涓嶆敼鍔ㄦ枃瀛楅鑹插拰甯冨眬锛屼粎鍘婚櫎澶栧３瑁呴グ */
+.mint-shell.cards-transparent .mint-glass,
+.mint-shell.cards-transparent .mint-card,
+.mint-shell.cards-transparent .mint-wf-card,
+.mint-shell.cards-transparent .mint-hero,
+.mint-shell.cards-transparent .mint-user-card,
+.mint-shell.cards-transparent .mint-dialog,
+.mint-shell.cards-transparent .mint-panel,
+.mint-shell.cards-transparent .wf-groups-scroll {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.mint-shell.cards-transparent .mint-metric-card {
+  background: transparent !important;
+  border-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+/* 杩囨浮鍔ㄧ敾锛岃鍒囨崲涓嶇獊鍏€ */
+.mint-shell .mint-glass,
+.mint-shell .mint-card,
+.mint-shell .mint-wf-card,
+.mint-shell .mint-hero,
+.mint-shell .mint-user-card,
+.mint-shell .mint-dialog {
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
+}
+
+/* ===== Bento Grid 宸ュ叿绫伙紙Vue 鐗堬紝绉绘鑷?magicui/bento-grid锛?===== */
+/* 鐢ㄦ硶锛氬鍣?.bento-grid锛屽瓙椤瑰姞 .bento-span-2 / .bento-span-3 / .bento-row-2 */
+.bento-grid {
+  display: grid;
+  grid-auto-flow: dense;
+  gap: 16px;
+  align-items: start;
+}
+/* 榛樿 4 鍒楋紙妗岄潰锛夛紝鍙寜鍦烘櫙瑕嗙洊 */
+.bento-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.bento-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bento-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* 璺ㄥ垪 */
+.bento-col-2 { grid-column: span 2; }
+.bento-col-3 { grid-column: span 3; }
+.bento-col-4 { grid-column: span 4; }
+/* 璺ㄨ */
+.bento-row-2 { grid-row: span 2; }
+.bento-row-3 { grid-row: span 3; }
+/* 鍝嶅簲寮忥細绐勫睆閫€鍖栦负 2 鍒?/ 1 鍒?*/
+@media (max-width: 1280px) {
+  .bento-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bento-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bento-col-3, .bento-col-4 { grid-column: span 2; }
+}
+@media (max-width: 768px) {
+  .bento-grid-4, .bento-grid-3, .bento-grid-2 { grid-template-columns: 1fr; }
+  .bento-col-2, .bento-col-3, .bento-col-4 { grid-column: span 1; }
+  .bento-row-2, .bento-row-3 { grid-row: span 1; }
+}
+
+/* ===== OrbitingCircles 灞曠ず鍔ㄧ敾锛堢Щ妞嶈嚜 magicui/orbiting-circles锛?===== */
+/* 鐐瑰嚮 logo 瑙﹀彂锛氬崱鐗囪浣?+ 杞ㄩ亾鐜姩鐢昏鐩栧眰 */
+@keyframes orbit {
+  0% {
+    transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+  }
+  100% {
+    transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px)) rotate(calc((var(--angle) * -1deg) - 360deg));
+  }
+}
+
+/* 瑕嗙洊灞傦細鍏ㄥ睆灞呬腑 */
+.mint-orbit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(248, 250, 252, 0.96);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+.mint-orbit-overlay.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 杞ㄩ亾瀹瑰櫒 */
+.mint-orbit-stage {
+  position: relative;
+  width: 500px;
+  height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 涓績 logo锛堝鐢ㄩ」鐩?logo锛?*/
+.mint-orbit-center {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #3ce0a3;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 4px 14px rgba(60, 224, 163, 0.35);
+}
+.mint-orbit-center svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* 杞ㄩ亾绾匡紙SVG circle锛?*/
+.mint-orbit-path {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.mint-orbit-path circle {
+  fill: none;
+  stroke: rgba(16, 185, 129, 0.15);
+  stroke-width: 1;
+}
+
+/* 鍗曚釜杞ㄩ亾鍥炬爣瀹瑰櫒 */
+.mint-orbit-item {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  animation: orbit calc(var(--duration) * 1s) linear infinite;
+  animation-delay: calc(var(--delay, 0) * 1s);
+  transform-origin: center;
+  will-change: transform;
+}
+.mint-orbit-item.reverse {
+  animation-direction: reverse;
+}
+.mint-orbit-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+ 璁╀綘鏀圭殑.mint-orbit-item .orbit-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.mint-orbit-item .orbit-icon-wrapper svg {
+  width: 60%;
+  height: 60%;
+}
+
+/* ===== OrbitingCircles 鍘熶綅灞曠ず锛堢偣鍑?logo 瑙﹀彂锛?===== */
+/* 涓棿宸ヤ綔娴佸崱鐗囧尯鍩熷師浣嶆浛鎹负杞ㄩ亾鍔ㄧ敾锛涘彸渚ч厤缃爮闅愯棌锛沨ero 鍜屼晶鏍忎繚鐣?*/
+.mint-orbit-inline {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 500px;
+  padding: 20px;
+}
+
+.mint-orbit-title {
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.mint-orbit-title h1 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* 鍙充晶閰嶇疆鏍忥細orbiting 鏃舵贰鍑洪殣钘?*/
+.mint-shell.orbiting .mint-config-sidebar,
+.mint-shell.orbiting .mint-config {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  opacity: 0;
+  transform: translateX(20px);
+  pointer-events: none;
+}
+/* 璁╁伐浣滄祦鍗＄墖瀹瑰櫒鍦?orbiting 鏃朵笉鍐嶆粴鍔紝缁欒建閬撳姩鐢昏吘鍑哄畬鏁寸┖闂?*/
+.mint-shell.orbiting .mint-workflow-cards {
+  overflow: hidden;
+  align-content: center;
+}
+
+/* ===== WordRotate 鏃嬭浆鏂囧瓧锛堢Щ妞嶈嚜 magicui/word-rotate锛?===== */
+/* 瀹瑰櫒锛歱erspective 鍒堕€?3D 閫忚锛屽崟琛岄珮搴﹂伩鍏嶅竷灞€璺冲姩 */
+.mint-word-rotate {
+  display: inline-flex;
+  align-items: center;
+  perspective: 1000px;
+  height: 1.5em;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.mint-word-rotate-word {
+  display: inline-block;
+  position: relative;
+  transform-style: preserve-3d;
+}
+/* 杩涘叆锛氫粠 rotateX(-90deg) 缈诲埌 0锛涚寮€锛氫粠 0 缈诲埌 rotateX(90deg) */
+.mint-word-rotate-word.is-enter {
+  animation: word-rotate-in 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.mint-word-rotate-word.is-exit {
+  animation: word-rotate-out 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes word-rotate-in {
+  0%   { transform: rotateX(-90deg); opacity: 0; }
+  100% { transform: rotateX(0deg);   opacity: 1; }
+}
+@keyframes word-rotate-out {
+  0%   { transform: rotateX(0deg);   opacity: 1; }
+  100% { transform: rotateX(90deg);  opacity: 0; }
+}
+
+/* ===== 渚ц竟鏍忛€夐」妗嗗鍣紙鍗＄墖鎭㈠ + 涓婚鍒囨崲鍣級 ===== */
+/* ===== AnimatedThemeToggler 涓婚鍒囨崲鍣紙绉绘鑷?magicui/animated-theme-toggler锛?===== */
+/* 鐢?View Transitions API 鍋氬渾褰㈡墿鏁ｅ姩鐢伙紝鍥為€€鍒版櫘閫氬垏鎹?*/
+.mint-theme-toggler {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+.mint-theme-toggler-icon {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+.mint-theme-toggler .icon-sun { display: block; }
+.mint-theme-toggler .icon-moon { display: none; }
+.mint-shell.dark-theme .mint-theme-toggler .icon-sun { display: none; }
+.mint-shell.dark-theme .mint-theme-toggler .icon-moon { display: block; }
+
+/* View Transitions 鍦嗗舰鎵╂暎鍔ㄧ敾 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 9999; }

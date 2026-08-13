@@ -1,0 +1,16 @@
+agent_id: image_gen
+role: ????
+model: null
+skills:
+  - generate_image
+executor: single_shot
+hard_rules: []
+soft_semantic: null
+recovery:
+  max_attempts: 3
+  strategies:
+    # 策略1：原样重试（应对生图 API 瞬时失败）
+    - type: retry
+    # 策略2：切即梦降级（通义万相不可用时切到即梦）
+    - type: switch_model
+      fallback_model: jimeng

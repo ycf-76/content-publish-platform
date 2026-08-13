@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# pnpm
+.pnpm-store/
+.pnpm-debug.log
+
+# Build output
+frontend/dist/
+.next/
+
+# Uploads
+uploads/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite3
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Data directory
+backend/data/
+
+# Playwright
+pw-browsers/
+
+# Temp files
+*.tmp
+*.bak

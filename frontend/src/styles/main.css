@@ -1,0 +1,49 @@
+/* ===== 全局基础样式（Landing/Login 页面使用） ===== */
+/* workbench.css 是完整的灵犀工坊样式系统，包含所有 .mint-* 定义 */
+/* 本文件仅保留 Landing/Login 依赖的视觉类，避免与 workbench.css 布局冲突 */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #F7F8FA;
+  color: #111827;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.font-cal {
+  font-family: 'LXGW WenKai', 'PingFang SC', cursive;
+  font-weight: 700;
+}
+
+/* 滚动条样式：使用浏览器默认颜色 */
+::-webkit-scrollbar {
+  width: auto;
+  height: auto;
+}
+
+::-webkit-scrollbar-track {
+  background: initial;
+}
+
+::-webkit-scrollbar-thumb {
+  background: initial;
+  border-radius: initial;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: initial;
+}
+
+/* 动画 */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

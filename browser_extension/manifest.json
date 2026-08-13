@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "多智能体小红书发布平台 MCP 插件",
+  "version": "0.2.0",
+  "description": "复用浏览器已登录的小红书会话，为后端 MCP 提供 HTTP 接口（MAIN world 注入，规避风控）",
+  "permissions": [
+    "nativeMessaging",
+    "cookies",
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*.xiaohongshu.com/*",
+    "https://www.xiaohongshu.com/*",
+    "https://creator.xiaohongshu.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "externally_connectable": {
+    "matches": [
+      "http://localhost/*",
+      "http://127.0.0.1/*",
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+      "http://localhost:3001/*",
+      "http://127.0.0.1:3001/*",
+      "http://localhost:8001/*",
+      "http://127.0.0.1:8001/*"
+    ]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MCP 插件状态"
+  }
+}

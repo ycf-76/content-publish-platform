@@ -1,0 +1,25 @@
+agent_id: analyze
+role: ??????
+model: deepseek-v3
+skills:
+  - vl_analyze
+executor: single_shot
+hard_rules: []
+soft_semantic:
+  enabled: true
+  quality_check_prompt: |
+    ???????????????????
+    - ???????
+    - ???????
+    - ????????
+recovery:
+  max_attempts: 3
+  strategies:
+    # 策略1：原样重试（应对网络抖动等瞬时错误）
+    - type: retry
+    # 策略2：减少输入笔记数（应对 VL 输入过长导致 token 超限）
+    - type: reduce_input
+      max_items: 5
+    # 策略3：切 V3 降级（应对 V3 过载）
+    - type: switch_model
+      fallback_model: deepseek-v3

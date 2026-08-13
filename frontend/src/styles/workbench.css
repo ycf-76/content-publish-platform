@@ -1,0 +1,46 @@
+/* updated: 2026-08-11 04:33:31 */
+@import "tailwindcss";
+
+/* 1. 主题变量 + 语义 token + tailwind layer */
+@import './workbench/_theme-vars.css';
+
+/* 2. 布局: atelier override + particles */
+@import './workbench/_layout.css';
+
+/* 3. 侧边栏 + 折叠导航 + chevron */
+@import './workbench/_nav.css';
+
+/* 4. Premium Agent Flow 质感 */
+@import './workbench/_premium.css';
+
+/* 5. 决策节点 + 搜索网格 */
+@import './workbench/_nodes.css';
+
+/* 6. 加载动画 + 拖拽分割 + 配置栏 */
+@import './workbench/_panels.css';
+
+/* 7. 透明模式 + bento + orbit + word-rotate + toggler */
+@import './workbench/_magic-ui.css';
+
+/* 8. 暗色主题覆盖 */
+@import './workbench/_dark-theme.css';
+
+/* 9. 概览栏 + 轮播 + 实时面板 + 卡片列表 */
+@import './workbench/_carousel.css';
+
+/* 10. 节点卡片 + badge + body */
+@import './workbench/_cards.css';
+
+/* 11. 文案表单 + 候选网格 */
+@import './workbench/_forms.css';
+
+/* 12. 连接线 + 状态动效 */
+@import './workbench/_workflow.css';
+
+/* 13. 审核弹窗 + 趋势层 + 按钮 + chip */
+@import './workbench/_trends.css';
+
+/* 14. lightbox + 全局尾部 */
+@import './workbench/_lightbox.css';
+
+/* HMR BUMP 1786371668203 — force Vite to re-parse @import chain */
