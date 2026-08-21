@@ -11,8 +11,6 @@ export default defineConfig({
     }
   },
   css: {
-    // 显式置空，阻止 Vite 向上查找根目录的 postcss.config.mjs
-    // （根目录的 postcss.config.mjs 是给 Next.js 用的，与 @tailwindcss/vite 冲突）
     postcss: {}
   },
   server: {
@@ -36,5 +34,10 @@ export default defineConfig({
         },
       },
     },
-  }
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+  },
 })

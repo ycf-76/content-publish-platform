@@ -41,12 +41,18 @@ async def final_review_node(state: WorkflowState) -> dict:
         or image_gen_output.get("images_base64")
         or []
     )
+    final_image_urls = (
+        image_review_output.get("image_urls")
+        or image_gen_output.get("image_urls")
+        or []
+    )
 
     review_data = {
         "title": copywrite_output.get("title", ""),
         "content": copywrite_output.get("content", ""),
         "tags": copywrite_output.get("tags", []),
         "images_base64": final_images,
+        "image_urls": final_image_urls,
         "review_status": "rejected" if is_rejected else "passed",
         "feedback": "",
     }

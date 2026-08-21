@@ -74,32 +74,10 @@
             </a>
           </div>
         </transition>
-        <a class="mint-nav-item mint-nav-collapsible" data-tooltip="开启工作流" @click="toggleWorkflowExpanded" :class="{ 'mint-nav-active': currentPage === 'workflow' || isWorkflowTemplatesActive }">
+        <a class="mint-nav-item" data-tooltip="工作流" @click="goToWorkflowShowcase" :class="{ 'mint-nav-active': currentPage === 'workflow-showcase' || currentPage === 'workflow' || isWorkflowTemplatesActive }">
           <Sparkles :size="16" :stroke-width="1.8" />
-          <span>开启工作流</span>
-          <span class="mint-nav-chevron" :class="{ 'mint-nav-chevron-rotated': workflowExpanded }">
-            <ChevronDown :size="14" :stroke-width="2" />
-          </span>
+          <span>工作流</span>
         </a>
-        <transition name="mint-subgroup"
-          :css="false"
-          @enter="onWorkflowEnter"
-          @leave="onWorkflowLeave">
-          <div class="mint-nav-subgroup" v-show="workflowExpanded" style="border-left: none !important;">
-            <a class="mint-nav-sub" data-tooltip="快速启动" @click="onWorkflowQuickStart" :class="{ 'mint-nav-active': currentPage === 'workflow' }">
-              <Rocket :size="14" :stroke-width="1.8" />
-              <span>快速启动</span>
-            </a>
-            <a class="mint-nav-sub" data-tooltip="动态编排" @click="goToWorkflowTemplates" :class="{ 'mint-nav-active': isWorkflowTemplatesActive }">
-              <RouteIcon :size="14" :stroke-width="1.8" />
-              <span>动态编排</span>
-            </a>
-            <a class="mint-nav-sub" data-tooltip="历史" @click="$emit('nav-click', 'history')" :class="{ 'mint-nav-active': currentPage === 'history' }">
-              <Clock :size="14" :stroke-width="1.8" />
-              <span>历史</span>
-            </a>
-          </div>
-        </transition>
         <a class="mint-nav-item" id="nav-topic-pool" data-page="topic-pool" data-tooltip="选题池" @click="goToTopicPool" :class="{ 'mint-nav-active': isTopicPoolActive }">
           <BookOpen :size="16" :stroke-width="1.8" />
           <span>选题池</span>
@@ -148,9 +126,6 @@ import {
   Bot,
   Sparkles,
   ChevronDown,
-  Rocket,
-  Route as RouteIcon,
-  Clock,
   BookOpen,
   Cpu,
   Settings,
@@ -196,6 +171,10 @@ function goToWorkflowTemplates() {
   router.push('/workflow-templates')
 }
 
+function goToWorkflowShowcase() {
+  router.push('/workflow')
+}
+
 function goToEstherFactory() {
   router.push('/esther-factory')
 }
@@ -204,10 +183,6 @@ function goToEstherFactory() {
 function onOpenSettings() {
   window.dispatchEvent(new Event('open-settings'))
   emit('open-settings')
-}
-
-function onWorkflowQuickStart() {
-  emit('nav-click', 'workflow')
 }
 
 const { workflowExpanded, toggleWorkflowExpanded } = useUIState()

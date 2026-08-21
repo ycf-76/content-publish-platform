@@ -50,6 +50,20 @@ class SSEEventBus:
 
     Singleton pattern: one instance per workflow_id.
 
+    ⚠️  SCALABILITY LIMIT: This bus is process-local (in-memory defaultdict).
+    Multi-worker deployments (e.g., uvicorn --workers N) or multi-pod
+    Kubernetes setups will NOT share events across processes.
+    A user connected to worker-1 will miss events published on worker-2.
+
+    Mitigation options (pick one when scaling beyond single-process):
+    - Redis Pub/Sub: publish() also PUBLISHes to a Redis channel;
+      subscribe() also SUBSCRIBEs and fans out to local queues.
+    - PostgreSQL LISTEN/NOTIFY: same idea, fewer infra dependencies.
+    - External message broker (NATS, Kafka): overkill for this use case.
+
+    Until then, deploy with a single worker process:
+        uvicorn app.main:app --workers 1
+
     P0: 终态事件发布后，延迟 CLEANUP_DELAY_SECONDS 秒清理该 workflow 的
     事件历史和订阅者，防止长期运行导致内存无限增长（OOM）。
     延迟清理给断线重连留出时间窗口。

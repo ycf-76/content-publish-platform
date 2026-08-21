@@ -99,3 +99,16 @@ class UpdateNodeOutputRequest(BaseModel):
         ...,
         description="要覆盖写入的节点输出字段（如 {title, content, tags}），会与现有 output 合并",
     )
+
+
+class SaveDraftRequest(BaseModel):
+    """Request to save image workspace draft.
+
+    把图片工作区的编辑状态（模板/页面/装饰/自定义样式）保存到 image_plan 节点，
+    下次打开时优先从 _draft 恢复，而非从 content_plan 重建。
+    """
+
+    draft: dict = Field(
+        ...,
+        description="图片工作区草稿数据（template/accent/customFontSize/customBg/pages/decoration 等）",
+    )

@@ -88,9 +88,9 @@
           <i data-lucide="message-square-warning" style="width:12px;height:12px;"></i>
           <span>{{ result.feedback }}</span>
         </div>
-        <div v-if="result.images_base64 && result.images_base64.length" class="wf-review-images-area">
+        <div v-if="displayImages.length" class="wf-review-images-area">
           <div class="wf-image-grid">
-            <div v-for="(img, i) in result.images_base64" :key="i" class="wf-image-thumb">
+            <div v-for="(img, i) in displayImages" :key="i" class="wf-image-thumb">
               <img :src="imageDataUrl(img)" :alt="'图片 ' + (Number(i) + 1)" loading="lazy" />
               <div class="wf-image-overlay"><span class="wf-image-role">第 {{ Number(i) + 1 }} 页</span></div>
             </div>
@@ -135,6 +135,14 @@ watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: 
 
 const workflowStore = useWorkflowStore()
 
+const displayImages = computed(() => {
+  const urls = props.result?.image_urls
+  if (urls && Array.isArray(urls) && urls.length > 0) return urls
+  const b64s = props.result?.images_base64
+  if (b64s && Array.isArray(b64s) && b64s.length > 0) return b64s
+  return []
+})
+
 // ===== awaiting_review 阶段的图片加载 =====
 const reviewImages = ref<string[]>([])
 const imagesLoading = ref(false)
@@ -159,17 +167,21 @@ async function fetchReviewImages() {
   reviewImages.value = []
 
   try {
-    // 先尝试从 SSE store 中获取 image_gen 的 images_base64
-    // node_completed 事件会包含 images_base64（如果 SSE 正常工作）
     const imageGenNode = workflowStore.nodes.find(n => n.node_id === 'image_gen') as any
+    const sseImageUrls = imageGenNode?.image_urls || imageGenNode?.output?.image_urls
     const sseImages = imageGenNode?.images_base64 || imageGenNode?.output?.images_base64
 
-    if (sseImages && Array.isArray(sseImages) && sseImages.length > 0) {
+    if (sseImageUrls && Array.isArray(sseImageUrls) && sseImageUrls.length > 0) {
+      reviewImages.value = sseImageUrls
+    } else if (sseImages && Array.isArray(sseImages) && sseImages.length > 0) {
       reviewImages.value = sseImages
     } else {
       const resp: any = await workflowApi.getNodeImages(props.workflowId, 'image_gen')
+      const imageUrls = resp?.image_urls || resp?.data?.image_urls || []
       const images = resp?.images_base64 || resp?.data?.images_base64 || []
-      if (images.length > 0) {
+      if (imageUrls.length > 0) {
+        reviewImages.value = imageUrls
+      } else if (images.length > 0) {
         reviewImages.value = images
       } else {
         imagesError.value = 'image_gen 节点没有图片数据'
@@ -218,10 +230,11 @@ const statusBadgeStyle = computed(() => {
   if (props.nodeStatus === 'running') return { background: '#FEE2E2', color: '#DC2626' }
   return { background: '#F1F5F9', color: '#64748B' }
 })
-function imageDataUrl(b64: string): string {
-  if (b64.startsWith('data:')) return b64
-  const prefix = b64.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
-  return prefix + b64
+function imageDataUrl(img: string): string {
+  if (img.startsWith('data:')) return img
+  if (img.startsWith('/uploads/') || img.startsWith('http://') || img.startsWith('https://')) return img
+  const prefix = img.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
+  return prefix + img
 }
 const reviewStatus = computed(() => props.result?.review_status || props.nodeStatus)
 const reviewStatusLabel = computed(() => {

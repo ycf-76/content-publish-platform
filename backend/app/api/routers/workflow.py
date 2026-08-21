@@ -28,6 +28,7 @@ from app.api.schemas.workflow import (
     RollbackRequest,
     StartWorkflowRequest,
     ResumeWorkflowRequest,
+    SaveDraftRequest,
     UpdateNodeOutputRequest,
     WorkflowListItem,
     WorkflowResponse,
@@ -161,6 +162,10 @@ async def get_workflow_nodes(
                     nodes[review_node] = {"node_id": review_node, "status": "pending"}
                 nodes[review_node]["status"] = "awaiting_review"
                 nodes[review_node].update(payload)
+                # 设置 output 字段供前端 getNodeResult 读取
+                safe_payload = {k: v for k, v in payload.items() if k != "node_id"}
+                if safe_payload:
+                    nodes[review_node]["output"] = safe_payload
         elif etype == "review_processed":
             # 审核结果已提交，工作流 resume
             pass
@@ -171,6 +176,11 @@ async def get_workflow_nodes(
                 nodes[node_id].update(payload)
                 if etype == "node_completed":
                     nodes[node_id]["status"] = "completed"
+                    # node_completed 事件的 payload 包含节点完整输出，
+                    # 同时设置 output 字段供前端 getNodeResult 读取
+                    safe_payload = {k: v for k, v in payload.items() if k != "images_base64" and k != "node_id"}
+                    if safe_payload:
+                        nodes[node_id]["output"] = safe_payload
                 elif etype == "node_error":
                     nodes[node_id]["status"] = "error"
                 elif etype == "node_status_changed" and "status" in payload:
@@ -181,22 +191,22 @@ async def get_workflow_nodes(
             workflow_status = "error"
         elif etype == "workflow_suspended":
             workflow_status = "suspended"
+        elif etype == "workflow_paused":
+            workflow_status = "paused"
 
-    # ===== 补全：事件历史只包含部分节点时，从数据库补全缺失节点 =====
-    # 事件历史可能只有 review_required 等少量事件，导致 nodes 不完整。
-    # 从 workflow_nodes 表 + 事件历史推断的位置补全所有标准节点。
+    # ===== 补全：从数据库补全所有节点的 output 字段 + 缺失节点 =====
+    # 事件历史中的节点可能缺少 output 字段（事件 payload 平铺到顶层但未设 output），
+    # 缺失的节点也需要从 workflow_nodes 表补全。统一遍历所有标准节点。
     _STANDARD_NODE_ORDER = [
         "search", "analyze", "copywrite", "image_plan", "image_gen",
         "image_review", "audit", "final_review", "publish",
     ]
-    if nodes and len(nodes) < len(_STANDARD_NODE_ORDER):
+    if nodes:
         try:
             from sqlalchemy import select as sa_select
             from app.db.models import WorkflowNode
             wf_row = await db.scalar(sa_select(Workflow).where(Workflow.id == workflow_id))
             if wf_row:
-                # 用事件历史中已出现的节点推断进度位置
-                # 优先用 awaiting_review/running 节点，其次用 DB 的 current_node_id
                 event_max_idx = -1
                 for nid in nodes:
                     if nid in _STANDARD_NODE_ORDER:
@@ -205,27 +215,77 @@ async def get_workflow_nodes(
                             event_max_idx = idx
                 wf_current_node = wf_row.current_node_id or ""
                 db_idx = _STANDARD_NODE_ORDER.index(wf_current_node) if wf_current_node in _STANDARD_NODE_ORDER else -1
-                # 取较大值作为当前进度位置
                 current_idx = max(event_max_idx, db_idx)
+
+                # 若 current_node_id 为空且事件历史无有效索引，从 DB 节点推断
+                if current_idx < 0:
+                    wf_nodes_rows_pre = await db.scalars(sa_select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
+                    for wn in wf_nodes_rows_pre:
+                        if wn.node_key in _STANDARD_NODE_ORDER and wn.node_status in ("completed", "passed"):
+                            idx = _STANDARD_NODE_ORDER.index(wn.node_key)
+                            if idx > current_idx:
+                                current_idx = idx
+                    if current_idx >= 0 and current_idx < len(_STANDARD_NODE_ORDER) - 1:
+                        current_idx = current_idx + 1
 
                 wf_nodes_rows = await db.scalars(sa_select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
                 wf_nodes_map = {wn.node_key: wn for wn in wf_nodes_rows}
+                wf_row_status = wf_row.status or "running"
+
                 for i, nid in enumerate(_STANDARD_NODE_ORDER):
-                    if nid in nodes:
-                        continue
-                    if current_idx >= 0 and i < current_idx:
-                        status = "completed"
-                    elif i == current_idx:
-                        status = "running"
-                    else:
-                        status = "pending"
-                    entry: dict = {"node_id": nid, "status": status}
                     wn = wf_nodes_map.get(nid)
-                    if wn and wn.output_data and isinstance(wn.output_data, dict):
-                        safe_output = {k: v for k, v in wn.output_data.items() if k != "images_base64"}
-                        entry.update(safe_output)
-                        entry["has_output"] = True
-                    nodes[nid] = entry
+                    wn_output = wn.output_data if wn and wn.output_data and isinstance(wn.output_data, dict) else None
+
+                    if nid in nodes:
+                        # 已有节点：补全 output 字段（前端 getNodeResult 优先读 node.output）
+                        entry = nodes[nid]
+                        if "node_type" not in entry:
+                            entry["node_type"] = nid
+                        if "output" not in entry or not entry.get("output"):
+                            if wn_output:
+                                safe_output = {k: v for k, v in wn_output.items() if k != "images_base64"}
+                                entry["output"] = safe_output
+                                for k, v in safe_output.items():
+                                    if k not in entry:
+                                        entry[k] = v
+                                entry["has_output"] = True
+                        if wn:
+                            if wn.duration_ms and "_duration_ms" not in entry:
+                                entry["_duration_ms"] = wn.duration_ms
+                            if wn.model_used and "_model_used" not in entry:
+                                entry["_model_used"] = wn.model_used
+                            if wn.token_usage and "_token_usage" not in entry:
+                                entry["_token_usage"] = {"total": wn.token_usage}
+                            if wn.error_message and "_error" not in entry:
+                                entry["_error"] = wn.error_message
+                    else:
+                        # 缺失节点：从数据库推断状态 + 补全 output
+                        if current_idx >= 0 and i < current_idx:
+                            status = "completed"
+                        elif i == current_idx:
+                            if wf_row_status in ("suspended", "paused") and nid in ("copywrite", "image_gen", "image_review", "final_review", "publish"):
+                                status = "awaiting_review"
+                            else:
+                                status = "running"
+                        else:
+                            status = "pending"
+                        entry: dict = {"node_id": nid, "node_type": nid, "status": status}
+                        if wn_output:
+                            safe_output = {k: v for k, v in wn_output.items() if k != "images_base64"}
+                            entry.update(safe_output)
+                            entry["output"] = safe_output
+                            entry["has_output"] = True
+                        if wn:
+                            if wn.duration_ms:
+                                entry["_duration_ms"] = wn.duration_ms
+                            if wn.model_used:
+                                entry["_model_used"] = wn.model_used
+                            if wn.token_usage:
+                                entry["_token_usage"] = {"total": wn.token_usage}
+                            if wn.error_message:
+                                entry["_error"] = wn.error_message
+                        nodes[nid] = entry
+
                 if not workflow_status or workflow_status == "running":
                     workflow_status = wf_row.status or "running"
         except Exception:
@@ -246,20 +306,21 @@ async def get_workflow_nodes(
                 node_statuses = state_values.get("node_statuses", {})
                 node_outputs = state_values.get("node_outputs", {})
 
-                # 节点顺序（与 graph.py initial_state 一致）
+                # 节点顺序（与 graph.py 执行顺序一致）
                 node_order = [
                     "search", "analyze", "copywrite", "image_plan", "image_gen",
                     "image_review", "audit", "final_review", "publish",
                 ]
                 for nid in node_order:
                     status = node_statuses.get(nid, "pending")
-                    if nid in next_nodes and nid in ("copywrite", "image_plan", "image_review", "publish"):
+                    if nid in next_nodes and nid in ("copywrite", "image_plan", "image_gen", "image_review", "final_review", "publish"):
                         status = "awaiting_review"
-                    node_entry: dict = {"node_id": nid, "status": status}
+                    node_entry: dict = {"node_id": nid, "node_type": nid, "status": status}
                     output = node_outputs.get(nid)
                     if output and isinstance(output, dict):
                         safe_output = {k: v for k, v in output.items() if k != "images_base64"}
                         node_entry.update(safe_output)
+                        node_entry["output"] = safe_output
                         node_entry["output_keys"] = list(output.keys())
                         node_entry["has_output"] = True
                     nodes[nid] = node_entry
@@ -288,10 +349,9 @@ async def get_workflow_nodes(
                 wf_db_status = wf_row.status
                 wf_current_node = wf_row.current_node_id or ""
                 node_order = [
-                    "search", "analyze", "image_plan", "image_gen",
-                    "image_review", "copywrite", "audit", "final_review", "publish",
+                    "search", "analyze", "copywrite", "image_plan", "image_gen",
+                    "image_review", "audit", "final_review", "publish",
                 ]
-                current_idx = node_order.index(wf_current_node) if wf_current_node in node_order else -1
 
                 # 从 workflow_nodes 表读取所有节点的 output_data 和元数据
                 wf_nodes_rows = await db.scalars(
@@ -301,8 +361,23 @@ async def get_workflow_nodes(
                 for wn in wf_nodes_rows:
                     wf_nodes_map[wn.node_key] = wn
 
+                # 推断当前进度位置：
+                # 1. 优先用 current_node_id
+                # 2. 若 current_node_id 为空，从 workflow_nodes 表中已完成节点的最大索引推断
+                current_idx = node_order.index(wf_current_node) if wf_current_node in node_order else -1
+                if current_idx < 0:
+                    # current_node_id 为空，从 DB 中已完成/有输出的节点推断
+                    for nid, wn in wf_nodes_map.items():
+                        if nid in node_order and wn.node_status in ("completed", "passed"):
+                            idx = node_order.index(nid)
+                            if idx > current_idx:
+                                current_idx = idx
+                    # current_idx 指向最后一个已完成节点，下一个节点就是当前节点
+                    if current_idx >= 0 and current_idx < len(node_order) - 1:
+                        current_idx = current_idx + 1
+
                 def _build_node_entry(nid: str, status: str) -> dict:
-                    entry: dict = {"node_id": nid, "status": status}
+                    entry: dict = {"node_id": nid, "node_type": nid, "status": status}
                     wn = wf_nodes_map.get(nid)
                     if wn:
                         if wn.output_data and isinstance(wn.output_data, dict):
@@ -332,24 +407,24 @@ async def get_workflow_nodes(
                         elif i == current_idx:
                             nodes[nid] = _build_node_entry(nid, "error")
                         else:
-                            nodes[nid] = {"node_id": nid, "status": "pending"}
+                            nodes[nid] = {"node_id": nid, "node_type": nid, "status": "pending"}
                     workflow_status = str(wf_db_status)
-                elif wf_db_status in ("running", "suspended"):
+                elif wf_db_status in ("running", "suspended", "paused"):
                     for i, nid in enumerate(node_order):
                         if current_idx >= 0 and i < current_idx:
                             nodes[nid] = _build_node_entry(nid, "completed")
                         elif i == current_idx:
-                            if wf_db_status == "suspended" and nid in ("image_review", "final_review", "publish"):
+                            if wf_db_status in ("suspended", "paused") and nid in ("copywrite", "image_gen", "image_review", "final_review", "publish"):
                                 nodes[nid] = _build_node_entry(nid, "awaiting_review")
                             else:
                                 nodes[nid] = _build_node_entry(nid, "running")
                         else:
-                            nodes[nid] = {"node_id": nid, "status": "pending"}
+                            nodes[nid] = {"node_id": nid, "node_type": nid, "status": "pending"}
                     workflow_status = str(wf_db_status)
                 else:
                     for nid in node_order:
                         if nid not in nodes:
-                            nodes[nid] = {"node_id": nid, "status": "pending"}
+                            nodes[nid] = {"node_id": nid, "node_type": nid, "status": "pending"}
                     workflow_status = str(wf_db_status)
         except Exception:
             pass
@@ -367,10 +442,11 @@ async def get_node_images(
     node_id: str,
     user_id: str = Depends(get_current_user),
 ) -> StandardResponse[dict]:
-    """获取节点输出的图片 base64 列表。
+    """获取节点输出的图片列表。
 
-    SSE 事件和 getNodes 接口都剥离了 images_base64（避免 payload 过大），
-    前端在 image_review 审核阶段需要单独调本接口获取图片。
+    优先返回 image_urls（本地文件 URL，轻量），
+    回退到 images_base64（旧数据兼容）。
+    前端用 URL 渲染图片时浏览器可缓存，性能远优于 base64。
     """
     from app.agents.graph import build_workflow_graph
 
@@ -384,15 +460,86 @@ async def get_node_images(
         state_values = graph_state.values or {}
         node_outputs = state_values.get("node_outputs", {})
         node_output = node_outputs.get(node_id, {}) or {}
+        image_urls = node_output.get("image_urls", []) or []
         images_base64 = node_output.get("images_base64", []) or []
 
         return StandardResponse(data={
             "node_id": node_id,
+            "image_urls": image_urls,
             "images_base64": images_base64,
-            "image_count": len(images_base64),
+            "image_count": len(image_urls) or len(images_base64),
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Get node images failed: {e}")
+
+
+@router.get("/showcase")
+async def get_showcase(
+    limit: int = 8,
+    user_id: str | None = Depends(_optional_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> StandardResponse[dict]:
+    """首页展示聚合接口：一次返回最近完成的工作流 + 封面图 URL + 文案标题。
+
+    替代前端逐条调 getNodes + getNodeImages 的串行模式，
+    将 N 次请求降为 1 次，且只返回 URL（不返回 base64）。
+    """
+    from app.agents.graph import build_workflow_graph
+    from app.services.workflow import get_workflow_service
+
+    service = get_workflow_service(db)
+    result = await service.list_workflows(user_id=user_id, limit=50)
+    items = result.get("items", [])
+    total = result.get("total", 0)
+
+    completed = [w for w in items if w.get("status") in ("completed", "passed")][:limit]
+
+    showcase = []
+    for w in completed:
+        wid = w.get("workflow_id") or w.get("id", "")
+        entry: dict = {
+            "workflow_id": wid,
+            "topic": w.get("topic", ""),
+            "status": w.get("status", ""),
+            "created_at": w.get("created_at", ""),
+            "cover_image_url": None,
+            "image_urls": [],
+            "title": None,
+            "content_snippet": None,
+        }
+
+        try:
+            graph = build_workflow_graph(checkpointer=None)
+            if graph is None:
+                continue
+            config = {"configurable": {"thread_id": wid}, "recursion_limit": 50}
+            graph_state = await graph.aget_state(config)
+            state_values = graph_state.values or {}
+            node_outputs = state_values.get("node_outputs", {})
+
+            image_gen_output = node_outputs.get("image_gen", {}) or {}
+            image_urls = image_gen_output.get("image_urls", []) or []
+            if image_urls:
+                entry["image_urls"] = image_urls
+                entry["cover_image_url"] = image_urls[0] if image_urls else None
+
+            copywrite_output = node_outputs.get("copywrite", {}) or {}
+            cw_title = copywrite_output.get("title")
+            cw_content = copywrite_output.get("content", "")
+            if cw_title:
+                entry["title"] = cw_title
+            if cw_content:
+                entry["content_snippet"] = cw_content[:60] + "…" if len(cw_content) > 60 else cw_content
+        except Exception as e:
+            logger.warning(f"[showcase] get state for {wid} failed: {e}")
+
+        showcase.append(entry)
+
+    return StandardResponse(data={
+        "items": showcase,
+        "total": total,
+        "completed_count": len(completed),
+    })
 
 
 @router.get("/{workflow_id}")
@@ -509,6 +656,69 @@ async def update_node_output(
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Update failed"))
     return StandardResponse(data=result, message=result.get("message", ""))
+
+
+@router.put("/{workflow_id}/draft")
+async def save_draft(
+    workflow_id: str,
+    request: SaveDraftRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StandardResponse[dict]:
+    """保存图片工作区草稿。
+
+    把编辑状态（模板/页面/装饰/自定义样式）存到 image_plan 节点的
+    output_data._draft 字段。下次打开时前端优先从 _draft 恢复。
+    同时更新 LangGraph state 中的 node_outputs['image_plan']。
+    """
+    service = get_workflow_service(db)
+    result = await service.update_node_output(
+        workflow_id, "image_plan", {"_draft": request.draft}, user_id
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Save draft failed"))
+    return StandardResponse(data={"saved": True}, message="草稿已保存")
+
+
+@router.get("/{workflow_id}/draft")
+async def get_draft(
+    workflow_id: str,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StandardResponse[dict]:
+    """获取图片工作区草稿。
+
+    从 image_plan 节点的 output_data._draft 字段读取草稿数据。
+    前端用于在历史页面标识有草稿的工作流，以及恢复草稿编辑。
+    """
+    service = get_workflow_service(db)
+    workflow = await service.get_workflow(workflow_id, user_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    from app.services.workflow import LANGGRAPH_AVAILABLE
+    draft_data = None
+    if LANGGRAPH_AVAILABLE:
+        graph, _ = await service._get_graph_for_workflow(workflow)
+        if graph is not None:
+            config = {
+                "configurable": {"thread_id": workflow_id},
+                "recursion_limit": 50,
+                "metadata": {"workflow_id": workflow_id},
+            }
+            try:
+                graph_state = await graph.aget_state(config)
+                node_outputs = (graph_state.values or {}).get("node_outputs", {})
+                image_plan_output = node_outputs.get("image_plan", {})
+                if isinstance(image_plan_output, dict) and "_draft" in image_plan_output:
+                    draft_data = image_plan_output["_draft"]
+            except Exception:
+                pass
+
+    return StandardResponse(
+        data={"has_draft": draft_data is not None, "draft": draft_data},
+        message="草稿查询完成",
+    )
 
 
 @router.post("/{workflow_id}/publish/check")

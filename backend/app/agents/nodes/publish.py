@@ -22,7 +22,32 @@ async def publish_node(state: WorkflowState) -> dict:
     copywrite = state.get("node_outputs", {}).get("copywrite", {})
     image_gen = state.get("node_outputs", {}).get("image_gen", {})
     image_review = state.get("node_outputs", {}).get("image_review", {})
-    topic = state.get("topic", "")
+
+    # 优先从 image_urls 读文件转 base64（文件存储模式），
+    # 回退到 checkpoint 中的 images_base64（旧数据兼容）
+    image_urls = (
+        final_review.get("image_urls")
+        or image_review.get("image_urls")
+        or image_gen.get("image_urls")
+        or []
+    )
+    images_for_publish: list[str] = []
+    if image_urls:
+        from app.services.image_store import read_workflow_images_as_base64
+        images_for_publish = read_workflow_images_as_base64(image_urls)
+        _dlog(f"[{workflow_id}] publish_node: read {len(images_for_publish)} images from files "
+              f"(urls={len(image_urls)})")
+
+    if not images_for_publish:
+        images_for_publish = (
+            final_review.get("images_base64")
+            or image_review.get("images_base64")
+            or image_gen.get("images_base64")
+            or []
+        )
+        _dlog(f"[{workflow_id}] publish_node: fallback to checkpoint base64, "
+              f"count={len(images_for_publish)}")
+
     harness_input = {
         "title": (
             final_review.get("title")
@@ -34,13 +59,7 @@ async def publish_node(state: WorkflowState) -> dict:
             or copywrite.get("content")
             or ""
         ),
-        # 候选模式下 image_gen.images_base64 为空，完整套装在 image_review.images_base64
-        "images_base64": (
-            final_review.get("images_base64")
-            or image_review.get("images_base64")
-            or image_gen.get("images_base64")
-            or []
-        ),
+        "images_base64": images_for_publish,
         "account_id": state.get("account_id", ""),
     }
 

@@ -33,6 +33,7 @@ async def image_review_node(state: WorkflowState) -> dict:
     # 读取 image_gen 输出（blueprint 模式下已含 images_base64）
     image_gen_output = state.get("node_outputs", {}).get("image_gen", {})
     images_base64 = image_gen_output.get("images_base64", [])
+    image_urls = image_gen_output.get("image_urls", [])
     image_details = image_gen_output.get("image_details", [])
     image_prompts = image_gen_output.get("image_prompts", [])
     style = image_gen_output.get("style", "")
@@ -65,6 +66,7 @@ async def image_review_node(state: WorkflowState) -> dict:
         "is_blueprint_mode": image_gen_output.get("is_blueprint_mode", False),
         "blueprint": image_gen_output.get("blueprint"),
         "images_base64": images_base64,  # 透传渲染好的图片，供后续 publish 节点使用
+        "image_urls": image_urls,        # 本地文件 URL 列表，供前端展示
         "plan_context": plan_context,     # 规划上下文：模板、强调色、页数、页类型
         "card_draft_summary": card_draft_summary,  # 规划对比：原始 vs 最终、是否改过模板
         "validation": validation,         # 校验结果：图片数量是否匹配

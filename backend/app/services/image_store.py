@@ -34,6 +34,7 @@ _BASE_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
 _TOPIC_COVERS_DIR = _BASE_DIR / "topic_covers"
 _TOPIC_IMAGES_DIR = _BASE_DIR / "topic_images"
 _AVATARS_DIR = _BASE_DIR / "avatars"
+_WORKFLOW_IMAGES_DIR = _BASE_DIR / "workflow_images"
 
 _DIRS_INITIALIZED = False
 
@@ -42,7 +43,7 @@ def _ensure_dirs() -> None:
     global _DIRS_INITIALIZED
     if _DIRS_INITIALIZED:
         return
-    for d in (_TOPIC_COVERS_DIR, _TOPIC_IMAGES_DIR, _AVATARS_DIR):
+    for d in (_TOPIC_COVERS_DIR, _TOPIC_IMAGES_DIR, _AVATARS_DIR, _WORKFLOW_IMAGES_DIR):
         d.mkdir(parents=True, exist_ok=True)
     _DIRS_INITIALIZED = True
 
@@ -229,3 +230,75 @@ def cleanup_expired_images(days: int = 30) -> int:
                     f.unlink(missing_ok=True)
                     count += 1
     return count
+
+
+def save_workflow_images(
+    workflow_id: str,
+    images_base64: list[str],
+) -> list[str]:
+    """将工作流图片 base64 列表保存为文件，返回本地 URL 列表。
+
+    每张图保存为 uploads/workflow_images/{workflow_id}_{idx}.{ext}。
+    已存在的文件会被覆盖（同 workflow_id + 同 idx）。
+    """
+    import base64 as _b64
+    import secrets as _secrets
+
+    _ensure_dirs()
+    wf_dir = _WORKFLOW_IMAGES_DIR / workflow_id
+    wf_dir.mkdir(parents=True, exist_ok=True)
+
+    urls: list[str] = []
+    for i, b64 in enumerate(images_base64):
+        try:
+            raw = b64
+            if "," in b64 and b64.startswith("data:"):
+                raw = b64.split(",", 1)[1]
+            img_bytes = _b64.b64decode(raw)
+            ext = ".png"
+            if img_bytes[:3] == b"\xff\xd8\xff":
+                ext = ".jpg"
+            elif img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP":
+                ext = ".webp"
+            filename = f"{i}{ext}"
+            filepath = wf_dir / filename
+            filepath.write_bytes(img_bytes)
+            urls.append(f"/uploads/workflow_images/{workflow_id}/{filename}")
+        except Exception as e:
+            logger.warning(f"save_workflow_images: decode image {i} failed: {e}")
+            urls.append("")
+    return urls
+
+
+def read_workflow_image_as_base64(url: str) -> str | None:
+    """从本地 URL 读取图片文件，返回 base64 编码字符串（不含 data: 前缀）。
+
+    用于发布时按需将文件读回 base64 传给 MCP 插件。
+    """
+    import base64 as _b64
+
+    if not url or not url.startswith("/uploads/"):
+        return None
+    rel_path = url[len("/uploads/"):]
+    filepath = _BASE_DIR / rel_path
+    if not filepath.exists():
+        return None
+    try:
+        data = filepath.read_bytes()
+        return _b64.b64encode(data).decode("ascii")
+    except Exception as e:
+        logger.warning(f"read_workflow_image_as_base64: read failed: {e}")
+        return None
+
+
+def read_workflow_images_as_base64(urls: list[str]) -> list[str]:
+    """批量读取工作流图片为 base64 列表（用于发布）。
+
+    跳过读取失败的图片。
+    """
+    result: list[str] = []
+    for url in urls:
+        b64 = read_workflow_image_as_base64(url)
+        if b64:
+            result.append(b64)
+    return result

@@ -102,7 +102,7 @@ class WorkflowService:
                 if dynamic_graph is not None:
                     return dynamic_graph, graph_definition
 
-        graph = build_workflow_graph(checkpointer=None)
+        graph = build_workflow_graph(checkpointer=get_global_checkpointer())
         return graph, graph_definition
 
     async def _check_concurrency_limit(self) -> None:
@@ -434,12 +434,11 @@ class WorkflowService:
         # 构建 graph（动态 or 硬编码）
         if graph_definition and graph_definition.get("nodes"):
             from app.agents.graph import build_dynamic_workflow_graph
-            graph = build_dynamic_workflow_graph(graph_definition, checkpointer=None)
+            graph = build_dynamic_workflow_graph(graph_definition, checkpointer=get_global_checkpointer())
             if graph is None:
                 logger.warning(f"[{workflow_id}] dynamic graph build failed, falling back to default")
-                graph = build_workflow_graph(checkpointer=None)
+                graph = build_workflow_graph(checkpointer=get_global_checkpointer())
             
-            # 动态节点类型列表
             dynamic_node_types = [n.get("type", "search") for n in graph_definition.get("nodes", [])]
             state = initial_state(
                 workflow_id, user_id, account_id, topic, search_keyword,
@@ -448,7 +447,7 @@ class WorkflowService:
                 node_types=dynamic_node_types,
             )
         else:
-            graph = build_workflow_graph(checkpointer=None)
+            graph = build_workflow_graph(checkpointer=get_global_checkpointer())
             state = initial_state(
                 workflow_id, user_id, account_id, topic, search_keyword,
                 creative_brief, model_settings,
@@ -869,6 +868,32 @@ class WorkflowService:
             )
             if result.rowcount > 0:
                 await self.db.commit()
+            else:
+                try:
+                    try:
+                        nt = NodeType(node_id)
+                    except ValueError:
+                        nt = NodeType.SEARCH
+                    new_node = WorkflowNode(
+                        workflow_id=workflow_id,
+                        node_type=nt,
+                        node_key=node_id,
+                        node_status=NodeStatus.PENDING,
+                    )
+                    self.db.add(new_node)
+                    await self.db.commit()
+                    result2 = await self.db.execute(
+                        sa_update(WorkflowNode)
+                        .where(
+                            WorkflowNode.workflow_id == workflow_id,
+                            WorkflowNode.node_key == node_id,
+                        )
+                        .values(**values)
+                    )
+                    if result2.rowcount > 0:
+                        await self.db.commit()
+                except Exception as insert_err:
+                    logger.warning(f"[{workflow_id}] _persist_node_output insert fallback failed for {node_id}: {insert_err}")
         except Exception as e:
             logger.warning(f"[{workflow_id}] _persist_node_output failed for {node_id}: {e}")
 
@@ -1237,6 +1262,87 @@ class WorkflowService:
 
         return {"success": True, "message": "Workflow resumed"}
 
+    async def _rebuild_image_gen_checkpoint(
+        self,
+        workflow: Workflow,
+        graph: Any,
+        config: dict,
+    ) -> bool:
+        """Restore a lost image_gen interrupt checkpoint from the DB backup.
+
+        MemorySaver loses LangGraph checkpoints on restart. WorkflowNode rows
+        still contain every node output except base64 images, so when a paused
+        workflow is reopened and the image editor injects images, we can
+        reconstruct the checkpoint at image_plan and resume from image_gen.
+        """
+        if workflow.definition_id:
+            return False
+
+        try:
+            rows = await self.db.scalars(
+                select(WorkflowNode).where(WorkflowNode.workflow_id == workflow.id)
+            )
+            node_rows = {row.node_key: row for row in rows}
+
+            image_plan = node_rows.get("image_plan")
+            image_gen = node_rows.get("image_gen")
+            if not image_plan or image_plan.node_status != NodeStatus.COMPLETED:
+                return False
+            if image_gen and image_gen.node_status in (NodeStatus.COMPLETED, NodeStatus.PASSED):
+                return False
+
+            standard_nodes = [
+                "search", "analyze", "copywrite", "image_plan", "image_gen",
+                "image_review", "audit", "final_review", "publish",
+            ]
+            node_statuses: dict[str, str] = {}
+            node_outputs: dict[str, dict] = {}
+            for node_id in standard_nodes:
+                row = node_rows.get(node_id)
+                if row:
+                    node_statuses[node_id] = row.node_status.value
+                    if row.output_data and isinstance(row.output_data, dict):
+                        node_outputs[node_id] = dict(row.output_data)
+                else:
+                    node_statuses[node_id] = NodeStatus.PENDING.value
+
+            # The lost checkpoint is being rebuilt at the image_gen interrupt.
+            node_statuses["image_gen"] = NodeStatus.PENDING.value
+
+            state = {
+                "workflow_id": workflow.id,
+                "user_id": workflow.user_id,
+                "account_id": workflow.account_id or "",
+                "topic": workflow.topic,
+                "search_keyword": workflow.topic,
+                "creative_brief": "",
+                "current_node": "image_gen",
+                "node_statuses": node_statuses,
+                "node_outputs": node_outputs,
+                "node_errors": {},
+                "recovery_attempts": {},
+                "pending_reviews": [],
+                "pending_suggestions": [],
+                "suspended_until": None,
+                "model_settings": {},
+                "reference": {},
+                "user_memory": {},
+                "image_assets": [],
+                "asset_mode": bool(node_outputs.get("image_plan", {}).get("is_asset_mode")),
+                "platform": "xiaohongshu",
+                "format_name": "",
+            }
+
+            await graph.aupdate_state(config, state, as_node="image_plan")
+            logger.info(
+                f"[{workflow.id}] rebuilt lost image_gen checkpoint from DB: "
+                f"{len(node_outputs)} outputs restored"
+            )
+            return True
+        except Exception as e:
+            logger.exception(f"[{workflow.id}] rebuild image_gen checkpoint failed: {e}")
+            return False
+
     async def inject_card_images(
         self,
         workflow_id: str,
@@ -1277,6 +1383,8 @@ class WorkflowService:
             "metadata": {"workflow_id": workflow_id},
         }
 
+        rebuilt_from_db = False
+
         # 验证当前处于 interrupt 状态，确定是否允许注入
         # - next 包含 image_gen → 正常首次注入
         # - next 包含 image_review / final_review / publish → 工作流已过 image_gen，允许重新注入
@@ -1285,12 +1393,24 @@ class WorkflowService:
             graph_state = await graph.aget_state(config)
             next_nodes = getattr(graph_state, "next", None) or ()
             if not next_nodes:
-                return {
-                    "success": False,
-                    "message": f"Workflow not in interrupt state (next={next_nodes})"
-                }
+                if await self._rebuild_image_gen_checkpoint(workflow, graph, config):
+                    rebuilt_from_db = True
+                    graph_state = await graph.aget_state(config)
+                    next_nodes = getattr(graph_state, "next", None) or ()
+                    if not next_nodes:
+                        return {
+                            "success": False,
+                            "message": f"Workflow not in interrupt state after rebuild (next={next_nodes})"
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"Workflow not in interrupt state (next={next_nodes})"
+                    }
             _RE_INJECT_NODES = {"image_review", "final_review", "publish"}
-            is_reinject = "image_gen" not in next_nodes and bool(set(next_nodes) & _RE_INJECT_NODES)
+            is_reinject = rebuilt_from_db or (
+                "image_gen" not in next_nodes and bool(set(next_nodes) & _RE_INJECT_NODES)
+            )
             if "image_gen" not in next_nodes and not is_reinject:
                 return {
                     "success": False,
@@ -1335,10 +1455,21 @@ class WorkflowService:
 
         # 把注入的图片写入 state
         try:
+            from app.services.image_store import save_workflow_images
+
+            image_urls = save_workflow_images(workflow_id, images_base64)
+            logger.info(
+                f"[{workflow_id}] inject_card_images: saved {len(image_urls)} images to files"
+            )
+
             update_payload = {
+                "node_statuses": {
+                    "image_gen": NodeStatus.COMPLETED.value,
+                },
                 "node_outputs": {
                     "image_gen": {
                         "images_base64": images_base64,
+                        "image_urls": image_urls,
                         "image_count": len(images_base64),
                         "image_details": image_details or [],
                         "style": style or "卡片编辑器",
@@ -1346,20 +1477,13 @@ class WorkflowService:
                     }
                 },
             }
-            if is_reinject:
-                # re-inject: 用 as_node="image_gen" 声明这是 image_gen 的输出
-                # LangGraph 会认为 image_gen 刚完成，resume 后从 image_review 重新开始
-                await graph.aupdate_state(config, update_payload, as_node="image_gen")
-                logger.info(
-                    f"[{workflow_id}] inject_card_images re-inject update_state OK "
-                    f"(as_node=image_gen): {len(images_base64)} images"
-                )
-            else:
-                await graph.aupdate_state(config, update_payload)
-                logger.info(
-                    f"[{workflow_id}] inject_card_images update_state OK: "
-                    f"{len(images_base64)} images"
-                )
+            # Explicitly attribute this update to image_gen so LangGraph does not
+            # throw InvalidUpdateError on reconstructed or retried checkpoints.
+            await graph.aupdate_state(config, update_payload, as_node="image_gen")
+            logger.info(
+                f"[{workflow_id}] inject_card_images update_state OK "
+                f"(as_node=image_gen): {len(images_base64)} images"
+            )
         except Exception as e:
             logger.exception(f"[{workflow_id}] inject_card_images update_state failed: {e}")
             return {"success": False, "message": f"Update state failed: {e}"}
@@ -1367,29 +1491,20 @@ class WorkflowService:
         # 异步 resume
         _dlog(f"[{workflow_id}] inject_card_images: about to resume, is_reinject={is_reinject}")
         await self._unpause_workflow(workflow_id)
-        if is_reinject:
-            # re-inject: 推送 image_gen completed + image_review awaiting_review
-            await sse_bus.publish(
-                workflow_id,
-                "node_status_changed",
-                {"node_id": "image_gen", "status": NodeStatus.COMPLETED.value},
-            )
-            await sse_bus.publish(
-                workflow_id,
-                "node_status_changed",
-                {"node_id": "image_review", "status": NodeStatus.AWAITING_REVIEW.value},
-            )
-            _dlog(f"[{workflow_id}] inject_card_images: creating _resume_graph_safely task (re-inject)")
-            self._create_background_task(
-                self._resume_graph_safely(workflow_id, graph, config)
-            )
-        else:
-            # 首次注入: resume 后 image_gen_node 会检测到注入的图片直接透传
-            _dlog(f"[{workflow_id}] inject_card_images: creating _resume_graph_safely task (first inject)")
-            self._create_background_task(
-                self._resume_graph_safely(workflow_id, graph, config)
-            )
-
+        # update_state already marked image_gen complete; the next stop is image_review.
+        await sse_bus.publish(
+            workflow_id,
+            "node_status_changed",
+            {"node_id": "image_gen", "status": NodeStatus.COMPLETED.value},
+        )
+        await sse_bus.publish(
+            workflow_id,
+            "node_status_changed",
+            {"node_id": "image_review", "status": NodeStatus.AWAITING_REVIEW.value},
+        )
+        self._create_background_task(
+            self._resume_graph_safely(workflow_id, graph, config)
+        )
         return {
             "success": True,
             "message": f"Injected {len(images_base64)} images, workflow resumed",

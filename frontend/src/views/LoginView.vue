@@ -247,7 +247,7 @@ function markFirstLoginAndPush() {
     sessionStorage.setItem(SK_FIRST_LOGIN, '1')
     localStorage.setItem(SK_HAS_LOGGED_IN, '1')
   }
-  const redirect = (route.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workbench'
+  const redirect = (route.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workflow'
   sessionStorage.removeItem('redirect_after_login')
   router.push(redirect)
 }

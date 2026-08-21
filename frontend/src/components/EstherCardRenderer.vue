@@ -4,12 +4,19 @@ import type { TemplateTheme, DecorationConfig } from '../card-editor/templates'
 import { createDefaultDecoration } from '../card-editor/templates'
 import type { EstherCardPage } from '../card-editor/esther-templates'
 import { ESTHER_BRAND } from '../card-editor/esther-templates'
+import { useAuthStore } from '../stores/auth'
 
 const props = defineProps<{
   page: EstherCardPage
   theme: TemplateTheme
   decoration?: DecorationConfig
 }>()
+
+const authStore = useAuthStore()
+
+const resolvedAvatarUrl = computed(() => {
+  return props.page.avatarUrl || authStore.user?.avatar_url || ''
+})
 
 const deco = computed(() => props.decoration || createDefaultDecoration())
 
@@ -76,7 +83,7 @@ const stepColors = [ESTHER_BRAND.blue, ESTHER_BRAND.yellow, ESTHER_BRAND.red]
 </script>
 
 <template>
-  <div class="card-canvas" :style="cssVars">
+  <div class="card-canvas" :style="{ ...cssVars, backgroundImage: page.backgroundImage ? `url(${page.backgroundImage})` : 'none' }" :class="{ 'has-bg-image': !!page.backgroundImage }">
     <!-- 装饰层 -->
     <div v-if="deco.type !== 'none'" class="card-decoration" :style="{ opacity: deco.opacity }">
       <template v-if="deco.type === 'gradient_orbs'">
@@ -327,6 +334,63 @@ const stepColors = [ESTHER_BRAND.blue, ESTHER_BRAND.yellow, ESTHER_BRAND.red]
       <div class="bigquote-deco-bottom"></div>
       <div class="bigquote-grid-texture"></div>
     </div>
+
+    <div v-else-if="page.type === 'image_page'" class="card-layout p-image-page">
+      <img v-if="page.imageUrl" :src="page.imageUrl" class="p-image-full" :style="{ filter: page.imageFilter || 'none' }" alt="" />
+      <div v-else class="p-image-placeholder"><span>暂无图片</span></div>
+      <div v-if="page.title || page.content" class="p-image-overlay">
+        <h2 v-if="page.title" class="p-image-title">{{ page.title }}</h2>
+        <p v-if="page.content" class="p-image-desc">{{ page.content }}</p>
+      </div>
+      <div v-if="page.footer" class="p-image-footer">{{ page.footer }}</div>
+    </div>
+
+    <!-- 问答页 (Esther) -->
+    <div v-else-if="page.type === 'qa'" class="card-layout p-qa">
+      <h2 v-if="page.title" class="p-qa-title">{{ page.title }}</h2>
+      <div class="p-qa-body">
+        <div v-for="(pair, i) in page.qaPairs" :key="i" class="p-qa-item">
+          <div class="p-qa-q"><span class="p-qa-q-badge">Q</span>{{ pair.q }}</div>
+          <div class="p-qa-a"><span class="p-qa-a-badge">A</span>{{ pair.a }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 时间轴页 (Esther) -->
+    <div v-else-if="page.type === 'timeline'" class="card-layout p-timeline">
+      <h2 v-if="page.title" class="p-timeline-title">{{ page.title }}</h2>
+      <div class="p-timeline-body">
+        <div class="p-timeline-line"></div>
+        <div v-for="(item, i) in page.timelineItems" :key="i" class="p-timeline-item">
+          <div class="p-timeline-dot"></div>
+          <div class="p-timeline-date">{{ item.date }}</div>
+          <div class="p-timeline-event">{{ item.event }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 数据卡片页 (Esther) -->
+    <div v-else-if="page.type === 'stat_card'" class="card-layout p-stat">
+      <h2 v-if="page.title" class="p-stat-title">{{ page.title }}</h2>
+      <div class="p-stat-body">
+        <div v-for="(item, i) in page.statItems" :key="i" class="p-stat-item">
+          <div class="p-stat-value">{{ item.value }}<span v-if="item.unit" class="p-stat-unit">{{ item.unit }}</span></div>
+          <div class="p-stat-label">{{ item.label }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 人物介绍页 (Esther) -->
+    <div v-else-if="page.type === 'profile'" class="card-layout p-profile">
+      <div class="p-profile-avatar-area">
+        <img v-if="resolvedAvatarUrl" :src="resolvedAvatarUrl" class="p-profile-avatar" alt="" />
+        <div v-else class="p-profile-avatar-placeholder">👤</div>
+      </div>
+      <h2 class="p-profile-name">{{ page.name || '作者名称' }}</h2>
+      <p v-if="page.role" class="p-profile-role">{{ page.role }}</p>
+      <p v-if="page.bio" class="p-profile-bio">{{ page.bio }}</p>
+      <div v-if="page.footer" class="p-profile-footer">{{ page.footer }}</div>
+    </div>
   </div>
 </template>
 
@@ -343,6 +407,15 @@ const stepColors = [ESTHER_BRAND.blue, ESTHER_BRAND.yellow, ESTHER_BRAND.red]
   overflow: hidden;
   box-sizing: border-box;
   zoom: var(--esther-font-scale, 1);
+}
+
+.card-canvas.has-bg-image {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.card-canvas.has-bg-image .card-layout {
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .card-decoration {
@@ -1532,5 +1605,295 @@ const stepColors = [ESTHER_BRAND.blue, ESTHER_BRAND.yellow, ESTHER_BRAND.red]
   background-size: 40px 40px;
   z-index: 0;
   pointer-events: none;
+}
+
+/* ===== 图片页 ===== */
+.p-image-page {
+  padding: 0;
+  position: relative;
+}
+.p-image-full {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.p-image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-surface);
+  color: var(--card-subtext);
+  font-size: 28px;
+}
+.p-image-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 48px 64px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.55));
+  z-index: 3;
+}
+.p-image-title {
+  font-size: 42px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 8px;
+  word-break: break-word;
+}
+.p-image-desc {
+  font-size: 28px;
+  line-height: 1.5;
+  color: rgba(255,255,255,0.85);
+  margin: 0;
+  word-break: break-word;
+}
+.p-image-footer {
+  position: absolute;
+  bottom: 16px;
+  right: 24px;
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  z-index: 3;
+}
+
+/* ===== 问答页 (Esther) ===== */
+.p-qa {
+  padding: 72px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.p-qa-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--card-text);
+}
+.p-qa-body {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  flex: 1;
+}
+.p-qa-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.p-qa-q {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--card-text);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+}
+.p-qa-q-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--card-accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.p-qa-a {
+  font-size: 18px;
+  color: var(--card-subtext);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.6;
+  padding-left: 2px;
+}
+.p-qa-a-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--card-accent-soft);
+  color: var(--card-accent);
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ===== 时间轴页 (Esther) ===== */
+.p-timeline {
+  padding: 72px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.p-timeline-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--card-text);
+}
+.p-timeline-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  padding-left: 28px;
+  flex: 1;
+}
+.p-timeline-line {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--card-accent-soft);
+  border-radius: 2px;
+}
+.p-timeline-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.p-timeline-dot {
+  position: absolute;
+  left: -23px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--card-accent);
+  border: 3px solid var(--card-bg);
+  box-sizing: border-box;
+  z-index: 1;
+}
+.p-timeline-date {
+  font-size: 16px;
+  color: var(--card-accent);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.p-timeline-event {
+  font-size: 20px;
+  color: var(--card-text);
+  line-height: 1.5;
+}
+
+/* ===== 数据卡片页 (Esther) ===== */
+.p-stat {
+  padding: 72px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+.p-stat-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--card-text);
+}
+.p-stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  flex: 1;
+  justify-content: center;
+}
+.p-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 36px;
+  border-bottom: 2px solid var(--card-accent-soft);
+}
+.p-stat-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.p-stat-value {
+  font-family: 'Fraunces', 'Noto Serif SC', serif;
+  font-size: 56px;
+  font-weight: 800;
+  color: var(--card-accent);
+  line-height: 1.1;
+}
+.p-stat-unit {
+  font-size: 22px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.p-stat-label {
+  font-size: 18px;
+  color: var(--card-subtext);
+  font-weight: 500;
+}
+
+/* ===== 人物介绍页 (Esther) ===== */
+.p-profile {
+  padding: 72px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+}
+.p-profile-avatar-area {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid var(--card-accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.p-profile-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.p-profile-avatar-placeholder {
+  font-size: 72px;
+  line-height: 1;
+}
+.p-profile-name {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--card-text);
+  margin: 0;
+}
+.p-profile-role {
+  font-size: 18px;
+  color: var(--card-accent);
+  font-weight: 600;
+  margin: 0;
+}
+.p-profile-bio {
+  font-size: 18px;
+  color: var(--card-subtext);
+  line-height: 1.7;
+  max-width: 680px;
+  margin: 0;
+}
+.p-profile-footer {
+  font-size: 14px;
+  color: var(--card-subtext);
+  margin-top: auto;
+  padding-top: 16px;
 }
 </style>

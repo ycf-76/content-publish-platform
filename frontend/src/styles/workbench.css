@@ -46,4 +46,7 @@
 /* 14. lightbox + 全局尾部 */
 @import './workbench/_lightbox.css';
 
-/* HMR BUMP 1786371668203 — force Vite to re-parse @import chain */
+/* 15. Workflow Showcase 展示页 */
+@import './workbench/_showcase.css';
+
+/* HMR BUMP 1786371668204 — force Vite to re-parse @import chain */

@@ -32,15 +32,56 @@ async def image_gen_node(state: WorkflowState) -> dict:
 
     # 读取 image_plan 的规划（建立显式数据依赖）
     plan_output = state.get("node_outputs", {}).get("image_plan", {}) or {}
-    card_draft = plan_output.get("card_draft", {})
-    original_template = card_draft.get("suggested_template", "")
-    original_accent = card_draft.get("custom_accent", "")
-    original_page_count = len(card_draft.get("pages", []))
+    content_plan = plan_output.get("content_plan", {})
+    original_template = content_plan.get("suggested_template", "")
+    original_accent = content_plan.get("custom_accent", "")
+    original_page_count = len(content_plan.get("pages", []))
 
     # 读取 inject 的图片 + plan_context
     image_gen_output = state.get("node_outputs", {}).get("image_gen", {}) or {}
     injected_images = image_gen_output.get("images_base64", [])
+    image_urls = image_gen_output.get("image_urls", [])
     plan_context = image_gen_output.get("plan_context", {}) or {}
+    is_asset_mode = bool(
+        plan_output.get("is_asset_mode") or plan_context.get("is_asset_mode")
+    )
+
+    if injected_images and is_asset_mode:
+        expected_count = len(plan_output.get("format_plan", {}).get("pages", []))
+        actual_count = len(injected_images)
+        output = {
+            "images_base64": injected_images,
+            "image_urls": image_urls,
+            "image_count": actual_count,
+            "image_details": image_gen_output.get("image_details", []),
+            "image_prompts": [],
+            "style": image_gen_output.get("style", "本地图片"),
+            "is_asset_mode": True,
+            "is_candidate_mode": False,
+            "is_blueprint_mode": False,
+            "is_card_editor_mode": False,
+            "plan_context": plan_context,
+            "validation": {
+                "count_match": expected_count == 0 or actual_count == expected_count,
+                "expected_count": expected_count,
+                "actual_count": actual_count,
+            },
+            "_model_used": "asset_inject",
+            "_duration_ms": int((time.time() - start_time) * 1000),
+            "_token_usage": {"prompt": 0, "completion": 0, "total": 0},
+            "_source": "asset_inject",
+        }
+        await emit_node_event(workflow_id, node_id, "progress_update", {
+            "progress": 100,
+            "current_node": node_id,
+            "message": f"本地图片注入完成（{actual_count} 张）",
+        })
+        await emit_node_event(workflow_id, node_id, "node_completed", output)
+        return {
+            "current_node": node_id,
+            "node_statuses": {node_id: NodeStatus.COMPLETED.value},
+            "node_outputs": {node_id: output},
+        }
 
     if injected_images:
         # 校验：图片数量是否和规划一致
@@ -60,6 +101,7 @@ async def image_gen_node(state: WorkflowState) -> dict:
 
         output = {
             "images_base64": injected_images,
+            "image_urls": image_urls,
             "image_count": actual_count,
             "image_details": image_gen_output.get("image_details", []),
             "image_prompts": [],

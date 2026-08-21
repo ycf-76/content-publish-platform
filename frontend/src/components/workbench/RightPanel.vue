@@ -32,6 +32,36 @@
         </button>
       </div>
 
+      <!-- 技能模板快选 -->
+      <div class="mint-template-bar" v-if="savedSkills.length > 0">
+        <div class="mint-template-bar-label">
+          <i data-lucide="zap" style="width:12px;height:12px;"></i>
+          <span>技能模板</span>
+        </div>
+        <div class="mint-template-chips">
+          <button
+            v-for="t in savedSkills"
+            :key="t.id"
+            class="mint-template-chip"
+            :class="{ 'mint-template-chip-active': activeTemplateId === t.id }"
+            @click="applyTemplate(t)"
+            :title="t.description || t.name"
+          >
+            <span class="mint-template-chip-icon">{{ t.icon }}</span>
+            <span class="mint-template-chip-name">{{ t.name }}</span>
+          </button>
+          <button
+            v-if="activeTemplateId"
+            class="mint-template-chip mint-template-chip-clear"
+            @click="clearTemplate"
+            title="清除模板，恢复手动配置"
+          >
+            <i data-lucide="x" style="width:11px;height:11px;"></i>
+            <span>清除</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Section 1: 模型选择 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
@@ -157,9 +187,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { createIcons, icons } from 'lucide'
 import { workflowApi, type SkillMeta } from '@/api/workflow'
+import { useSkillTemplates, type SavedSkill } from '@/composables/useSkillTemplates'
 import MintSelect from './MintSelect.vue'
+
+const { savedSkills, expandToModelSettings } = useSkillTemplates()
+const activeTemplateId = ref<string | null>(null)
 
 const props = defineProps<{
   isSidebarCollapsed: boolean
@@ -375,8 +410,32 @@ async function refreshSkills() {
   await loadSkills()
 }
 
-function toggleSwitchClass(e: Event) {
-  ;(e.currentTarget as HTMLElement).classList.toggle('active')
+function applyTemplate(t: SavedSkill) {
+  if (activeTemplateId.value === t.id) {
+    clearTemplate()
+    return
+  }
+  activeTemplateId.value = t.id
+  const expanded = expandToModelSettings(t)
+
+  if (expanded.copywrite_skill) selectedCopywriteSkill.value = expanded.copywrite_skill
+  if (expanded.image_gen_skill) selectedImageGenSkill.value = expanded.image_gen_skill
+  if (expanded.analyze_skill) selectedAnalyzeSkill.value = expanded.analyze_skill
+  if (expanded.audit_skill) selectedAuditSkill.value = expanded.audit_skill
+  if (expanded.temperature !== undefined) temperature.value = Math.round((expanded.temperature as number) * 100)
+  if (expanded.content_length !== undefined) contentLength.value = expanded.content_length as number
+  if (expanded.auto_emoji !== undefined) autoEmoji.value = expanded.auto_emoji as boolean
+  if (expanded.auto_tags !== undefined) autoTags.value = expanded.auto_tags as boolean
+  if (expanded.auto_publish !== undefined) autoPublish.value = expanded.auto_publish as boolean
+  if (expanded.text_model) selectedTextModel.value = expanded.text_model as string
+  if (expanded.image_model) selectedImageModel.value = expanded.image_model as string
+  if (expanded.search_limit) selectedSearchLimit.value = expanded.search_limit as number
+
+  nextTick(() => { try { createIcons({ icons }) } catch {} })
+}
+
+function clearTemplate() {
+  activeTemplateId.value = null
 }
 
 onMounted(() => {
@@ -400,6 +459,83 @@ async function loadWeeklyStats() {
 </script>
 
 <style scoped>
+/* ---- 技能模板快选条 ---- */
+.mint-template-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #FFF7ED 0%, #FEF2F2 100%);
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.mint-template-bar-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #F97316;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mint-template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mint-template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 9999px;
+  background: #FFFFFF;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.mint-template-chip:hover {
+  border-color: #F97316;
+  background: #FFF7ED;
+}
+
+.mint-template-chip-active {
+  border-color: #F97316;
+  background: linear-gradient(135deg, #FFF7ED, #FFEDD5);
+  color: #C2410C;
+  font-weight: 500;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.12);
+}
+
+.mint-template-chip-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.mint-template-chip-name {
+  line-height: 1;
+}
+
+.mint-template-chip-clear {
+  padding: 5px 10px;
+  border-color: #D1D5DB;
+  color: #6B7280;
+  font-size: 11px;
+}
+
+.mint-template-chip-clear:hover {
+  border-color: #EF4444;
+  background: #FEF2F2;
+  color: #EF4444;
+}
+
 .mint-config-card {
   position: relative;
   border-radius: 12px;

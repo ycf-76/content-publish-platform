@@ -42,21 +42,21 @@
 
       <div v-else-if="nodeStatus === 'completed' && result" class="wf-plan-content">
         <div class="wf-plan-overview">
-          <div class="wf-plan-overview-item" v-if="result.card_draft">
+          <div class="wf-plan-overview-item" v-if="result.content_plan">
             <i data-lucide="palette" style="width:14px;height:14px;"></i>
             <span class="wf-plan-overview-label">模板</span>
-            <span class="wf-plan-overview-value">{{ templateLabel(result.card_draft.suggested_template) }}</span>
+            <span class="wf-plan-overview-value">{{ templateLabel(result.content_plan.suggested_template) }}</span>
           </div>
-          <div class="wf-plan-overview-item" v-if="result.card_draft?.custom_accent">
+          <div class="wf-plan-overview-item" v-if="result.content_plan?.custom_accent">
             <i data-lucide="droplets" style="width:14px;height:14px;"></i>
             <span class="wf-plan-overview-label">主题色</span>
-            <span class="wf-plan-accent-dot" :style="{ background: result.card_draft.custom_accent }"></span>
-            <span class="wf-plan-overview-value">{{ result.card_draft.custom_accent }}</span>
+            <span class="wf-plan-accent-dot" :style="{ background: result.content_plan.custom_accent }"></span>
+            <span class="wf-plan-overview-value">{{ result.content_plan.custom_accent }}</span>
           </div>
-          <div class="wf-plan-overview-item" v-if="result.card_draft?.suggested_decoration?.type">
+          <div class="wf-plan-overview-item" v-if="result.content_plan?.suggested_decoration?.type">
             <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
             <span class="wf-plan-overview-label">装饰</span>
-            <span class="wf-plan-overview-value">{{ decorationLabel(result.card_draft.suggested_decoration.type) }}</span>
+            <span class="wf-plan-overview-value">{{ decorationLabel(result.content_plan.suggested_decoration.type) }}</span>
           </div>
           <div class="wf-plan-overview-item">
             <i data-lucide="layers" style="width:14px;height:14px;"></i>
@@ -110,8 +110,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, nextTick } from 'vue'
+import { computed, watch, nextTick, onMounted } from 'vue'
 import { createIcons, icons } from 'lucide'
+import { useTemplateStore } from '@/stores/templates'
 
 const props = defineProps<{
   nodeStatus: string
@@ -119,6 +120,12 @@ const props = defineProps<{
   result: any
   errorMessage?: string
 }>()
+
+const templateStore = useTemplateStore()
+
+onMounted(() => {
+  void templateStore.ensureLoaded()
+})
 
 watch(() => props.nodeStatus, () => nextTick(() => createIcons({ icons })))
 watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
@@ -151,7 +158,7 @@ const statusBadgeStyle = computed(() => {
 })
 
 const pages = computed(() => {
-  return props.result?.card_draft?.pages || []
+  return props.result?.content_plan?.pages || []
 })
 
 const pageCount = computed(() => {
@@ -159,10 +166,16 @@ const pageCount = computed(() => {
 })
 
 function templateLabel(template: string): string {
+  const serverLabel = templateStore.labelFor(template)
+  if (serverLabel && serverLabel !== template) return serverLabel
+
   const map: Record<string, string> = {
     minimal_white: '极简白',
     warm_card: '暖色卡片',
     dark_tech: '暗色科技',
+    esther_brand: 'Esther 品牌',
+    esther_dark: 'Esther 墨韵',
+    esther_warm: 'Esther 暖阳',
   }
   return map[template] || template || '默认'
 }

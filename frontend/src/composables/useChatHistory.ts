@@ -44,6 +44,7 @@ export function useChatHistory() {
 
   function clearAll() {
     history.value = []
+    allExpanded.value = false
   }
 
   function toggleExpand() {

@@ -53,6 +53,11 @@ export const FULL_PAGE_TYPE_LABELS: Record<FullPageType, string> = {
   content: '正文',
   quote: '金句',
   list: '清单',
+  image_page: '图片页',
+  qa: '问答',
+  timeline: '时间轴',
+  stat_card: '数据卡片',
+  profile: '人物介绍',
   ...ESTHER_PAGE_TYPE_LABELS,
 }
 

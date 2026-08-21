@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.routers import account, auth, chat, chat_agent, chat_session, config, esther_factory, mcp_bridge, memory, plugins, proxy, recovery, review, rollback, search, skills, sse, topic_pool, workflow
+from app.api.routers import account, assets, auth, chat, chat_agent, chat_session, config, esther_factory, mcp_bridge, memory, plugins, proxy, recovery, review, rollback, search, skills, sse, templates, topic_pool, workflow
 from app.config import get_settings
 from app.db.session import engine, Base
 import app.db.models  # noqa: F401 — ensure all ORM models registered with Base.metadata
@@ -358,6 +358,8 @@ app.include_router(recovery.router)
 app.include_router(account.router)
 app.include_router(config.router)
 app.include_router(skills.router)
+app.include_router(templates.router)
+app.include_router(assets.router)
 app.include_router(mcp_bridge.router)
 app.include_router(proxy.router)
 app.include_router(topic_pool.router)

@@ -124,6 +124,12 @@ class WorkflowState(TypedDict, total=False):
     reference: dict
     # 用户级长期记忆（工作流启动时从 AgentMemory 加载）
     user_memory: dict
+    # Phase 4：用户本地图片资产与无模板图片模式
+    image_assets: list[dict]
+    asset_mode: bool
+    # Phase 5：目标平台与输出比例
+    platform: str
+    format_name: str
 
 
 def initial_state(
@@ -136,6 +142,10 @@ def initial_state(
     model_settings: dict | None = None,
     reference: dict | None = None,
     user_memory: dict | None = None,
+    image_assets: list[dict] | None = None,
+    asset_mode: bool = False,
+    platform: str = "xiaohongshu",
+    format_name: str = "",
     node_types: list[str] | None = None,
 ) -> WorkflowState:
     """Create initial workflow state.
@@ -170,6 +180,10 @@ def initial_state(
         model_settings=dict(model_settings or {}),
         reference=dict(reference or {}),
         user_memory=dict(user_memory or {}),
+        image_assets=list(image_assets or []),
+        asset_mode=asset_mode,
+        platform=platform,
+        format_name=format_name,
     )
 
 

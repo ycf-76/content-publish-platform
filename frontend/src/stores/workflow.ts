@@ -15,7 +15,7 @@ export interface EventLog {
 /** 全局通知（欠费/配置错误/限流等，需要用户感知） */
 export interface WorkflowNotification {
   id: string
-  type: 'arrearage' | 'config_error' | 'rate_limited' | 'workflow_error' | 'workflow_failed' | 'search_degraded'
+  type: 'arrearage' | 'config_error' | 'rate_limited' | 'workflow_error' | 'workflow_failed' | 'search_degraded' | 'workflow_info'
   message: string
   action_url?: string
   action_text?: string
@@ -829,6 +829,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       node_status_changed: 'info',
       review_required: 'warning',
       search_degraded: 'warning',
+      workflow_info: 'info',
       recovery_attempt: 'info',
       recovery_attempt_failed: 'warning',
       recovery_success: 'success',
@@ -1031,5 +1032,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     pushNotification,
     dismissNotification,
     clearNotifications,
+    handleWorkflowEvent,
   }
 })

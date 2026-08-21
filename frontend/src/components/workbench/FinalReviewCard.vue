@@ -310,10 +310,11 @@ const currentImageIndex = ref(0)
 const accountNickname = computed(() => accountStore.currentAccount?.xhs_nickname || '创作者')
 const accountAvatar = computed(() => accountStore.currentAccount?.xhs_avatar_url || '')
 
-function imageDataUrl(b64: string): string {
-  if (b64.startsWith('data:')) return b64
-  const prefix = b64.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
-  return prefix + b64
+function imageDataUrl(img: string): string {
+  if (img.startsWith('data:')) return img
+  if (img.startsWith('/uploads/') || img.startsWith('http://') || img.startsWith('https://')) return img
+  const prefix = img.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
+  return prefix + img
 }
 const reviewImages = ref<string[]>([])
 const reviewTitle = computed(() => props.finalReviewResult?.title || '')
@@ -459,13 +460,17 @@ async function fetchReviewImages() {
   if (!props.workflowId) return
   try {
     const imageGenNode = workflowStore.nodes.find(n => n.node_id === 'image_gen') as any
+    const sseImageUrls = imageGenNode?.image_urls || imageGenNode?.output?.image_urls
     const sseImages = imageGenNode?.images_base64 || imageGenNode?.output?.images_base64
-    if (sseImages && Array.isArray(sseImages) && sseImages.length > 0) {
+    if (sseImageUrls && Array.isArray(sseImageUrls) && sseImageUrls.length > 0) {
+      reviewImages.value = sseImageUrls
+    } else if (sseImages && Array.isArray(sseImages) && sseImages.length > 0) {
       reviewImages.value = sseImages
     } else {
       const resp: any = await workflowApi.getNodeImages(props.workflowId, 'image_gen')
+      const imageUrls = resp?.image_urls || resp?.data?.image_urls || []
       const images = resp?.images_base64 || resp?.data?.images_base64 || []
-      reviewImages.value = images
+      reviewImages.value = imageUrls.length > 0 ? imageUrls : images
     }
   } catch (e: any) {
     console.error('[FinalReviewCard] fetchReviewImages error:', e)
@@ -539,17 +544,18 @@ async function pushToWechat() {
     const title = fr.title || cw.title || ''
     const content = fr.content || cw.content || ''
     const tags = fr.tags || cw.tags || []
-    // 图片优先从 reviewImages ref 取（已加载的图片），再从 props 取
+    const imageUrls: string[] = reviewImages.value.length > 0
+      ? reviewImages.value.filter(img => img.startsWith('/uploads/') || img.startsWith('http'))
+      : (fr.image_urls || ig.image_urls || [])
     const imagesBase64: string[] = reviewImages.value.length > 0
-      ? reviewImages.value
+      ? reviewImages.value.filter(img => !img.startsWith('/uploads/') && !img.startsWith('http'))
       : (fr.images_base64 || ig.images_base64 || [])
 
-    if (!title && !content && imagesBase64.length === 0) {
+    if (!title && !content && imageUrls.length === 0 && imagesBase64.length === 0) {
       alert('没有可推送的内容（请先完成文案生成步骤）')
       return
     }
 
-    // 组装完整推送内容：标题 + 正文 + 标签
     let fullContent = content
     if (tags && tags.length > 0) {
       fullContent += '\n\n' + tags.map((t: string) => `#${t}`).join(' ')
@@ -562,6 +568,7 @@ async function pushToWechat() {
         to_user_id: lastIncoming.from_user_id,
         title,
         text: fullContent,
+        image_urls: imageUrls,
         images_base64: imagesBase64,
         context_token: lastIncoming.context_token || '',
       }),

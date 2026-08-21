@@ -96,7 +96,7 @@ async def init_global_checkpointer():
         os.makedirs(data_dir, exist_ok=True)
         db_path = os.path.join(data_dir, "langgraph_checkpoints.sqlite")
 
-        use_sqlite = os.environ.get("LANGGRAPH_USE_SQLITE") == "1"
+        use_sqlite = os.environ.get("LANGGRAPH_USE_SQLITE", "1") == "1"
 
         if use_sqlite and AsyncSqliteSaver is not None:
             conn = None

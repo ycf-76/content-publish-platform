@@ -168,9 +168,17 @@ export const workflowApi = {
    *  设置 60s 超时（图片数据可能较大）。
    */
   getNodeImages(workflowId: string, nodeId: string) {
-    return apiClient.get<{ node_id: string; images_base64: string[]; image_count: number }>(
+    return apiClient.get<{ node_id: string; image_urls: string[]; images_base64: string[]; image_count: number }>(
       `/workflows/${workflowId}/nodes/${nodeId}/images`,
       { timeout: 60000 },
+    )
+  },
+
+  /** 首页展示聚合 GET /api/workflows/showcase */
+  getShowcase(params?: { limit?: number }) {
+    return apiClient.get<{ items: any[]; total: number; completed_count: number }>(
+      '/workflows/showcase',
+      { params: params || {} },
     )
   },
 
@@ -217,6 +225,20 @@ export const workflowApi = {
       `/workflows/${workflowId}/reviews/${reviewId}`,
       payload,
     )
+  },
+
+  /** 保存图片工作区草稿 PUT /api/workflows/{id}/draft */
+  saveDraft(workflowId: string, draft: Record<string, any>) {
+    return apiClient.put<{ success: boolean; message: string }>(
+      `/workflows/${workflowId}/draft`,
+      { draft },
+    )
+  },
+
+  /** 获取图片工作区草稿 GET /api/workflows/{id}/draft */
+  async getDraft(workflowId: string): Promise<{ has_draft: boolean; draft: Record<string, any> | null }> {
+    const resp: any = await apiClient.get(`/workflows/${workflowId}/draft`)
+    return resp?.data ?? resp ?? { has_draft: false, draft: null }
   },
 
   /** 注入卡片图片 POST /api/workflows/{id}/inject-card-images

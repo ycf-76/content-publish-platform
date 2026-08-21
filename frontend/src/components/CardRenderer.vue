@@ -8,12 +8,19 @@
 import { computed } from 'vue'
 import type { CardPage, TemplateTheme, DecorationConfig } from '../card-editor/templates'
 import { createDefaultDecoration } from '../card-editor/templates'
+import { useAuthStore } from '../stores/auth'
 
 const props = defineProps<{
   page: CardPage
   theme: TemplateTheme
   decoration?: DecorationConfig
 }>()
+
+const authStore = useAuthStore()
+
+const resolvedAvatarUrl = computed(() => {
+  return props.page.avatarUrl || authStore.user?.avatar_url || ''
+})
 
 const deco = computed(() => props.decoration || createDefaultDecoration())
 
@@ -79,7 +86,7 @@ function wavePath(index: number): string {
 </script>
 
 <template>
-  <div class="card-canvas" :style="cssVars">
+  <div class="card-canvas" :style="{ ...cssVars, backgroundImage: page.backgroundImage ? `url(${page.backgroundImage})` : 'none' }" :class="{ 'has-bg-image': !!page.backgroundImage }">
     <!-- 装饰层：背景上方、文字下方 -->
     <div v-if="deco.type !== 'none'" class="card-decoration" :style="{ opacity: deco.opacity }">
 
@@ -306,6 +313,66 @@ function wavePath(index: number): string {
         <span v-if="page.ctaText" class="end-cta">{{ page.ctaText }}</span>
         <span class="end-footer">{{ page.footer || '@灵犀工坊' }}</span>
       </div>
+    </div>
+
+    <!-- 图片页：全屏图片 + 可选标题叠加 -->
+    <div v-else-if="page.type === 'image_page'" class="card-layout card-image-page">
+      <img v-if="page.imageUrl" :src="page.imageUrl" class="card-image-full" :style="{ filter: page.imageFilter || 'none' }" alt="" />
+      <div v-else class="card-image-placeholder">
+        <span>暂无图片</span>
+      </div>
+      <div v-if="page.title || page.content" class="card-image-overlay">
+        <h2 v-if="page.title" class="card-image-title">{{ page.title }}</h2>
+        <p v-if="page.content" class="card-image-desc">{{ page.content }}</p>
+      </div>
+      <div v-if="page.footer" class="card-image-footer">{{ page.footer }}</div>
+    </div>
+
+    <!-- 问答页 -->
+    <div v-else-if="page.type === 'qa'" class="card-layout card-qa">
+      <h2 v-if="page.title" class="qa-title">{{ page.title }}</h2>
+      <div class="qa-body">
+        <div v-for="(pair, i) in page.qaPairs" :key="i" class="qa-item">
+          <div class="qa-q"><span class="qa-q-badge">Q</span>{{ pair.q }}</div>
+          <div class="qa-a"><span class="qa-a-badge">A</span>{{ pair.a }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 时间轴页 -->
+    <div v-else-if="page.type === 'timeline'" class="card-layout card-timeline">
+      <h2 v-if="page.title" class="timeline-title">{{ page.title }}</h2>
+      <div class="timeline-body">
+        <div class="timeline-line"></div>
+        <div v-for="(item, i) in page.timelineItems" :key="i" class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-date">{{ item.date }}</div>
+          <div class="timeline-event">{{ item.event }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 数据卡片页 -->
+    <div v-else-if="page.type === 'stat_card'" class="card-layout card-stat">
+      <h2 v-if="page.title" class="stat-title">{{ page.title }}</h2>
+      <div class="stat-body">
+        <div v-for="(item, i) in page.statItems" :key="i" class="stat-item">
+          <div class="stat-value">{{ item.value }}<span v-if="item.unit" class="stat-unit">{{ item.unit }}</span></div>
+          <div class="stat-label">{{ item.label }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 人物介绍页 -->
+    <div v-else-if="page.type === 'profile'" class="card-layout card-profile">
+      <div class="profile-avatar-area">
+        <img v-if="resolvedAvatarUrl" :src="resolvedAvatarUrl" class="profile-avatar" alt="" />
+        <div v-else class="profile-avatar-placeholder">👤</div>
+      </div>
+      <h2 class="profile-name">{{ page.name || '作者名称' }}</h2>
+      <p v-if="page.role" class="profile-role">{{ page.role }}</p>
+      <p v-if="page.bio" class="profile-bio">{{ page.bio }}</p>
+      <div v-if="page.footer" class="profile-footer">{{ page.footer }}</div>
     </div>
 
     <!-- 代码面板页（兜底） -->
@@ -1008,5 +1075,300 @@ function wavePath(index: number): string {
   line-height: 1.5;
   color: var(--card-text);
   font-family: 'Fira Code', 'Consolas', monospace;
+}
+
+/* ===== 背景图模式 ===== */
+.card-canvas.has-bg-image {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.card-canvas.has-bg-image .card-layout {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* ===== 图片页 ===== */
+.card-image-page {
+  padding: 0;
+  position: relative;
+}
+.card-image-full {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.card-image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-surface);
+  color: var(--card-subtext);
+  font-size: calc(var(--card-font-size) * 0.8);
+}
+.card-image-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 48px 64px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.6));
+  z-index: 3;
+}
+.card-image-title {
+  font-size: calc(var(--card-font-size) * 1.2);
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 8px;
+  word-break: break-word;
+}
+.card-image-desc {
+  font-size: calc(var(--card-font-size) * 0.75);
+  line-height: 1.5;
+  color: rgba(255,255,255,0.85);
+  margin: 0;
+  word-break: break-word;
+}
+.card-image-footer {
+  position: absolute;
+  bottom: 16px;
+  right: 24px;
+  font-size: calc(var(--card-font-size) * 0.35);
+  color: rgba(255,255,255,0.5);
+  z-index: 3;
+}
+
+/* ===== 问答页 ===== */
+.card-qa {
+  padding: 80px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.qa-title {
+  font-size: calc(var(--card-font-size) * 0.72);
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--card-text);
+}
+.qa-body {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  flex: 1;
+}
+.qa-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qa-q {
+  font-size: calc(var(--card-font-size) * 0.42);
+  font-weight: 600;
+  color: var(--card-text);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  line-height: 1.5;
+}
+.qa-q-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--card-accent);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.qa-a {
+  font-size: calc(var(--card-font-size) * 0.36);
+  color: var(--card-subtext);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  line-height: 1.6;
+  padding-left: 4px;
+}
+.qa-a-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--card-accent-soft);
+  color: var(--card-accent);
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ===== 时间轴页 ===== */
+.card-timeline {
+  padding: 80px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.timeline-title {
+  font-size: calc(var(--card-font-size) * 0.72);
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--card-text);
+}
+.timeline-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  padding-left: 32px;
+  flex: 1;
+}
+.timeline-line {
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--card-accent-soft);
+  border-radius: 2px;
+}
+.timeline-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.timeline-dot {
+  position: absolute;
+  left: -27px;
+  top: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--card-accent);
+  border: 3px solid var(--card-bg);
+  box-sizing: border-box;
+  z-index: 1;
+}
+.timeline-date {
+  font-size: calc(var(--card-font-size) * 0.32);
+  color: var(--card-accent);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.timeline-event {
+  font-size: calc(var(--card-font-size) * 0.4);
+  color: var(--card-text);
+  line-height: 1.5;
+}
+
+/* ===== 数据卡片页 ===== */
+.card-stat {
+  padding: 80px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.stat-title {
+  font-size: calc(var(--card-font-size) * 0.72);
+  font-weight: 700;
+  color: var(--card-text);
+}
+.stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+  flex: 1;
+  justify-content: center;
+}
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 40px;
+  border-bottom: 2px solid var(--card-accent-soft);
+}
+.stat-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.stat-value {
+  font-size: calc(var(--card-font-size) * 1.2);
+  font-weight: 800;
+  color: var(--card-accent);
+  line-height: 1.1;
+}
+.stat-unit {
+  font-size: calc(var(--card-font-size) * 0.45);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.stat-label {
+  font-size: calc(var(--card-font-size) * 0.36);
+  color: var(--card-subtext);
+  font-weight: 500;
+}
+
+/* ===== 人物介绍页 ===== */
+.card-profile {
+  padding: 80px 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 20px;
+}
+.profile-avatar-area {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid var(--card-accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.profile-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-avatar-placeholder {
+  font-size: 80px;
+  line-height: 1;
+}
+.profile-name {
+  font-size: calc(var(--card-font-size) * 0.72);
+  font-weight: 700;
+  color: var(--card-text);
+  margin: 0;
+}
+.profile-role {
+  font-size: calc(var(--card-font-size) * 0.36);
+  color: var(--card-accent);
+  font-weight: 600;
+  margin: 0;
+}
+.profile-bio {
+  font-size: calc(var(--card-font-size) * 0.36);
+  color: var(--card-subtext);
+  line-height: 1.7;
+  max-width: 720px;
+  margin: 0;
+}
+.profile-footer {
+  font-size: calc(var(--card-font-size) * 0.3);
+  color: var(--card-subtext);
+  margin-top: auto;
+  padding-top: 20px;
 }
 </style>

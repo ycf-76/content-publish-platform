@@ -1,124 +1,192 @@
 <template>
   <div class="sk-wrap">
-    <!-- 注册区域 -->
-    <div class="sk-register">
-      <div class="sk-register-header">
-        <div class="sk-register-title">
+    <!-- 创建技能模板区域 -->
+    <div class="sk-create">
+      <div class="sk-create-header">
+        <div class="sk-create-title">
           <i data-lucide="plus-circle" style="width:16px;height:16px;"></i>
-          <span>注册第三方 Skill</span>
+          <span>创建技能模板</span>
         </div>
-        <button @click="showCodeHelp = !showCodeHelp" class="sk-help-toggle">
-          <i data-lucide="help-circle" style="width:14px;height:14px;"></i>
-          <span>开发指南</span>
+        <button @click="showCreateForm = !showCreateForm" class="sk-toggle-btn">
+          <i :data-lucide="showCreateForm ? 'chevron-up' : 'chevron-down'" style="width:14px;height:14px;"></i>
         </button>
       </div>
 
       <transition name="sk-slide">
-        <div v-if="showCodeHelp" class="sk-code-help">
-          <div class="sk-code-help-title">第三方 Skill 开发步骤</div>
-          <ol class="sk-code-help-steps">
-            <li>创建 <code>.py</code> 文件，定义 <code>Skill</code> 子类</li>
-            <li>声明 <code>node_type</code>、<code>name</code>、<code>display_name</code>、<code>description</code></li>
-            <li>实现 <code>async def execute(self, inputs)</code> 方法</li>
-            <li>用 <code>@register</code> 装饰器注册</li>
-          </ol>
-          <div class="sk-code-example">
-            <pre><code>from app.tools.base import Skill
-from app.tools.registry import register
-
-@register
-class MySkill(Skill):
-    node_type = "copywrite"
-    name = "my_style"
-    display_name = "我的风格"
-    description = "自定义文案风格"
-
-    async def execute(self, inputs):
-        return {"title": "...", "content": "..."}</code></pre>
+        <div v-if="showCreateForm" class="sk-form">
+          <div class="sk-form-row">
+            <label class="sk-label">名称 <span class="sk-required">*</span></label>
+            <input v-model="form.name" class="sk-input" placeholder="如：美食爆款" />
+          </div>
+          <div class="sk-form-row">
+            <label class="sk-label">描述</label>
+            <input v-model="form.description" class="sk-input" placeholder="如：活泼少女风+清新自然图，美食类高互动" />
+          </div>
+          <div class="sk-form-row">
+            <label class="sk-label">图标</label>
+            <div class="sk-icon-picker">
+              <button
+                v-for="ico in iconOptions"
+                :key="ico"
+                class="sk-icon-opt"
+                :class="{ 'sk-icon-active': form.icon === ico }"
+                @click="form.icon = ico"
+              >{{ ico }}</button>
+            </div>
+          </div>
+          <div class="sk-form-row">
+            <label class="sk-label">选择工具 <span class="sk-required">*</span></label>
+            <div class="sk-tool-grid">
+              <div
+                v-for="(tools, nt) in skillsMap"
+                :key="nt"
+                class="sk-tool-group"
+              >
+                <div class="sk-tool-group-label">{{ nodeTypeLabel(nt as string) }}</div>
+                <div class="sk-tool-items">
+                  <label
+                    v-for="t in tools"
+                    :key="t.name"
+                    class="sk-tool-check"
+                    :class="{ 'sk-tool-checked': form.tools.includes(`${nt}/${t.name}`) }"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="`${nt}/${t.name}`"
+                      v-model="form.tools"
+                      class="sk-checkbox"
+                    />
+                    <span>{{ t.display_name }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sk-form-row">
+            <label class="sk-label">配置参数</label>
+            <div class="sk-config-area">
+              <div v-for="(item, idx) in form.configEntries" :key="idx" class="sk-config-row">
+                <input v-model="item.key" class="sk-input sk-input-sm" placeholder="参数名" />
+                <input v-model="item.value" class="sk-input sk-input-sm" placeholder="值" />
+                <button @click="form.configEntries.splice(idx, 1)" class="sk-config-del" title="删除">
+                  <i data-lucide="x" style="width:12px;height:12px;"></i>
+                </button>
+              </div>
+              <button @click="form.configEntries.push({ key: '', value: '' })" class="sk-config-add">
+                <i data-lucide="plus" style="width:12px;height:12px;"></i>
+                <span>添加参数</span>
+              </button>
+            </div>
+          </div>
+          <div class="sk-form-actions">
+            <button @click="handleCreate" class="sk-create-btn" :disabled="!canCreate">
+              <i data-lucide="check" style="width:14px;height:14px;"></i>
+              <span>创建</span>
+            </button>
+            <button @click="resetForm" class="sk-cancel-btn">重置</button>
           </div>
         </div>
       </transition>
-
-      <div class="sk-register-actions">
-        <button @click="triggerUpload" class="sk-upload-btn" :disabled="uploading">
-          <i :data-lucide="uploading ? 'loader' : 'upload'" :class="{ spinning: uploading }" style="width:14px;height:14px;"></i>
-          <span>{{ uploading ? '上传中...' : '上传 .py 文件' }}</span>
-        </button>
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".py"
-          style="display:none"
-          @change="handleFileUpload"
-        />
-        <span class="sk-upload-hint">选择 Skill Python 文件上传注册</span>
-      </div>
-
-      <div v-if="uploadStatus" class="sk-upload-status" :class="uploadStatus.type">
-        <i :data-lucide="uploadStatus.type === 'success' ? 'check-circle' : uploadStatus.type === 'error' ? 'alert-circle' : 'loader'" style="width:14px;height:14px;"></i>
-        <span>{{ uploadStatus.message }}</span>
-        <button @click="uploadStatus = null" class="sk-status-close">
-          <i data-lucide="x" style="width:12px;height:12px;"></i>
-        </button>
-      </div>
     </div>
 
     <div class="sk-divider"></div>
 
-    <!-- Skill 列表 -->
-    <div v-if="loading" class="sk-loading">
-      <div class="sk-spinner"></div>
-      <span>加载 Skills 中...</span>
-    </div>
-
-    <div v-else-if="errorMsg" class="sk-error">
-      <i data-lucide="alert-circle" style="width:18px;height:18px;"></i>
-      <span>{{ errorMsg }}</span>
-      <button @click="loadSkills" class="sk-retry-btn">重试</button>
-    </div>
-
-    <div v-else-if="Object.keys(skillsMap).length === 0" class="sk-empty">
-      <i data-lucide="sparkles" style="width:32px;height:32px;opacity:0.4;"></i>
-      <p>暂无可用 Skill</p>
-      <p class="sk-empty-hint">请确保后端服务已启动并注册了 Skill</p>
-    </div>
-
-    <div v-else class="sk-groups">
-      <div v-for="(skills, nodeType) in skillsMap" :key="nodeType" class="sk-group">
-        <div class="sk-group-header">
-          <div class="sk-group-icon">
-            <i :data-lucide="nodeTypeIcon(nodeType)" style="width:16px;height:16px;"></i>
-          </div>
-          <div>
-            <div class="sk-group-title">{{ nodeTypeLabel(nodeType) }}</div>
-            <div class="sk-group-count">{{ skills.length }} 个 Skill</div>
-          </div>
+    <!-- 已保存的技能模板 -->
+    <div v-if="savedSkills.length > 0" class="sk-saved-section">
+      <div class="sk-section-header">
+        <div class="sk-section-title">
+          <i data-lucide="bookmark" style="width:16px;height:16px;"></i>
+          <span>我的技能模板</span>
         </div>
-        <div class="sk-list">
-          <div
-            v-for="skill in skills"
-            :key="skill.name"
-            class="sk-card"
-            :class="{ 'sk-card-active': isActiveSkill(nodeType, skill.name) }"
-          >
-            <div class="sk-card-top">
-              <div class="sk-card-name">{{ skill.display_name }}</div>
-              <div class="sk-card-badges">
-                <span class="sk-card-badge" v-if="isActiveSkill(nodeType, skill.name)">当前</span>
-                <span class="sk-card-badge sk-badge-tp" v-if="isThirdParty(nodeType, skill.name)">第三方</span>
-              </div>
+        <span class="sk-section-count">{{ savedSkills.length }} 个</span>
+      </div>
+      <div class="sk-saved-list">
+        <div v-for="s in savedSkills" :key="s.id" class="sk-saved-card">
+          <div class="sk-saved-top">
+            <span class="sk-saved-icon">{{ s.icon }}</span>
+            <div class="sk-saved-info">
+              <div class="sk-saved-name">{{ s.name }}</div>
+              <div class="sk-saved-desc">{{ s.description || '无描述' }}</div>
             </div>
-            <div class="sk-card-desc">{{ skill.description }}</div>
-            <div class="sk-card-meta">
-              <span class="sk-card-id">{{ skill.name }}</span>
-              <button
-                v-if="isThirdParty(nodeType, skill.name)"
-                @click.stop="handleUnregister(nodeType, skill.name, skill.display_name)"
-                class="sk-card-delete"
-                title="注销此 Skill"
-              >
+            <div class="sk-saved-actions">
+              <button @click="handleEdit(s)" class="sk-saved-edit" title="编辑">
+                <i data-lucide="pencil" style="width:12px;height:12px;"></i>
+              </button>
+              <button @click="handleDeleteSaved(s.id)" class="sk-saved-del" title="删除">
                 <i data-lucide="trash-2" style="width:12px;height:12px;"></i>
               </button>
+            </div>
+          </div>
+          <div class="sk-saved-tools">
+            <span v-for="tid in s.tools.slice(0, 5)" :key="tid" class="sk-saved-tool-tag">
+              {{ toolDisplayName(tid) }}
+            </span>
+            <span v-if="s.tools.length > 5" class="sk-saved-tool-tag sk-more-tag">
+              +{{ s.tools.length - 5 }}
+            </span>
+          </div>
+          <div v-if="Object.keys(s.config).length > 0" class="sk-saved-config">
+            <span v-for="(v, k) in s.config" :key="k" class="sk-config-tag">
+              {{ k }}={{ v }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="sk-empty-saved">
+      <i data-lucide="bookmark" style="width:24px;height:24px;opacity:0.3;"></i>
+      <span>还没有技能模板，点击上方创建</span>
+    </div>
+
+    <div class="sk-divider"></div>
+
+    <!-- 可用工具列表（只读参考） -->
+    <div class="sk-tools-section">
+      <div class="sk-section-header">
+        <div class="sk-section-title">
+          <i data-lucide="wrench" style="width:16px;height:16px;"></i>
+          <span>可用工具</span>
+        </div>
+      </div>
+
+      <div v-if="loading" class="sk-loading">
+        <div class="sk-spinner"></div>
+        <span>加载中...</span>
+      </div>
+
+      <div v-else-if="errorMsg" class="sk-error">
+        <i data-lucide="alert-circle" style="width:18px;height:18px;"></i>
+        <span>{{ errorMsg }}</span>
+        <button @click="loadSkills" class="sk-retry-btn">重试</button>
+      </div>
+
+      <div v-else-if="Object.keys(skillsMap).length === 0" class="sk-empty">
+        <i data-lucide="sparkles" style="width:32px;height:32px;opacity:0.4;"></i>
+        <p>暂无可用工具</p>
+        <p class="sk-empty-hint">请确保后端服务已启动</p>
+      </div>
+
+      <div v-else class="sk-groups">
+        <div v-for="(skills, nodeType) in skillsMap" :key="nodeType" class="sk-group">
+          <div class="sk-group-header">
+            <div class="sk-group-icon">
+              <i :data-lucide="nodeTypeIcon(nodeType as string)" style="width:16px;height:16px;"></i>
+            </div>
+            <div>
+              <div class="sk-group-title">{{ nodeTypeLabel(nodeType as string) }}</div>
+              <div class="sk-group-count">{{ skills.length }} 个工具</div>
+            </div>
+          </div>
+          <div class="sk-list">
+            <div v-for="skill in skills" :key="skill.name" class="sk-card">
+              <div class="sk-card-top">
+                <div class="sk-card-name">{{ skill.display_name }}</div>
+              </div>
+              <div class="sk-card-desc">{{ skill.description }}</div>
+              <div class="sk-card-meta">
+                <span class="sk-card-id">{{ skill.name }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -128,19 +196,29 @@ class MySkill(Skill):
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { createIcons, icons } from 'lucide'
 import { workflowApi, type SkillMeta } from '@/api/workflow'
+import { useSkillTemplates, type SavedSkill } from '@/composables/useSkillTemplates'
+
+const { savedSkills, addSkill, removeSkill } = useSkillTemplates()
 
 const skillsMap = ref<Record<string, SkillMeta[]>>({})
 const loading = ref(true)
 const errorMsg = ref('')
-const uploading = ref(false)
-const uploadStatus = ref<{ type: 'success' | 'error' | 'loading'; message: string } | null>(null)
-const showCodeHelp = ref(false)
-const fileInputRef = ref<HTMLInputElement | null>(null)
+const showCreateForm = ref(false)
 
-const thirdPartySkills = ref<Set<string>>(new Set())
+const iconOptions = ['🔥', '🍜', '👗', '🏠', '💄', '🎮', '📚', '✈️', '🎵', '📸', '🌟', '💡']
+
+const form = ref({
+  name: '',
+  description: '',
+  icon: '🔥',
+  tools: [] as string[],
+  configEntries: [] as { key: string; value: string }[],
+})
+
+const canCreate = computed(() => form.value.name.trim() && form.value.tools.length > 0)
 
 const nodeTypeLabels: Record<string, string> = {
   copywrite: '文案生成',
@@ -166,11 +244,6 @@ const nodeTypeIcons: Record<string, string> = {
   publish: 'send',
 }
 
-const builtinSkillNames = new Set([
-  'standard', 'vl_analyze', 'lively_girl', 'elegant', 'professional', 'casual',
-  'xhs_blueprint', 'xhs_publish', 'trending_search', 'xhs_search',
-])
-
 function nodeTypeLabel(nt: string) {
   return nodeTypeLabels[nt] || nt
 }
@@ -179,67 +252,56 @@ function nodeTypeIcon(nt: string) {
   return nodeTypeIcons[nt] || 'box'
 }
 
-function isActiveSkill(_nodeType: string, _skillName: string) {
-  return false
-}
-
-function isThirdParty(_nodeType: string, skillName: string) {
-  return !builtinSkillNames.has(skillName) || thirdPartySkills.value.has(skillName)
-}
-
-function triggerUpload() {
-  fileInputRef.value?.click()
-}
-
-async function handleFileUpload(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  input.value = ''
-
-  if (!file.name.endsWith('.py')) {
-    uploadStatus.value = { type: 'error', message: '仅支持 .py 文件' }
-    nextTick(() => { try { createIcons({ icons }) } catch {} })
-    return
+function toolDisplayName(toolId: string): string {
+  const [nt, name] = toolId.split('/')
+  const tools = skillsMap.value[nt]
+  if (tools) {
+    const found = tools.find((t) => t.name === name)
+    if (found) return found.display_name
   }
+  return name || toolId
+}
 
-  uploading.value = true
-  uploadStatus.value = { type: 'loading', message: `正在注册 ${file.name}...` }
+function resetForm() {
+  form.value = { name: '', description: '', icon: '🔥', tools: [], configEntries: [] }
+}
+
+function handleCreate() {
+  if (!canCreate.value) return
+  const config: Record<string, string> = {}
+  for (const e of form.value.configEntries) {
+    if (e.key.trim()) config[e.key.trim()] = e.value
+  }
+  addSkill({
+    name: form.value.name.trim(),
+    description: form.value.description.trim(),
+    icon: form.value.icon,
+    tools: [...form.value.tools],
+    config,
+  })
+  resetForm()
+  showCreateForm.value = false
   nextTick(() => { try { createIcons({ icons }) } catch {} })
-
-  try {
-    const result = await workflowApi.registerSkill(file)
-    if (result.success && result.data) {
-      const d = result.data
-      thirdPartySkills.value.add(d.skill_name)
-      uploadStatus.value = {
-        type: 'success',
-        message: `Skill "${d.display_name}" (${d.node_type}.${d.skill_name}) 注册成功`,
-      }
-      await loadSkills()
-    } else {
-      uploadStatus.value = { type: 'error', message: result.message || '注册失败' }
-    }
-  } catch (e: any) {
-    const detail = e?.response?.data?.detail || e?.message || '注册失败'
-    uploadStatus.value = { type: 'error', message: detail }
-  } finally {
-    uploading.value = false
-    nextTick(() => { try { createIcons({ icons }) } catch {} })
-    setTimeout(() => { uploadStatus.value = null }, 6000)
-  }
 }
 
-async function handleUnregister(nodeType: string, skillName: string, displayName: string) {
-  if (!confirm(`确定要注销 Skill "${displayName}" 吗？\n注销后对应的 .py 文件将被删除。`)) return
-  try {
-    await workflowApi.unregisterSkill(nodeType, skillName)
-    thirdPartySkills.value.delete(skillName)
-    await loadSkills()
-  } catch (e: any) {
-    const detail = e?.response?.data?.detail || e?.message || '注销失败'
-    alert(detail)
+function handleEdit(s: SavedSkill) {
+  form.value = {
+    name: s.name,
+    description: s.description,
+    icon: s.icon,
+    tools: [...s.tools],
+    configEntries: Object.entries(s.config).map(([key, value]) => ({ key, value })),
   }
+  removeSkill(s.id)
+  showCreateForm.value = true
+  nextTick(() => { try { createIcons({ icons }) } catch {} })
+}
+
+function handleDeleteSaved(id: string) {
+  const s = savedSkills.value.find((x) => x.id === id)
+  if (!s) return
+  if (!confirm(`确定删除技能模板「${s.name}」？`)) return
+  removeSkill(id)
 }
 
 async function loadSkills() {
@@ -257,7 +319,9 @@ async function loadSkills() {
   }
 }
 
-onMounted(loadSkills)
+onMounted(() => {
+  loadSkills()
+})
 </script>
 
 <style scoped>
@@ -267,24 +331,21 @@ onMounted(loadSkills)
   gap: 20px;
 }
 
-/* ---- 注册区域 ---- */
-.sk-register {
+/* ---- 创建区域 ---- */
+.sk-create {
   background: var(--ma-bg-subtle, #EEF0F4);
   border: 1px solid var(--ma-border, #E5E7EB);
   border-radius: var(--ma-radius-md, 8px);
   padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
-.sk-register-header {
+.sk-create-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.sk-register-title {
+.sk-create-title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -293,75 +354,240 @@ onMounted(loadSkills)
   color: var(--ma-text-primary, #111827);
 }
 
-.sk-help-toggle {
+.sk-toggle-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border: 1px solid var(--ma-border, #E5E7EB);
   border-radius: 6px;
   background: transparent;
   color: var(--ma-text-secondary, #6B7280);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sk-toggle-btn:hover {
+  background: rgba(59, 108, 246, 0.06);
+  color: var(--ma-primary, #3B6CF6);
+}
+
+/* ---- 表单 ---- */
+.sk-form {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sk-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sk-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ma-text-secondary, #6B7280);
+}
+
+.sk-required {
+  color: var(--ma-destructive, #EF4444);
+}
+
+.sk-input {
+  padding: 8px 12px;
+  border: 1px solid var(--ma-border, #E5E7EB);
+  border-radius: 6px;
+  background: #FFFFFF;
+  font-size: 12px;
+  color: var(--ma-text-primary, #111827);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.sk-input:focus {
+  border-color: var(--ma-primary, #3B6CF6);
+}
+
+.sk-input-sm {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.sk-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sk-icon-opt {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ma-border, #E5E7EB);
+  border-radius: 6px;
+  background: #FFFFFF;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.sk-icon-opt:hover {
+  border-color: var(--ma-primary, #3B6CF6);
+}
+
+.sk-icon-active {
+  border-color: var(--ma-primary, #3B6CF6);
+  background: rgba(59, 108, 246, 0.08);
+  box-shadow: 0 0 0 2px rgba(59, 108, 246, 0.15);
+}
+
+.sk-tool-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 10px;
+  background: #FFFFFF;
+  border: 1px solid var(--ma-border, #E5E7EB);
+  border-radius: 6px;
+}
+
+.sk-tool-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ma-text-tertiary, #9CA3AF);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.sk-tool-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sk-tool-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--ma-border, #E5E7EB);
+  border-radius: 6px;
+  background: #FFFFFF;
+  font-size: 11px;
+  color: var(--ma-text-secondary, #6B7280);
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.sk-tool-check:hover {
+  border-color: rgba(59, 108, 246, 0.3);
+}
+
+.sk-tool-checked {
+  border-color: var(--ma-primary, #3B6CF6);
+  background: rgba(59, 108, 246, 0.06);
+  color: var(--ma-primary, #3B6CF6);
+}
+
+.sk-checkbox {
+  display: none;
+}
+
+.sk-config-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sk-config-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sk-config-del {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ma-text-tertiary, #6B7280);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sk-config-del:hover {
+  color: var(--ma-destructive, #EF4444);
+}
+
+.sk-config-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px dashed var(--ma-border, #E5E7EB);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ma-text-tertiary, #6B7280);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
-.sk-help-toggle:hover {
-  background: rgba(59, 108, 246, 0.06);
+.sk-config-add:hover {
+  border-color: var(--ma-primary, #3B6CF6);
   color: var(--ma-primary, #3B6CF6);
-  border-color: rgba(59, 108, 246, 0.2);
 }
 
-.sk-code-help {
-  background: #FFFFFF;
-  border: 1px solid var(--ma-border, #E5E7EB);
-  border-radius: 6px;
-  padding: 14px;
+.sk-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.sk-create-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: var(--ma-radius-md, 8px);
+  background: var(--ma-primary, #3B6CF6);
+  color: #FFFFFF;
   font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sk-create-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.sk-create-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sk-cancel-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--ma-border, #E5E7EB);
+  border-radius: var(--ma-radius-md, 8px);
+  background: transparent;
   color: var(--ma-text-secondary, #6B7280);
-  line-height: 1.6;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-.sk-code-help-title {
-  font-weight: 600;
-  color: var(--ma-text-primary, #111827);
-  margin-bottom: 8px;
-}
-
-.sk-code-help-steps {
-  margin: 0 0 10px;
-  padding-left: 18px;
-}
-
-.sk-code-help-steps li {
-  margin-bottom: 2px;
-}
-
-.sk-code-help-steps code {
+.sk-cancel-btn:hover {
   background: var(--ma-bg-subtle, #EEF0F4);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-family: var(--ma-font-mono, monospace);
-  font-size: 11px;
-}
-
-.sk-code-example {
-  background: #1E1E2E;
-  border-radius: 6px;
-  padding: 12px;
-  overflow-x: auto;
-}
-
-.sk-code-example pre {
-  margin: 0;
-}
-
-.sk-code-example code {
-  color: #CDD6F4;
-  font-family: var(--ma-font-mono, 'Consolas', monospace);
-  font-size: 11px;
-  line-height: 1.5;
 }
 
 .sk-slide-enter-active,
@@ -374,95 +600,12 @@ onMounted(loadSkills)
 .sk-slide-leave-to {
   opacity: 0;
   max-height: 0;
-  margin-top: -12px;
 }
 
 .sk-slide-enter-to,
 .sk-slide-leave-from {
   opacity: 1;
-  max-height: 300px;
-}
-
-.sk-register-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.sk-upload-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 1px solid rgba(59, 108, 246, 0.3);
-  border-radius: var(--ma-radius-md, 8px);
-  background: rgba(59, 108, 246, 0.08);
-  color: var(--ma-primary, #3B6CF6);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.sk-upload-btn:hover:not(:disabled) {
-  background: rgba(59, 108, 246, 0.15);
-  border-color: rgba(59, 108, 246, 0.4);
-}
-
-.sk-upload-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.sk-upload-hint {
-  font-size: 11px;
-  color: var(--ma-text-tertiary, #6B7280);
-}
-
-.sk-upload-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
-.sk-upload-status.success {
-  background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  color: #16A34A;
-}
-
-.sk-upload-status.error {
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  color: var(--ma-destructive, #EF4444);
-}
-
-.sk-upload-status.loading {
-  background: rgba(59, 108, 246, 0.06);
-  border: 1px solid rgba(59, 108, 246, 0.15);
-  color: var(--ma-primary, #3B6CF6);
-}
-
-.sk-status-close {
-  margin-left: auto;
-  padding: 2px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  opacity: 0.6;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.sk-status-close:hover {
-  opacity: 1;
-}
-
-.spinning {
-  animation: skSpin 0.8s linear infinite;
+  max-height: 600px;
 }
 
 .sk-divider {
@@ -470,13 +613,174 @@ onMounted(loadSkills)
   background: var(--ma-border, #E5E7EB);
 }
 
-/* ---- 列表区域 ---- */
+/* ---- 已保存技能模板 ---- */
+.sk-saved-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sk-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sk-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ma-text-primary, #111827);
+}
+
+.sk-section-count {
+  font-size: 11px;
+  color: var(--ma-text-tertiary, #6B7280);
+}
+
+.sk-saved-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.sk-saved-card {
+  background: var(--ma-bg-subtle, #EEF0F4);
+  border: 1px solid var(--ma-border, #E5E7EB);
+  border-radius: var(--ma-radius-md, 8px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.15s;
+}
+
+.sk-saved-card:hover {
+  border-color: var(--ma-border-strong, #D1D5DB);
+}
+
+.sk-saved-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sk-saved-icon {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sk-saved-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sk-saved-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ma-text-primary, #111827);
+}
+
+.sk-saved-desc {
+  font-size: 11px;
+  color: var(--ma-text-secondary, #6B7280);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.sk-saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.sk-saved-card:hover .sk-saved-actions {
+  opacity: 1;
+}
+
+.sk-saved-edit,
+.sk-saved-del {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ma-text-tertiary, #6B7280);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sk-saved-edit:hover {
+  color: var(--ma-primary, #3B6CF6);
+  background: rgba(59, 108, 246, 0.08);
+}
+
+.sk-saved-del:hover {
+  color: var(--ma-destructive, #EF4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.sk-saved-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sk-saved-tool-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(59, 108, 246, 0.1);
+  color: var(--ma-primary, #3B6CF6);
+  font-weight: 500;
+}
+
+.sk-more-tag {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--ma-text-tertiary, #6B7280);
+}
+
+.sk-saved-config {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sk-config-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(107, 114, 128, 0.08);
+  color: var(--ma-text-tertiary, #6B7280);
+  font-family: var(--ma-font-mono, monospace);
+}
+
+.sk-empty-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--ma-text-tertiary, #9CA3AF);
+  font-size: 12px;
+}
+
+/* ---- 工具列表区域 ---- */
+.sk-tools-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .sk-loading, .sk-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 40px 20px;
   color: var(--ma-text-tertiary, #6B7280);
   gap: 12px;
   font-size: 13px;
@@ -503,7 +807,6 @@ onMounted(loadSkills)
   color: var(--ma-destructive, #EF4444);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s;
 }
 
 .sk-retry-btn:hover {
@@ -563,28 +866,18 @@ onMounted(loadSkills)
 
 .sk-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .sk-card {
-  background: var(--ma-bg-subtle, #EEF0F4);
+  background: #FFFFFF;
   border: 1px solid var(--ma-border, #E5E7EB);
-  border-radius: var(--ma-radius-md, 8px);
-  padding: 14px;
+  border-radius: 6px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  transition: all 0.15s;
-}
-
-.sk-card:hover {
-  border-color: var(--ma-border-strong, #D1D5DB);
-}
-
-.sk-card-active {
-  border-color: rgba(59, 108, 246, 0.3);
-  background: var(--ma-accent, rgba(59, 108, 246, 0.08));
+  gap: 4px;
 }
 
 .sk-card-top {
@@ -594,71 +887,30 @@ onMounted(loadSkills)
 }
 
 .sk-card-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ma-text-primary, #111827);
-}
-
-.sk-card-badges {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.sk-card-badge {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: var(--ma-radius-full, 9999px);
-  background: var(--ma-accent, rgba(59, 108, 246, 0.15));
-  color: var(--ma-primary, #3B6CF6);
-  font-weight: 500;
-}
-
-.sk-badge-tp {
-  background: rgba(139, 92, 246, 0.12);
-  color: #7C3AED;
 }
 
 .sk-card-desc {
   font-size: 11px;
   color: var(--ma-text-secondary, #6B7280);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .sk-card-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .sk-card-id {
   font-size: 10px;
-  color: var(--ma-text-tertiary, #6B7280);
+  color: var(--ma-text-tertiary, #9CA3AF);
   font-family: var(--ma-font-mono, monospace);
   background: var(--ma-bg-subtle, #EEF0F4);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.sk-card-delete {
-  margin-left: auto;
-  padding: 4px;
-  border: none;
-  background: transparent;
-  color: var(--ma-text-tertiary, #6B7280);
-  cursor: pointer;
-  border-radius: 4px;
-  opacity: 0;
-  transition: all 0.15s;
-}
-
-.sk-card:hover .sk-card-delete {
-  opacity: 1;
-}
-
-.sk-card-delete:hover {
-  color: var(--ma-destructive, #EF4444);
-  background: rgba(239, 68, 68, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 </style>

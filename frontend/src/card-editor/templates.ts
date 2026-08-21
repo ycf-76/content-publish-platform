@@ -12,6 +12,7 @@ export type PageType =
   | 'cover' | 'content' | 'quote' | 'list'
   | 'dark_panel' | 'end_page' | 'compare' | 'icon_text'
   | 'steps' | 'code_panel' | 'numbered_cards' | 'newspaper' | 'big_quote'
+  | 'image_page' | 'qa' | 'timeline' | 'stat_card' | 'profile'
 
 export interface CardPage {
   id: string
@@ -37,6 +38,16 @@ export interface CardPage {
   numberedItems?: Array<{ title: string; desc: string }>
   newspaperCols?: Array<{ headline: string; body: string }>
   masthead?: string
+  imageUrl?: string
+  backgroundImage?: string
+  imageFilter?: string
+  qaPairs?: Array<{ q: string; a: string }>
+  timelineItems?: Array<{ date: string; event: string }>
+  statItems?: Array<{ value: string; label: string; unit?: string }>
+  avatarUrl?: string
+  name?: string
+  role?: string
+  bio?: string
 }
 
 export interface TemplateTheme {
@@ -275,6 +286,45 @@ export const TEMPLATES: TemplateTheme[] = [
     fontSize: 48,
     fontFamily: "'PingFang SC', 'JetBrains Mono', 'Microsoft YaHei', sans-serif",
   },
+  {
+    id: 'forest_green',
+    name: '森林绿',
+    description: '深绿底白字金色点缀，适合自然、健康、环保',
+    bg: '#1A2E1A',
+    surface: '#2A3E2A',
+    text: '#F0F7F0',
+    subtext: '#8BAF8B',
+    accent: '#D4A843',
+    accentSoft: '#3A4E3A',
+    fontSize: 48,
+    fontFamily: "'PingFang SC', 'Songti SC', 'Microsoft YaHei', serif",
+  },
+  {
+    id: 'sunset_orange',
+    name: '落日橙',
+    description: '深橙底白字暖黄点缀，适合活力、运动、美食',
+    bg: '#4A1E0A',
+    surface: '#5A2E1A',
+    text: '#FFF5EB',
+    subtext: '#D4A87A',
+    accent: '#FBBF24',
+    accentSoft: '#6A3E2A',
+    fontSize: 48,
+    fontFamily: "'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif",
+  },
+  {
+    id: 'lavender',
+    name: '薰衣草',
+    description: '浅紫底深紫字粉色点缀，适合美妆、时尚、浪漫',
+    bg: '#F5F0FF',
+    surface: '#EDE5FF',
+    text: '#3B1F6E',
+    subtext: '#7C5BAE',
+    accent: '#E879A8',
+    accentSoft: '#F0D5F5',
+    fontSize: 48,
+    fontFamily: "'PingFang SC', 'Microsoft YaHei', 'Georgia', sans-serif",
+  },
 ]
 
 /** page type 中文标签 */
@@ -292,6 +342,11 @@ export const PAGE_TYPE_LABELS: Record<PageType, string> = {
   numbered_cards: '编号卡片',
   newspaper: '报纸多栏',
   big_quote: '大字金句',
+  image_page: '图片页',
+  qa: '问答',
+  timeline: '时间轴',
+  stat_card: '数据卡片',
+  profile: '人物介绍',
 }
 
 /** 创建默认页面（用于"添加页面"按钮） */
@@ -418,6 +473,57 @@ export function createDefaultPage(type: PageType, index: number): CardPage {
         content: '一句震撼人心的话',
         footer: '@灵犀工坊',
         decoNumber: '"',
+      }
+    case 'image_page':
+      return {
+        id, type,
+        title: '',
+        content: '',
+        imageUrl: '',
+        footer: '',
+      }
+     case 'qa':
+      return {
+        id, type,
+        title: '常见问题',
+        content: '',
+        qaPairs: [
+          { q: '第一个问题是什么？', a: '这里是回答。' },
+          { q: '第二个问题是什么？', a: '这里是回答。' },
+          { q: '第三个问题是什么？', a: '这里是回答。' },
+        ],
+      }
+    case 'timeline':
+      return {
+        id, type,
+        title: '发展历程',
+        content: '',
+        timelineItems: [
+          { date: '2024.01', event: '里程碑事件一' },
+          { date: '2024.06', event: '里程碑事件二' },
+          { date: '2025.01', event: '里程碑事件三' },
+        ],
+      }
+    case 'stat_card':
+      return {
+        id, type,
+        title: '关键数据',
+        content: '',
+        statItems: [
+          { value: '10万+', label: '用户数', unit: '' },
+          { value: '99.9', label: '可用性', unit: '%' },
+          { value: '3秒', label: '响应时间', unit: '' },
+        ],
+      }
+    case 'profile':
+      return {
+        id, type,
+        title: '',
+        content: '',
+        name: '作者名称',
+        role: '职业/标签',
+        bio: '一段简短的自我介绍，让读者了解你。',
+        avatarUrl: '',
       }
   }
 }

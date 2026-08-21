@@ -611,6 +611,29 @@ class EstherTemplate(Base):
     )
 
 
+class ImageAsset(Base):
+    """User-uploaded image asset for template-free image mode."""
+    __tablename__ = "image_assets"
+    __table_args__ = (
+        Index("ix_image_assets_user_id", "user_id"),
+        Index("ix_image_assets_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    original_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    thumbnail_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="upload", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PublishedContentPerformance(Base):
     """发布内容的表现记录（T+7 回采）。
 

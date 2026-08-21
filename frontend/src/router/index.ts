@@ -15,6 +15,15 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/workflow',
+    name: 'WorkflowShowcase',
+    component: () => import('@/views/WorkflowShowcaseView.vue'),
+    meta: {
+      title: '工作流',
+      requiresAuth: true
+    }
+  },
+  {
     path: '/workbench/:workflowId?',
     name: 'Workbench',
     component: () => import('@/views/WorkbenchView.vue'),
@@ -105,7 +114,7 @@ router.beforeEach((to, _from, next) => {
   if (to.meta.requiresAuth && !token) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
   } else if (to.name === 'Login' && token && !to.query.force) {
-    const redirect = (to.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workbench'
+    const redirect = (to.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workflow'
     sessionStorage.removeItem('redirect_after_login')
     next(redirect)
   } else {

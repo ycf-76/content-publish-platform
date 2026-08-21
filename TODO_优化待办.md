@@ -74,7 +74,7 @@
   - **短期**：在 `sse_bus.py` 顶部加注释说明单进程限制，文档中注明部署要求
   - **中期**：引入 Redis Pub/Sub 或 PostgreSQL LISTEN/NOTIFY 做跨进程广播
 - **涉及文件**：`backend/app/services/sse_bus.py`
-- **状态**：[ ] 待办
+- **状态**：[x] 已完成（添加 SCALABILITY LIMIT 注释：单进程限制、多 worker 不共享事件、扩展方案 Redis Pub/Sub / PG LISTEN·NOTIFY、部署约束 --workers 1）
 
 ### TODO-06: Checkpointer 策略统一
 
@@ -84,7 +84,7 @@
   2. `workflow.py` 只调用 `get_global_checkpointer()`
   3. 删除 `workflow.py` 中重复的 `PostgresSaver` import
 - **涉及文件**：`backend/app/agents/graph.py`, `backend/app/services/workflow.py`
-- **状态**：[ ] 待办
+- **状态**：[x] 已完成（workflow.py 删除重复 PostgresSaver import，5 处 checkpointer=None 改为 get_global_checkpointer()）
 
 ### TODO-07: 添加 backend/pyproject.toml 统一工具链配置
 
@@ -96,7 +96,7 @@
   - `[tool.ruff]`：替代 flake8（更快），规则配置
   - `[project]`：dependencies, optional-dependencies
 - **涉及文件**：`backend/pyproject.toml`（新建）
-- **状态**：[ ] 待办
+- **状态**：[x] 已完成（新建 pyproject.toml，配置 black/isort/mypy/pytest/ruff，与 SDK 的 pyproject.toml 风格统一）
 
 ### TODO-08: 前端添加测试
 
@@ -108,7 +108,7 @@
   3. 给 Pinia stores（`auth`, `workflow`, `account`）加单测
   4. 关键组件（`WorkflowStepper`, `SearchCard`）加集成测试
 - **涉及文件**：`frontend/package.json`, `frontend/vitest.config.ts`（新建）, `frontend/src/**/*.spec.ts`（新建）
-- **状态**：[ ] 待办
+- **状态**：[x] 已完成（Vitest + @vue/test-utils 框架搭建，5 个测试文件 69 个用例全绿：useChatHistory 15、useUIState 4、auth store 13、account store 11、workflow store 26）
 
 ### TODO-09: 插件目录命名不一致
 
@@ -286,9 +286,9 @@
 | 优先级 | 总数 | 已完成 | 完成率 |
 |--------|------|--------|--------|
 | P0     | 3    | 3      | 100%   |
-| P1     | 6    | 0      | 0%     |
+| P1     | 6    | 6      | 100%   |
 | P2     | 6    | 0      | 0%     |
-| **合计** | **15** | **3** | **20%** |
+| **合计** | **15** | **9** | **60%** |
 | FIX（集成修复） | 9 | 9 | 100% |
 
 ---
@@ -299,3 +299,4 @@
 |------|------|------|
 | 2026-08-21 | 创建 | 初始生成，基于全量代码审查 |
 | 2026-08-21 | 完成 | FIX-01 ~ FIX-09，Chat 驱动 Agent 集成修复（54 passed） |
+| 2026-08-21 | 完成 | TODO-04 ~ TODO-09，P1 全部完成（红线手册更新、SSE注释、Checkpointer统一、pyproject.toml、前端测试69用例、插件目录清理） |

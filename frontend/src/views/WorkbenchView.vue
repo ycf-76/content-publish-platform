@@ -1,37 +1,38 @@
 <template>
 <main class="min-h-screen" style="position: relative;">
-  <div class="mint-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'mint-right-collapsed': isRightPanelCollapsed || currentPage === 'chat', 'mint-shell-chat': currentPage === 'chat', 'is-left-resizing': isLeftResizing, 'settings-blur': showSettings }" :style="{ '--right-panel-width': rightPanelWidth + 'px', '--left-sidebar-width': leftSidebarWidth + 'px' }">
 
-    <!-- ============ 右上角全局用户信息 ============ -->
-    <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
-      <img
-        v-if="authStore.user.avatar_url"
-        :src="authStore.user.avatar_url"
-        alt="头像"
-        class="mint-avatar"
-        style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-      />
-      <img
-        v-else
-        src="/images/avatar/@man.svg"
-        alt="默认头像"
-        class="mint-avatar"
-        style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-      />
-      <transition name="mint-dropdown">
-        <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
-          <div class="mint-dropdown-user-section">
-            <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
-            <span class="mint-dropdown-user-method">{{ loginMethodLabel }}</span>
-          </div>
-          <div class="mint-dropdown-body">
-            <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
-              <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
-            </button>
-          </div>
+  <!-- ============ 右上角全局用户信息（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
+  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
+    <img
+      v-if="authStore.user.avatar_url"
+      :src="authStore.user.avatar_url"
+      alt="头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <img
+      v-else
+      src="/images/avatar/@man.svg"
+      alt="默认头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <transition name="mint-dropdown">
+      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
+        <div class="mint-dropdown-user-section">
+          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
+          <span class="mint-dropdown-user-method">{{ loginMethodLabel }}</span>
         </div>
-      </transition>
-    </div>
+        <div class="mint-dropdown-body">
+          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
+            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
+          </button>
+        </div>
+      </div>
+    </transition>
+  </div>
+
+  <div class="mint-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'mint-right-collapsed': isRightPanelCollapsed || currentPage === 'chat', 'mint-shell-chat': currentPage === 'chat', 'is-left-resizing': isLeftResizing, 'settings-blur': showSettings }" :style="{ '--right-panel-width': rightPanelWidth + 'px', '--left-sidebar-width': leftSidebarWidth + 'px' }">
 
     <!-- ============ 左侧导航 ============ -->
     <SidebarNav
@@ -63,6 +64,8 @@
 
       <!-- ========== 工作流页面 ========== -->
       <div class="page-container" id="page-workflow" v-show="currentPage === 'workflow'">
+        <div class="wf-content-card">
+
         <!-- 登录欢迎语 -->
         <WelcomeGreeting ref="welcomeGreetingRef" :nickname="authStore.user?.nickname" />
 
@@ -174,6 +177,7 @@
                 :error-message="getNodeError('image_gen')"
                 :card-draft="imagePlanCardDraft"
                 :workflow-id="currentWorkflowId"
+                @open-workspace="openImageWorkspace"
               />
             </div>
           </div>
@@ -216,6 +220,7 @@
             </div>
           </div>
         </div>
+        </div>
       </div>
 
       <!-- ========== 其他页面 ========== -->
@@ -225,6 +230,7 @@
           @new-workflow="onNewWorkflow"
           @open-workflow="onOpenWorkflow"
           @restart-workflow="onRestartWorkflow"
+          @open-draft="onOpenDraft"
         />
       </div>
 
@@ -248,6 +254,13 @@
 
   </div>
 
+  <ImageWorkspace
+    v-if="showImageWorkspace && imagePlanCardDraft"
+    :card-draft="imagePlanCardDraft"
+    :workflow-id="currentWorkflowId"
+    @close="showImageWorkspace = false"
+  />
+
   <SettingsView v-if="showSettings" @close="showSettings = false" />
 </main>
 </template>
@@ -267,6 +280,7 @@ import AnalyzeCard from '@/components/workbench/AnalyzeCard.vue'
 import CopywriteCard from '@/components/workbench/CopywriteCard.vue'
 import ImagePlanCard from '@/components/workbench/ImagePlanCard.vue'
 import ImageGenCard from '@/components/workbench/ImageGenCard.vue'
+import ImageWorkspace from '@/components/workbench/ImageWorkspace.vue'
 import ImageReviewCard from '@/components/workbench/ImageReviewCard.vue'
 import FinalReviewCard from '@/components/workbench/FinalReviewCard.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -282,6 +296,7 @@ const accountStore = useAccountStore()
 const workflowStore = useWorkflowStore()
 
 const userDropdownOpen = ref(false)
+const showImageWorkspace = ref(false)
 
 const loginMethodLabel = computed(() => {
   const method = authStore.user?.login_method || ''
@@ -305,7 +320,14 @@ async function handleLogout() {
 }
 
 // ===== 页面切换 =====
-const currentPage = ref<string>('chat')
+const initialPage = (route.query.page as string) || 'chat'
+const currentPage = ref<string>(initialPage)
+
+watch(() => route.query.page, (newPage) => {
+  if (newPage && typeof newPage === 'string') {
+    currentPage.value = newPage
+  }
+})
 const showSettings = ref(false)
 const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
 
@@ -370,10 +392,70 @@ async function onContinueToImage() {
 
 async function onOpenWorkflow(workflowId: string) {
   const ok = await workflowStore.switchToWorkflow(workflowId)
-  if (ok) {
-    currentPage.value = 'workflow'
-    nextTick(() => createIcons({ icons }))
+  if (!ok) {
+    workflowStore.pushNotification({
+      type: 'workflow_error',
+      message: '工作流打开失败，请稍后重试',
+    })
+    return
   }
+
+  showImageWorkspace.value = false
+  currentPage.value = 'workflow'
+  try {
+    if (route.params.workflowId !== workflowId || route.query.page !== 'workflow') {
+      await router.replace({ path: `/workbench/${workflowId}`, query: { page: 'workflow' } })
+    }
+  } catch (e) {
+    console.error('[WorkbenchView] sync workflow route failed:', e)
+  }
+  nextTick(() => createIcons({ icons }))
+}
+
+ async function onOpenDraft(workflowId: string) {
+  const ok = await workflowStore.switchToWorkflow(workflowId)
+  if (!ok) {
+    workflowStore.pushNotification({
+      type: 'workflow_error',
+      message: '工作流打开失败，请稍后重试',
+    })
+    return
+  }
+
+  currentPage.value = 'workflow'
+  try {
+    if (route.params.workflowId !== workflowId || route.query.page !== 'workflow') {
+      await router.replace({ path: `/workbench/${workflowId}`, query: { page: 'workflow' } })
+    }
+  } catch (e) {
+    console.error('[WorkbenchView] sync workflow route failed:', e)
+  }
+
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 300))
+
+  const draft = imagePlanCardDraft.value
+  if (draft && Array.isArray(draft.pages) && draft.pages.length > 0) {
+    showImageWorkspace.value = true
+  } else {
+    workflowStore.pushNotification({
+      type: 'workflow_info',
+      message: '草稿数据加载中，请稍后点击"在图片工作区编辑"',
+    })
+  }
+  nextTick(() => createIcons({ icons }))
+}
+
+function openImageWorkspace() {
+  const draft = imagePlanCardDraft.value
+  if (!draft || !Array.isArray(draft.pages) || draft.pages.length === 0) {
+    workflowStore.pushNotification({
+      type: 'workflow_error',
+      message: '图片草稿尚未生成，请等待图片规划完成后再编辑',
+    })
+    return
+  }
+  showImageWorkspace.value = true
 }
 
 function onRestartWorkflow(wf: any) {
@@ -603,9 +685,11 @@ function getNodeResult(nodeId: string): any {
     // copywrite 节点字段
     'title', 'content', 'tags', 'key_points', 'structured_items', 'review_feedback', 'prompt_source',
     // image_plan 节点字段
-    'card_draft', 'copywrite_passthrough', '_source',
+    'content_plan', 'copywrite_passthrough', '_source',
+    'suggested_template', 'custom_accent', 'suggested_decoration', 'copywrite_context', 'brand',
+    'format_plan', 'image_plan', 'is_asset_mode',
     // image_gen 节点字段
-    'images_base64', 'image_count', 'image_details', 'image_prompts', 'style', 'validation', 'plan_context', 'card_draft_summary',
+    'images_base64', 'image_urls', 'image_count', 'image_details', 'image_prompts', 'style', 'validation', 'plan_context', 'card_draft_summary',
     // image_review / final_review 节点字段
     'review_status', 'feedback', 'selected_indices', 'blueprint', 'is_blueprint_mode',
     // audit 节点字段
@@ -684,10 +768,27 @@ function onStepClick(nodeId: string, event: MouseEvent) {
 }
 
 // ===== ImageGenCard 需要的额外数据 =====
-// 从 image_plan 节点结果中提取 card_draft
+// 从 image_plan 节点结果中提取 content_plan，并合并顶层关键字段
+// 后端 content_plan 只含 {pages:[...]}，suggested_template/custom_accent 等在 output 顶层
 const imagePlanCardDraft = computed(() => {
   const result = getNodeResult('image_plan')
-  return result?.card_draft || null
+  if (!result) return null
+  // 优先从 _draft 恢复（用户保存的草稿）
+  const draft = result._draft
+  if (draft && draft.pages && Array.isArray(draft.pages) && draft.pages.length > 0) {
+    return draft
+  }
+  // 回退到 content_plan（AI 生成的原始数据）
+  const cp = result.content_plan
+  if (!cp || !Array.isArray(cp.pages) || cp.pages.length === 0) return null
+  const merged = { ...cp }
+  const topKeys = ['suggested_template', 'custom_accent', 'suggested_decoration', 'copywrite_context', 'brand']
+  for (const k of topKeys) {
+    if (result[k] !== undefined && merged[k] === undefined) {
+      merged[k] = result[k]
+    }
+  }
+  return merged
 })
 
 // 当前工作流 ID
@@ -786,6 +887,21 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
   max-width: 960px;
 }
 
+.wf-content-card {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  background: #F9FAFB;
+  border-radius: 16px;
+  border: 1px solid var(--ma-border-default);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 20px 24px;
+}
+
 .page-container-chat {
   max-width: none;
   align-items: stretch;
@@ -815,6 +931,7 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding-left: 36px;
   padding-right: 4px;
   scrollbar-width: none;
   width: 100%;

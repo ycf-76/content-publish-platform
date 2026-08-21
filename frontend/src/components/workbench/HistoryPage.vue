@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container" id="page-history">
+  <div class="page-container" id="history-page-root">
     <div class="mint-hero mint-glass">
       <div>
         <h1 class="font-cal mint-hero-title">工作流历史</h1>
@@ -75,11 +75,23 @@
             <i data-lucide="clock" style="width:12px;height:12px;margin-right:4px;"></i>
             {{ formatRelativeTime(wf.updated_at) }}
           </div>
+          <div v-if="draftMap[wf.workflow_id]" class="wf-draft-badge">
+            <i data-lucide="file-edit" style="width:12px;height:12px;margin-right:3px;"></i>
+            有草稿
+          </div>
         </div>
         <div class="mint-wf-footer">
           <button class="mint-btn mint-btn-ghost" @click.stop="onCardClick(wf)">
             <i data-lucide="external-link" style="width:16px;height:16px;"></i>
             在工作台查看
+          </button>
+          <button
+            v-if="draftMap[wf.workflow_id]"
+            class="mint-btn mint-btn-outline wf-draft-btn"
+            @click.stop="$emit('open-draft', wf.workflow_id)"
+          >
+            <i data-lucide="edit" style="width:16px;height:16px;"></i>
+            继续编辑草稿
           </button>
           <button
             v-if="isTerminal(wf.status)"
@@ -153,6 +165,7 @@ const emit = defineEmits<{
   'new-workflow': []
   'open-workflow': [workflowId: string]
   'restart-workflow': [wf: WorkflowListItem]
+  'open-draft': [workflowId: string]
 }>()
 
 const props = defineProps<{
@@ -168,6 +181,24 @@ const currentOffset = ref(0)
 const showDeleteConfirm = ref(false)
 const deleteTarget = ref<WorkflowListItem | null>(null)
 const deleteLoading = ref(false)
+const draftMap = ref<Record<string, boolean>>({})
+
+async function checkDrafts() {
+  const list = workflowStore.workflowList
+  const checks = list
+    .filter(wf => ['suspended', 'running', 'completed'].includes(wf.status))
+    .map(async (wf) => {
+      try {
+        const result = await workflowApi.getDraft(wf.workflow_id)
+        if (result.has_draft) {
+          draftMap.value[wf.workflow_id] = true
+        }
+      } catch {
+        // 静默忽略
+      }
+    })
+  await Promise.allSettled(checks)
+}
 
 const currentPage = computed(() => Math.floor(currentOffset.value / pageSize) + 1)
 const totalPages = computed(() => Math.ceil(workflowStore.workflowListTotal / pageSize) || 1)
@@ -272,6 +303,7 @@ async function loadList() {
     offset: currentOffset.value,
   })
   nextTick(() => createIcons({ icons }))
+  checkDrafts()
 }
 
 function onFilterChange() {
@@ -470,5 +502,24 @@ watch(() => workflowStore.workflowList, () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.wf-draft-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: #7C3AED;
+  background: #F5F3FF;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.wf-draft-btn {
+  border-color: #7C3AED !important;
+  color: #7C3AED !important;
+}
+.wf-draft-btn:hover {
+  background: #F5F3FF !important;
 }
 </style>

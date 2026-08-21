@@ -197,7 +197,7 @@ body::before {
   display: none;
 }
 
-body > * { position: relative; z-index: 1; }
+
 
 @keyframes bgDrift {
   0% { background-position: 0% 50%; }
