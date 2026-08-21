@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from app.agents.skills.permissions import Permission
+from app.agents.core.schemas import Permission
 
 
 class Skill(ABC):

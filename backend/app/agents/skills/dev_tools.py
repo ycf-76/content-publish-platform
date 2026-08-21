@@ -21,7 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.agents.skills.base import Skill
-from app.agents.skills.permissions import Permission
+from app.agents.core.schemas import Permission
 
 logger = logging.getLogger(__name__)
 

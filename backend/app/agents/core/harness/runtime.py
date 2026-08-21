@@ -144,10 +144,8 @@ class AgentHarness:
         每次调用前必须经过 permission_gate（与 LoopExecutor 行为一致）。
         """
         # 局部导入避免循环依赖：harness 不能在模块顶层依赖 skills
-        from app.agents.skills.permissions import (
-            PermissionDeniedError,
-            permission_gate,
-        )
+        from app.agents.core.schemas import PermissionDeniedError
+        from app.agents.skills.permissions import permission_gate
 
         for skill in self.skills:
             await self.observer.emit_tool_call_start(

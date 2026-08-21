@@ -8,9 +8,38 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
+
+
+class Permission(str, Enum):
+    """所有可授予的权限。
+
+    高危权限（BASH_EXEC / FILE_WRITE / NET_HTTP_POST / XHS_PUBLISH）
+    在 settings 里必须显式 allow 才会被放行。
+    """
+
+    FILE_READ = "file:read"
+    FILE_WRITE = "file:write"
+    BASH_EXEC = "bash:exec"
+    NET_HTTP_GET = "net:http_get"
+    NET_HTTP_POST = "net:http_post"
+    XHS_SEARCH = "xhs:search"
+    XHS_PUBLISH = "xhs:publish"
+    XHS_ACCOUNT_READ = "xhs:account_read"
+
+
+class PermissionDeniedError(Exception):
+    """权限被拒绝。"""
+
+    def __init__(self, permission: Permission, reason: str = "") -> None:
+        self.permission = permission
+        self.reason = reason
+        super().__init__(
+            f"Permission denied: {permission.value}" + (f" ({reason})" if reason else "")
+        )
 
 
 @runtime_checkable

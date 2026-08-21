@@ -20,7 +20,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 from app.agents.core.harness.executor.base import ExecutorBase
-from app.agents.skills.permissions import PermissionDeniedError, permission_gate
+from app.agents.core.schemas import PermissionDeniedError
 
 if TYPE_CHECKING:
     from app.agents.core.harness.runtime import AgentHarness
@@ -251,6 +251,8 @@ class LoopExecutor(ExecutorBase):
             return f'{{"error": "unknown tool: {tool_name}"}}'
 
         # 权限门控：被拒时把错误作为 observation 回喂，不抛异常打断循环
+        from app.agents.skills.permissions import permission_gate
+
         try:
             await permission_gate.require(skill.required_permissions, context)
         except PermissionDeniedError as e:

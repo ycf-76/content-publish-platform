@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from app.agents.skills.base import Skill
-from app.agents.skills.permissions import Permission
+from app.agents.core.schemas import Permission
 from app.agents.skills.registry import register
 
 if TYPE_CHECKING:

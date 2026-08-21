@@ -6,9 +6,8 @@
 - 权限决策来源优先级：环境变量 > 全局默认 > 节点上下文。
 
 设计：
-- Permission 枚举：列出所有可授予的权限。
+- Permission 枚举 / PermissionDeniedError：定义在 core/schemas.py（零依赖，供全项目共享）。
 - PermissionGate：单例。is_allowed / require 接口。
-- PermissionDeniedError：被门控拒绝时抛出，由上层（Harness / Executor）捕获并转 NodeExecutionError。
 - ContextVar current_permissions：在 workflow 执行链路里临时注入额外许可（例如某节点授予 BASH_EXEC）。
 """
 
@@ -17,35 +16,14 @@ from __future__ import annotations
 import logging
 import os
 from contextvars import ContextVar
-from enum import Enum
 from typing import TYPE_CHECKING
+
+from app.agents.core.schemas import Permission, PermissionDeniedError
 
 if TYPE_CHECKING:
     from app.agents.core.schemas import WorkflowContext
 
 logger = logging.getLogger(__name__)
-
-
-class Permission(str, Enum):
-    """所有可授予的权限。
-
-    高危权限（BASH_EXEC / FILE_WRITE / NET_HTTP_POST / XHS_PUBLISH）
-    在 settings 里必须显式 allow 才会被放行。
-    """
-
-    # 文件/命令
-    FILE_READ = "file:read"
-    FILE_WRITE = "file:write"
-    BASH_EXEC = "bash:exec"
-
-    # 网络
-    NET_HTTP_GET = "net:http_get"
-    NET_HTTP_POST = "net:http_post"
-
-    # 小红书
-    XHS_SEARCH = "xhs:search"
-    XHS_PUBLISH = "xhs:publish"
-    XHS_ACCOUNT_READ = "xhs:account_read"
 
 
 # 默认低危权限：任何节点都自动具备
@@ -83,17 +61,6 @@ def resolve_execution_policy(execution_policy: str) -> tuple[bool, bool]:
     if execution_policy == "sandbox":
         return (False, True)
     return (True, False)
-
-
-class PermissionDeniedError(Exception):
-    """权限被拒绝。"""
-
-    def __init__(self, permission: Permission, reason: str = "") -> None:
-        self.permission = permission
-        self.reason = reason
-        super().__init__(
-            f"Permission denied: {permission.value}" + (f" ({reason})" if reason else "")
-        )
 
 
 # 节点级临时许可：在 workflow 执行链路里通过 set/tmp setter 注入
