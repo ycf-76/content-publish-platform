@@ -19,6 +19,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        populate_by_name=True,
     )
 
     # ===== 应用 =====
@@ -31,8 +32,8 @@ class Settings(BaseSettings):
         default="mysql+aiomysql://root:@127.0.0.1:3306/xhs_agent?charset=utf8mb4",
         description="异步数据库连接串（MySQL/PostgreSQL/SQLite 均可）",
     )
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
+    db_pool_size: int = Field(default=20, description="数据库连接池大小")
+    db_max_overflow: int = Field(default=40, description="连接池最大溢出")
     db_echo: bool = False
 
     # ===== LLM: DeepSeek =====
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
     # 默认平台：决定工作流 search 节点从哪个平台拿数据
     default_source_platform: str = Field(
         default="builtin",
-        description="默认数据源平台：builtin / reddit / hackernews / xiaohongshu",
+        description="默认数据源平台：builtin / tavily / zhihu / weibo / xiaohongshu_web / bilibili / douyin / pinterest / instagram / reddit / hackernews / xiaohongshu",
     )
     xhs_source_enabled: bool = Field(
         default=False,
@@ -106,7 +107,8 @@ class Settings(BaseSettings):
     )
     jwt_secret_key: str = Field(default="", description="JWT 签名密钥")
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60 * 24 * 7
+    jwt_expire_minutes: int = 30
+    jwt_refresh_expire_days: int = 7
 
     # ===== LangGraph =====
     langgraph_checkpoint_table: str = "langgraph_checkpoints"
@@ -137,8 +139,33 @@ class Settings(BaseSettings):
     sse_heartbeat_seconds: int = 15
     sse_event_buffer_limit: int = 1000
 
+    # ===== SMTP（邮箱验证码发送）=====
+    smtp_host: str = Field(default="", description="SMTP 服务器地址（如 smtp.qq.com / smtp.gmail.com）")
+    smtp_port: int = Field(default=465, description="SMTP 端口（SSL 默认 465，TLS 默认 587）")
+    smtp_user: str = Field(default="", description="SMTP 登录用户名（通常就是邮箱地址）")
+    smtp_pass: str = Field(default="", description="SMTP 登录密码或授权码")
+    smtp_from: str = Field(default="", description="发件人地址（留空则用 smtp_user）")
+    smtp_use_tls: bool = Field(default=False, description="是否使用 STARTTLS（端口 587 时通常为 True）")
+
+    # ===== Redis =====
+    redis_url: str = Field(
+        default="redis://127.0.0.1:6379/0",
+        description="Redis 连接地址（留空则使用内存降级缓存）",
+    )
+    redis_password: str = Field(default="", description="Redis 密码（留空表示无密码）")
+    redis_db: int = Field(default=0, description="Redis 数据库编号（0-15）")
+    redis_pool_size: int = Field(default=20, description="Redis 连接池大小")
+
     # ===== CORS =====
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost:3001"]
+    cors_origins_str: str = Field(
+        default="http://localhost:5173,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001",
+        alias="CORS_ORIGINS",
+        description="CORS 允许的来源列表（逗号分隔），可通过 CORS_ORIGINS 环境变量覆盖",
+    )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins_str.split(",") if o.strip()]
 
 
 @lru_cache

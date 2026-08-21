@@ -2,8 +2,10 @@
   <Transition name="greeting-slide">
     <div v-if="visible" class="welcome-bar">
       <div class="welcome-left">
-        <span class="welcome-title">{{ greetingText }}</span>
-        <span class="welcome-subtitle">系统已准备就绪，你今天的第一条创作灵感是什么？</span>
+        <span class="welcome-title">
+          <span class="streamed-text">{{ displayedGreeting }}</span><span v-if="isStreaming" class="stream-cursor">|</span>
+        </span>
+        <span v-if="subtitleVisible" class="welcome-subtitle">系统已准备就绪，你今天的第一条创作灵感是什么？</span>
       </div>
       <div class="welcome-right">
         <span class="welcome-time">{{ formattedTime }}</span>
@@ -16,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 
 interface Props {
   nickname?: string
@@ -28,14 +30,16 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const visible = ref(false)
+const displayedGreeting = ref('')
+const isStreaming = ref(false)
+const subtitleVisible = ref(false)
+let streamTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 今天的日期key，用于判断当天是否已展示过 */
 function todayKey(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-/** 时间分段：凌晨/早上/上午/中午/下午/晚上 */
 function getGreetingPrefix(): string {
   const h = new Date().getHours()
   if (h < 5) return '凌晨好'
@@ -47,9 +51,39 @@ function getGreetingPrefix(): string {
   return '夜深了'
 }
 
-const greetingText = computed(() => {
+const fullGreeting = computed(() => {
   const name = props.nickname?.trim() || '创作者'
-  return `🎉${getGreetingPrefix()}，${name}。`
+  return `${getGreetingPrefix()}，${name}。`
+})
+
+function startStreaming() {
+  displayedGreeting.value = ''
+  isStreaming.value = true
+  subtitleVisible.value = false
+  const text = fullGreeting.value
+  let idx = 0
+
+  function tick() {
+    if (idx < text.length) {
+      const char = text[idx]
+      const isPunctuation = '，。！？、；：'.includes(char)
+      displayedGreeting.value += char
+      idx++
+      const delay = isPunctuation ? 120 : 55
+      streamTimer = setTimeout(tick, delay)
+    } else {
+      isStreaming.value = false
+      subtitleVisible.value = true
+    }
+  }
+
+  streamTimer = setTimeout(tick, 300)
+}
+
+watch(fullGreeting, () => {
+  if (visible.value) {
+    startStreaming()
+  }
 })
 
 const formattedTime = computed(() => {
@@ -62,14 +96,14 @@ const formattedTime = computed(() => {
 
 function close() {
   visible.value = false
+  if (streamTimer) {
+    clearTimeout(streamTimer)
+    streamTimer = null
+  }
+  isStreaming.value = false
   emit('close')
 }
 
-/**
- * 触发展示：
- * - 若 showTodayOnly=true：当天没展示过才展示，并写入 localStorage
- * - 否则：直接展示
- */
 function trigger() {
   const key = `welcome_greeted_${todayKey()}`
   if (props.showTodayOnly && localStorage.getItem(key) === '1') {
@@ -79,9 +113,15 @@ function trigger() {
   if (props.showTodayOnly) {
     localStorage.setItem(key, '1')
   }
+  startStreaming()
 }
 
-/** 暴露给父组件：on demand 触发 */
+onUnmounted(() => {
+  if (streamTimer) {
+    clearTimeout(streamTimer)
+  }
+})
+
 defineExpose({ trigger, close })
 </script>
 
@@ -116,10 +156,29 @@ defineExpose({ trigger, close })
   white-space: nowrap;
 }
 
+.stream-cursor {
+  display: inline-block;
+  animation: cursor-blink 0.6s step-end infinite;
+  color: #2170d6;
+  font-weight: 400;
+  margin-left: 1px;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 .welcome-subtitle {
   font-size: 15px;
   color: #6b7a93;
   line-height: 1.5;
+  animation: subtitle-fade-in 0.5s ease both;
+}
+
+@keyframes subtitle-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .welcome-right {

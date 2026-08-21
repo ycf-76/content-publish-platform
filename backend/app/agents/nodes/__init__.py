@@ -42,22 +42,12 @@ from app.agents.nodes.audit import audit_node
 from app.agents.nodes.final_review import final_review_node
 from app.agents.nodes.publish import publish_node
 
-# 3 个质量检查节点
-from app.agents.nodes.quality_checks import (
-    analyze_quality_check_node,
-    copywrite_quality_check_node,
-    audit_quality_check_node,
-)
-
 # 路由函数
 from app.agents.nodes.routing import (
     route_after_search,
     route_after_image_gen,
-    route_after_analyze,
-    route_after_copywrite,
     route_after_image_review,
     route_after_final_review,
-    route_after_audit,
     rollback_to_node,
 )
 
@@ -83,17 +73,10 @@ __all__ = [
     "audit_node",
     "final_review_node",
     "publish_node",
-    # Quality check nodes
-    "analyze_quality_check_node",
-    "copywrite_quality_check_node",
-    "audit_quality_check_node",
     # Routing
     "route_after_search",
     "route_after_image_gen",
-    "route_after_analyze",
-    "route_after_copywrite",
     "route_after_image_review",
     "route_after_final_review",
-    "route_after_audit",
     "rollback_to_node",
 ]

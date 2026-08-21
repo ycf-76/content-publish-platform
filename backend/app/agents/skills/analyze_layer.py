@@ -85,6 +85,8 @@ Layer 2 LLM 粗分析输出（模式总结）：
 2. recommendations：选题方向 + 内容骨架建议 + 执行指令
    - 基于 Layer 2 的模式总结 + Layer 3 的趋势信号
    - 给出 2-3 个可复制的选题方向
+   - 若提供了"用户创作要求"，所有推荐方向只能优化表达方式/结构/语气，
+     不得改变用户指定的话题对象、立场、重点和必须包含的信息
    - 每个方向附带：推荐标题模板 + 内容结构 + 情绪钩子 + 参考笔记 content_id
    - 必须带证据链：为什么推荐这个方向？哪些笔记是证据？
    - 若提供了用户偏好主题，优先推荐偏好方向；若提供了避免主题，避免推荐这些方向
@@ -149,6 +151,15 @@ def _build_user_preferences_section(user_preferences: dict) -> str:
     parts: list[str] = []
     preferred = user_preferences.get("preferred_topics") or []
     avoided = user_preferences.get("avoided_topics") or []
+    creative_brief = str(user_preferences.get("creative_brief") or "").strip()
+    search_keyword = str(user_preferences.get("search_keyword") or "").strip()
+    if creative_brief:
+        parts.append(
+            "用户创作要求（最高优先级，搜索趋势只能作为表达参考）: "
+            f"{creative_brief[:1000]}"
+        )
+    if search_keyword:
+        parts.append(f"搜索关键词（仅用于匹配热点证据）: {search_keyword[:200]}")
     if preferred:
         parts.append(f"用户偏好主题（优先推荐这些方向）: {', '.join(str(t) for t in preferred[:5])}")
     if avoided:
@@ -339,6 +350,147 @@ async def run_layer2(
         return {"_error": str(e)}
 
 
+async def run_layer2_streaming(
+    llm: Any,
+    top_notes: list[dict],
+    topic: str,
+    workflow_id: str = "",
+    node_id: str = "analyze",
+) -> dict:
+    """Layer 2 流式版本：LLM streaming + 可读进度推送。
+
+    保持JSON模式收集原始数据用于最终解析，
+    但SSE推送时转换为人类可读的进度描述。
+    """
+    from app.services.sse_bus import sse_bus
+
+    if not llm:
+        logger.warning("[analyze_layer] Layer2 streaming skipped: no LLM")
+        return {"_skipped": "no_llm"}
+
+    if not top_notes:
+        return {"_skipped": "empty_input"}
+
+    slim_notes = []
+    for n in top_notes[:5]:
+        slim_notes.append({
+            "content_id": n.get("content_id", ""),
+            "title": n.get("title", ""),
+            "summary": (n.get("summary") or "")[:200],
+            "viral_type": n.get("viral_type", "普通"),
+            "viral_score": n.get("viral_score", 0),
+            "likes": n.get("likes", 0),
+            "author": n.get("author", ""),
+        })
+
+    prompt = _LAYER2_PROMPT.format(
+        n=len(slim_notes),
+        topic=topic,
+        top5_json=json.dumps(slim_notes, ensure_ascii=False, indent=2),
+    )
+
+    try:
+        raw_parts: list[str] = []
+        # 追加式流式推送：只发新增文本行（_append），前端逐字打印。
+        # 过滤"正在..."占位行，保证已推送的行不会回改（append-only）。
+        emitted_lines: list[str] = []
+        if workflow_id:
+            await sse_bus.publish(workflow_id, "stream_chunk", {
+                "node_id": node_id,
+                "chunk": {"content": ""},
+                "_append": "\n—— Layer 2 · 模式识别 ——",
+            })
+        async for chunk in llm.stream_chat(
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+        ):
+            content = chunk.get("content")
+            if content:
+                raw_parts.append(content)
+                if workflow_id:
+                    full_display = _make_layer2_display_text(content, raw_parts)
+                    lines = [
+                        l for l in full_display.split("\n")
+                        if l.strip() and "正在" not in l
+                    ]
+                    new_lines = lines[len(emitted_lines):]
+                    if new_lines:
+                        emitted_lines.extend(new_lines)
+                        await sse_bus.publish(workflow_id, "stream_chunk", {
+                            "node_id": node_id,
+                            "chunk": {"content": content},
+                            "_append": "\n" + "\n".join(new_lines),
+                        })
+
+        raw = "".join(raw_parts)
+        parsed = _parse_llm_json(raw)
+        if parsed is None:
+            logger.warning("[analyze_layer] Layer2 streaming JSON parse failed")
+            return {"_parse_failed": True, "_raw": raw[:500]}
+        logger.info(
+            f"[analyze_layer] Layer2 streaming done: "
+            f"patterns={len(parsed.get('title_patterns', []))}, "
+            f"structures={len(parsed.get('content_structures', []))}, "
+            f"triggers={len(parsed.get('emotion_triggers', []))}"
+        )
+        return parsed
+    except Exception as e:
+        logger.exception(f"[analyze_layer] Layer2 streaming failed: {e}")
+        return {"_error": str(e)}
+
+
+def _make_layer2_display_text(latest_chunk: str, all_parts: list[str]) -> str:
+    """将Layer2的JSON chunk转换为可读进度文本（累积式，每次返回完整文本）。"""
+    import re as _re
+    combined = "".join(all_parts) if all_parts else latest_chunk
+
+    lines: list[str] = []
+
+    # 阶段1：标题钩子
+    if '"title_patterns"' in combined:
+        title_match = _re.search(r'"title"\s*:\s*"([^"]+)"', combined)
+        hook_match = _re.search(r'"hook"\s*:\s*"([^"]+)"', combined)
+        pattern_match = _re.search(r'"pattern"\s*:\s*"([^"]+)"', combined)
+        if title_match:
+            lines.append(f"🔍 标题: {title_match.group(1)}")
+        if hook_match:
+            lines.append(f"🪝 钩子: {hook_match.group(1)}")
+        if pattern_match:
+            lines.append(f"📐 模式: {pattern_match.group(1)}")
+        if not lines:
+            lines.append("🔍 正在识别标题钩子模式...")
+
+    # 阶段2：内容结构
+    if '"content_structures"' in combined:
+        struct_match = _re.search(r'"structure"\s*:\s*"([^"]+)"', combined)
+        type_match = _re.search(r'"type"\s*:\s*"([^"]+)"', combined)
+        if struct_match:
+            lines.append(f"📋 结构: {struct_match.group(1)}")
+        if type_match:
+            lines.append(f"📝 类型: {type_match.group(1)}")
+        if not any("结构" in l or "类型" in l for l in lines):
+            lines.append("📋 正在分析内容结构骨架...")
+
+    # 阶段3：情绪触发
+    if '"emotion_triggers"' in combined:
+        trigger_match = _re.search(r'"trigger"\s*:\s*"([^"]+)"', combined)
+        emotion_match = _re.search(r'"emotion"\s*:\s*"([^"]+)"', combined)
+        if trigger_match:
+            lines.append(f"💡 触发: {trigger_match.group(1)}")
+        if emotion_match:
+            lines.append(f"❤️ 情绪: {emotion_match.group(1)}")
+        if not any("触发" in l or "情绪" in l for l in lines):
+            lines.append("💡 正在识别情绪触发点...")
+
+    if not lines:
+        if len(combined) < 50:
+            lines.append("🔎 正在分析爆款笔记模式...")
+        else:
+            lines.append("⚙️ 正在生成分析结果...")
+
+    return "\n".join(lines)
+
+
 # ===== Layer 3 =====
 
 async def run_layer3(
@@ -443,3 +595,149 @@ async def run_layer3(
     except Exception as e:
         logger.exception(f"[analyze_layer] Layer3 LLM call failed: {e}")
         return {"_error": str(e)}
+
+
+async def run_layer3_streaming(
+    llm: Any,
+    top2: list[dict],
+    all_notes: list[dict],
+    layer2_output: dict,
+    topic: str,
+    user_preferences: dict | None = None,
+    workflow_id: str = "",
+    node_id: str = "analyze",
+) -> dict:
+    """Layer 3 流式版本：LLM streaming + 可读进度推送。"""
+    from app.services.sse_bus import sse_bus
+
+    if not llm:
+        logger.warning("[analyze_layer] Layer3 streaming skipped: no LLM")
+        return {"_skipped": "no_llm"}
+
+    if not top2:
+        return {"_skipped": "empty_input"}
+
+    valid_ids = {n.get("content_id") for n in all_notes if n.get("content_id")}
+
+    layer1_summary = json.dumps([
+        {
+            "content_id": n.get("content_id", ""),
+            "title": n.get("title", ""),
+            "viral_type": n.get("viral_type", "普通"),
+            "viral_score": n.get("viral_score", 0),
+            "likes": n.get("likes", 0),
+            "author": n.get("author", ""),
+        }
+        for n in all_notes[:20]
+    ], ensure_ascii=False, indent=2)
+
+    layer2_str = json.dumps(layer2_output, ensure_ascii=False, indent=2) if layer2_output else "{}"
+    user_preferences_section = _build_user_preferences_section(user_preferences or {})
+
+    prompt = _LAYER3_PROMPT.format(
+        topic=topic,
+        user_preferences_section=user_preferences_section,
+        layer1_summary=layer1_summary,
+        layer2_output=layer2_str,
+    )
+
+    try:
+        raw_parts: list[str] = []
+        # 追加式流式推送（同 Layer2）：只发新增行，append-only
+        emitted_lines: list[str] = []
+        if workflow_id:
+            await sse_bus.publish(workflow_id, "stream_chunk", {
+                "node_id": node_id,
+                "chunk": {"content": ""},
+                "_append": "\n\n—— Layer 3 · 深度归因 ——",
+            })
+        async for chunk in llm.stream_chat(
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+        ):
+            content = chunk.get("content")
+            if content:
+                raw_parts.append(content)
+                if workflow_id:
+                    full_display = _make_layer3_display_text(content, raw_parts)
+                    lines = [
+                        l for l in full_display.split("\n")
+                        if l.strip() and "正在" not in l
+                    ]
+                    new_lines = lines[len(emitted_lines):]
+                    if new_lines:
+                        emitted_lines.extend(new_lines)
+                        await sse_bus.publish(workflow_id, "stream_chunk", {
+                            "node_id": node_id,
+                            "chunk": {"content": content},
+                            "_append": "\n" + "\n".join(new_lines),
+                        })
+
+        raw = "".join(raw_parts)
+        parsed = _parse_llm_json(raw)
+        if parsed is None:
+            logger.warning("[analyze_layer] Layer3 streaming JSON parse failed")
+            return {"_parse_failed": True, "_raw": raw[:500]}
+
+        recs = parsed.get("recommendations", [])
+        for rec in recs:
+            ev_ids = rec.get("evidence_note_ids", [])
+            rec["evidence_note_ids"] = [eid for eid in ev_ids if eid in valid_ids]
+
+        ts = parsed.get("trend_signals", {})
+        if isinstance(ts, dict):
+            noise = ts.get("noise_note_ids", [])
+            ts["noise_note_ids"] = [nid for nid in noise if nid in valid_ids]
+
+        for rec in recs:
+            rec["execution_brief"] = _sanitize_execution_brief(rec.get("execution_brief"))
+
+        logger.info(
+            f"[analyze_layer] Layer3 streaming done: "
+            f"is_topic_trend={ts.get('is_topic_trend') if isinstance(ts, dict) else 'N/A'}, "
+            f"strength={ts.get('trend_strength') if isinstance(ts, dict) else 'N/A'}, "
+            f"recommendations={len(recs)}"
+        )
+        return parsed
+    except Exception as e:
+        logger.exception(f"[analyze_layer] Layer3 streaming failed: {e}")
+        return {"_error": str(e)}
+
+
+def _make_layer3_display_text(latest_chunk: str, all_parts: list[str]) -> str:
+    """将Layer3的JSON chunk转换为可读进度文本（累积式，每次返回完整文本）。"""
+    import re as _re
+    combined = "".join(all_parts) if all_parts else latest_chunk
+
+    lines: list[str] = []
+
+    if '"trend_signals"' in combined:
+        signal_match = _re.search(r'"signal"\s*:\s*"([^"]+)"', combined)
+        direction_match = _re.search(r'"direction"\s*:\s*"([^"]+)"', combined)
+        if signal_match:
+            lines.append(f"📊 趋势: {signal_match.group(1)}")
+        if direction_match:
+            lines.append(f"📈 方向: {direction_match.group(1)}")
+        if not lines:
+            lines.append("📊 正在分析跨笔记趋势信号...")
+
+    if '"recommendations"' in combined:
+        rec_match = _re.search(r'"title"\s*:\s*"([^"]+)"', combined)
+        reason_match = _re.search(r'"reason"\s*:\s*"([^"]+)"', combined)
+        if rec_match:
+            lines.append(f"🎯 建议: {rec_match.group(1)}")
+        if reason_match:
+            lines.append(f"💡 理由: {reason_match.group(1)}")
+        if not any("建议" in l or "理由" in l for l in lines):
+            lines.append("🎯 正在生成选题方向建议...")
+
+    if '"execution_brief"' in combined:
+        lines.append("📝 正在生成执行指令...")
+
+    if not lines:
+        if len(combined) < 50:
+            lines.append("🔬 正在做深度归因分析...")
+        else:
+            lines.append("⚙️ 正在生成深度分析...")
+
+    return "\n".join(lines)

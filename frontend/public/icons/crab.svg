@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -5 240 190" width="240" height="190">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <!-- 左臂：深红色、较细，从身体左上侧向外上方伸出（与钳子颜色区分） -->
+  <path d="M52,86 Q36,74 28,64" stroke="#D94F44" stroke-width="11" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+
+  <!-- 右臂：镜像 -->
+  <path d="M148,86 Q164,74 172,64" stroke="#D94F44" stroke-width="11" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+
+  <!-- 左钳：亮红色、放大，两指张开 -->
+  <g filter="url(#shadow)">
+    <ellipse cx="20" cy="50" rx="24" ry="14" transform="rotate(-45 20 50)" fill="#E8655A"/>
+    <ellipse cx="42" cy="80" rx="20" ry="12" transform="rotate(15 42 80)" fill="#E8655A"/>
+  </g>
+
+  <!-- 右钳：镜像 -->
+  <g filter="url(#shadow)">
+    <ellipse cx="180" cy="50" rx="24" ry="14" transform="rotate(45 180 50)" fill="#E8655A"/>
+    <ellipse cx="158" cy="80" rx="20" ry="12" transform="rotate(-15 158 80)" fill="#E8655A"/>
+  </g>
+
+  <!-- 身体 -->
+  <ellipse cx="100" cy="105" rx="58" ry="48" fill="#E8655A" filter="url(#shadow)"/>
+
+  <!-- 左腿 -->
+  <path d="M55,110 Q30,118 22,134" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+  <path d="M52,125 Q28,136 18,154" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+  <path d="M62,138 Q48,152 42,170" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+
+  <!-- 右腿 -->
+  <path d="M145,110 Q170,118 178,134" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+  <path d="M148,125 Q172,136 182,154" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+  <path d="M138,138 Q152,152 158,170" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#shadow)"/>
+
+  <!-- 关节圆：深红色（与手臂同色，衔接手臂和钳子） -->
+  <circle cx="28" cy="64" r="8" fill="#D94F44"/>
+  <circle cx="172" cy="64" r="8" fill="#D94F44"/>
+
+  <!-- 左眼 -->
+  <circle cx="78" cy="62" r="16" fill="white" filter="url(#shadow)"/>
+  <circle cx="80" cy="62" r="8" fill="#1a1a1a"/>
+  <circle cx="83" cy="59" r="3" fill="white"/>
+
+  <!-- 右眼 -->
+  <circle cx="122" cy="62" r="16" fill="white" filter="url(#shadow)"/>
+  <circle cx="120" cy="62" r="8" fill="#1a1a1a"/>
+  <circle cx="123" cy="59" r="3" fill="white"/>
+</svg>

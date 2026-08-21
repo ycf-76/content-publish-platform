@@ -39,7 +39,7 @@ class QwenVLAdapter(BaseLLM):
     def model_name(self) -> str:
         return self.model
 
-    async def chat(
+    async def _chat_impl(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
@@ -72,13 +72,13 @@ class QwenVLAdapter(BaseLLM):
             logger.error(f"Qwen-VL chat failed: {e}")
             raise
 
-    async def stream_chat(
+    async def _stream_chat_impl(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Qwen-VL streaming is not well-supported, fallback to non-streaming."""
-        result = await self.chat(messages, response_format)
+        result = await self._chat_impl(messages, response_format)
         yield {
             "content": result["content"],
             "reasoning_content": None,

@@ -1,4 +1,4 @@
-﻿/* ===== 閫氱敤鍔犺浇鍔ㄧ敾 ===== */
+/* ===== 閫氱敤鍔犺浇鍔ㄧ敾 ===== */
 .mint-loader {
   position: relative;
   width: 60px;
@@ -83,7 +83,7 @@
   gap: 8px;
   padding: 32px 0;
   font-size: 15px;
-  color: #9CA3AF;
+  color: #6B7280;
 }
 .mint-search-error { color: #DC2626; }
 
@@ -108,7 +108,7 @@
 }
 
 .mint-checklist { display: flex; flex-direction: column; gap: 10px; }
-.mint-check-item { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #374151; }
+.mint-check-item { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #6B7280; }
 .mint-check-icon {
   width: 20px;
   height: 20px;
@@ -146,7 +146,7 @@
 .mint-resize-line {
   width: 2px;
   height: 40px;
-  background-color: #D1D5DB;
+  background-color: #E5E7EB;
   border-radius: 1px;
   transition: background-color 0.2s;
 }
@@ -196,7 +196,7 @@
   scrollbar-color: initial;
 }
 
-/* ===== 鍙充晶閰嶇疆鏍忥細鍗曞崱鐗囧鍣?===== */
+/* ===== 鍙充晶閰嶇疆鏍忥細鍗曞崱鐗囧鍣?===== */
 .mint-config-card {
   display: flex;
   flex-direction: column;
@@ -210,7 +210,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px 12px;
-  border-bottom: 1px solid #F1F5F9;
+  border-bottom: 1px solid #F3F4F6;
   position: sticky;
   top: 0;
   background: inherit;
@@ -235,7 +235,7 @@
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: #9CA3AF;
+  color: #6B7280;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -247,7 +247,7 @@
 /* Section 鍒嗗潡锛氬唴閮ㄧ敤鍒嗗壊绾垮垎闅旓紝涓嶅啀鍚勮嚜鐙珛鍗＄墖 */
 .mint-config-section {
   padding: 14px 16px;
-  border-bottom: 1px solid #F1F5F9;
+  border-bottom: 1px solid #F3F4F6;
 }
 .mint-config-section:last-child {
   border-bottom: none;
@@ -258,7 +258,7 @@
   gap: 7px;
   font-size: 15px;
   font-weight: 600;
-  color: #374151;
+  color: #6B7280;
   margin-bottom: 10px;
   letter-spacing: -0.01em;
 }
@@ -306,7 +306,7 @@
 .mint-config-stat-val {
   font-size: 15px;
   font-weight: 700;
-  color: #10B981;
+  color: #6B7280;
   font-variant-numeric: tabular-nums;
 }
 
@@ -334,17 +334,17 @@
 .mint-config-label { font-size: 15px; color: #6B7280; font-weight: 500; }
 
 .mint-select {
-  border: 1px solid #EEF0F2;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
   padding: 8px 12px;
   font-size: 14px;
-  background: #EEF0F2;
+  background: var(--ma-secondary, #EEF0F4);
   color: #111827;
   outline: none;
   cursor: pointer;
   width: 100%;
   font-family: inherit;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: background-color 0.2s;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
@@ -353,14 +353,14 @@
   background-position: right 12px center;
   padding-right: 32px;
 }
-.mint-select:focus { border-color: #D1D5DB; box-shadow: none; }
+.mint-select:focus { border-color: #D1D5DB; background: var(--ma-secondary, #EEF0F4); box-shadow: none; }
 
 .mint-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mint-switch {
   position: relative;
   width: 40px;
   height: 22px;
-  background: #D1D5DB;
+  background: #E5E7EB;
   border-radius: 9999px;
   cursor: pointer;
   transition: background 0.2s;
@@ -397,7 +397,7 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #10B981;
+  background: #6B7280;
   cursor: pointer;
   border: 2px solid #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -406,18 +406,18 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #10B981;
+  background: #6B7280;
   cursor: pointer;
   border: 2px solid #fff;
 }
-.mint-slider-val { font-size: 15px; font-weight: 600; color: #10B981; min-width: 30px; text-align: right; }
+.mint-slider-val { font-size: 15px; font-weight: 600; color: #6B7280; min-width: 30px; text-align: right; }
 
 .mint-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.mint-tag { padding: 4px 10px; border-radius: 8px; font-size: 14px; background: #F3F4F6; color: #4B5563; }
+.mint-tag { padding: 4px 10px; border-radius: 9999px; font-size: 14px; background: #F3F4F6; color: #6B7280; }
 
 .mint-textarea {
   border: 1px solid #E5E7EB;
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 10px 12px;
   font-size: 14px;
   outline: none;

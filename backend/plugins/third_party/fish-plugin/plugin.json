@@ -1,0 +1,53 @@
+{
+  "id": "fish-plugin",
+  "name": "DeepSeek 动态鱼",
+  "version": "1.0.0",
+  "description": "在输入框旁渲染一只 DeepSeek 品牌蓝的动态鱼：待机时缓慢浮动摆尾，AI 生成时游动加快；支持尺寸、速度、气泡、摆放侧配置。",
+  "category": "ui_theme",
+
+  "author": { "name": "杨成锋" },
+  "entry_point": "fish_plugin.py:FishPlugin",
+  "display_icon": "🐟",
+  "display_color": "#4D6BFE",
+  "pricing_model": "free",
+
+  "tags": ["ui", "theme", "animation", "deepseek"],
+  "capabilities": ["ui_overlay"],
+  "permissions_required": [],
+
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "size": {
+        "type": "integer",
+        "default": 96,
+        "minimum": 48,
+        "maximum": 200,
+        "description": "鱼的宽度（px）"
+      },
+      "speed": {
+        "type": "number",
+        "default": 1.0,
+        "minimum": 0.5,
+        "maximum": 2.0,
+        "description": "动画速度倍率"
+      },
+      "bubble": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否显示气泡"
+      },
+      "placement": {
+        "type": "string",
+        "enum": ["left", "right"],
+        "default": "right",
+        "description": "鱼相对输入框的摆放侧（right 时鱼头朝向输入框）"
+      }
+    }
+  },
+
+  "dependencies": [],
+  "min_platform_version": "1.0.0",
+  "is_builtin": false,
+  "is_enabled_by_default": false
+}

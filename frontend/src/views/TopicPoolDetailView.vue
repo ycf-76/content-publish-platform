@@ -1,16 +1,14 @@
 <template>
-  <div class="mint-shell tpd-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'cards-transparent': cardsTransparent, 'dark-theme': darkTheme }">
+  <div class="mint-shell tpd-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
 
     <!-- ============ LEFT COLUMN ============ -->
     <SidebarNav
       :current-page="'topic-pool'"
-      :cards-transparent="cardsTransparent"
-      :dark-theme="darkTheme"
+      :is-collapsed="isSidebarCollapsed"
       @nav-click="handleNavClick"
       @toggle-sidebar="toggleSidebar"
-      @toggle-cards-transparent="toggleCardsTransparent"
-      @toggle-theme="toggleTheme"
       @go-eco="goToEco"
+      @open-settings="openSettings"
     />
 
     <div
@@ -27,7 +25,7 @@
         <aside v-if="hasAnyImage" class="tpd-preview-panel" ref="previewPanel" :style="{ width: previewWidth + 'px' }">
           <div class="tpd-preview-body" ref="previewBody">
             <div class="tpd-preview-main" v-if="detail && detail.cover_img" @click="previewImage(detail.cover_img)">
-              <img :src="safeImageUrl(detail.cover_img)" :alt="detail?.title || '封面'" loading="lazy" @error="onImgError($event)" />
+              <img :src="safeImageUrl(detail.cover_img)" :alt="detail?.title || '封面'" loading="lazy" referrerpolicy="no-referrer" @error="onImgError($event)" />
               <span class="tpd-preview-badge">封面</span>
             </div>
             <div class="tpd-preview-thumbs" v-if="detail && detail.images && detail.images.length > 0">
@@ -37,7 +35,7 @@
                 class="tpd-preview-thumb"
                 @click="previewImage(img)"
               >
-                <img :src="safeImageUrl(img)" :alt="`图${idx + 1}`" loading="lazy" @error="onImgError($event)" />
+                <img :src="safeImageUrl(img)" :alt="`图${idx + 1}`" loading="lazy" referrerpolicy="no-referrer" @error="onImgError($event)" />
               </div>
             </div>
             <div class="tpd-preview-empty" v-if="!detail?.cover_img && !(detail?.images && detail.images.length > 0)">
@@ -159,7 +157,7 @@
               class="tpd-image-item"
               @click="previewImage(img)"
             >
-              <img :src="safeImageUrl(img)" :alt="`图片${idx + 1}`" loading="lazy" @error="onImgError($event)" />
+              <img :src="safeImageUrl(img)" :alt="`图片${idx + 1}`" loading="lazy" referrerpolicy="no-referrer" @error="onImgError($event)" />
             </div>
           </div>
         </section>
@@ -233,7 +231,7 @@
               @click="goToDetail(item.id)"
             >
               <div class="tpd-related-cover" v-if="item.cover_img">
-                <img :src="safeImageUrl(item.cover_img)" :alt="item.title" loading="lazy" @error="onImgError($event)" />
+                <img :src="safeImageUrl(item.cover_img)" :alt="item.title" loading="lazy" referrerpolicy="no-referrer" @error="onImgError($event)" />
                 <span class="tpd-related-platform" :style="platformStyle(item.platform)">{{ platformLabel(item.platform) }}</span>
               </div>
               <div class="tpd-related-body">
@@ -258,10 +256,11 @@
 
     <!-- 图片预览 -->
     <div class="tpd-lightbox" v-if="lightboxImg" @click="lightboxImg = ''">
-      <img :src="safeImageUrl(lightboxImg)" alt="预览" @click.stop />
+      <img :src="safeImageUrl(lightboxImg)" alt="预览" referrerpolicy="no-referrer" @click.stop />
       <button class="tpd-lightbox-close" @click="lightboxImg = ''" type="button"><X /></button>
     </div>
 
+    <SettingsView v-if="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
@@ -276,56 +275,24 @@ import {
   Layers, Link2, X,
 } from 'lucide-vue-next'
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
+import SettingsView from '@/views/SettingsView.vue'
 import { topicPoolApi, type TopicPoolItem } from '@/api/topic_pool'
 
 const route = useRoute()
 const router = useRouter()
 
+const showSettings = ref(false)
+function openSettings() {
+  showSettings.value = true
+}
+
 // ===== 侧边栏状态（与列表页保持一致） =====
 const SK_COLLAPSED = 'mint_sidebar_collapsed'
 const isSidebarCollapsed = ref(localStorage.getItem(SK_COLLAPSED) === '1')
-const SK_CARDS_TRANSPARENT = 'mint_cards_transparent'
-const cardsTransparent = ref(localStorage.getItem(SK_CARDS_TRANSPARENT) === '1')
-const SK_DARK_THEME = 'mint_dark_theme'
-const darkTheme = ref(localStorage.getItem(SK_DARK_THEME) === '1')
 
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
   localStorage.setItem(SK_COLLAPSED, isSidebarCollapsed.value ? '1' : '0')
-}
-function toggleCardsTransparent() {
-  cardsTransparent.value = !cardsTransparent.value
-  localStorage.setItem(SK_CARDS_TRANSPARENT, cardsTransparent.value ? '1' : '0')
-}
-function toggleTheme(event: MouseEvent) {
-  const x = event.clientX
-  const y = event.clientY
-  const endRadius = Math.hypot(
-    Math.max(x, window.innerWidth - x),
-    Math.max(y, window.innerHeight - y)
-  )
-  // @ts-ignore
-  if (!document.startViewTransition) {
-    darkTheme.value = !darkTheme.value
-    localStorage.setItem(SK_DARK_THEME, darkTheme.value ? '1' : '0')
-    return
-  }
-  // @ts-ignore
-  const transition = document.startViewTransition(() => {
-    darkTheme.value = !darkTheme.value
-    localStorage.setItem(SK_DARK_THEME, darkTheme.value ? '1' : '0')
-  })
-  transition.ready.then(() => {
-    document.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${endRadius}px at ${x}px ${y}px)`,
-        ],
-      },
-      { duration: 500, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' }
-    )
-  })
 }
 function handleNavClick(pageName: string) {
   if (pageName === 'topic-pool') {
@@ -510,7 +477,13 @@ function formatDate(s: string): string {
 function platformStyle(platform: string) {
   const p = (platform || '').toLowerCase()
   let color = '#64748B'
-  if (p === 'xiaohongshu') color = '#FF2442'
+  if (p === 'xiaohongshu' || p === 'xiaohongshu_web') color = '#FF2442'
+  else if (p === 'zhihu') color = '#0066FF'
+  else if (p === 'weibo') color = '#E6162D'
+  else if (p === 'bilibili') color = '#00A1D6'
+  else if (p === 'douyin') color = '#000000'
+  else if (p === 'pinterest') color = '#E60023'
+  else if (p === 'instagram') color = '#E4405F'
   else if (p === 'hackernews') color = '#FF6600'
   else if (p === 'reddit') color = '#FF4500'
   else if (p === 'tavily') color = '#FF2442'
@@ -523,7 +496,13 @@ function platformStyle(platform: string) {
 
 function platformLabel(platform: string) {
   const p = (platform || '').toLowerCase()
-  if (p === 'xiaohongshu') return '小红书'
+  if (p === 'xiaohongshu' || p === 'xiaohongshu_web') return '小红书'
+  if (p === 'zhihu') return '知乎'
+  if (p === 'weibo') return '微博'
+  if (p === 'bilibili') return 'B站'
+  if (p === 'douyin') return '抖音'
+  if (p === 'pinterest') return 'Pinterest'
+  if (p === 'instagram') return 'Instagram'
   if (p === 'hackernews') return 'HackerNews'
   if (p === 'reddit') return 'Reddit'
   if (p === 'tavily') return 'Tavily'
@@ -541,6 +520,7 @@ function safeImageUrl(url: string): string {
   if (!url) return ''
   const u = url.trim()
   if (u.startsWith('data:image')) return u
+  if (u.startsWith('/uploads/')) return u
   return u.replace(/^http:/, 'https:')
 }
 
@@ -574,8 +554,10 @@ watch(() => route.params.id, (newId) => {
 // ===== 侧边栏拖拽 =====
 const SK_SIDEBAR_WIDTH = 'mint_sidebar_width'
 function applySidebarWidth(w: number) {
-  const el = document.querySelector('.tpd-shell .mint-sidebar') as HTMLElement | null
-  if (el) el.style.width = w + 'px'
+  const sidebar = document.querySelector('.tpd-shell .mint-sidebar') as HTMLElement | null
+  const wrapper = document.querySelector('.tpd-shell .mint-sidebar-wrapper') as HTMLElement | null
+  if (sidebar) sidebar.style.width = w + 'px'
+  if (wrapper) wrapper.style.width = (w + 4) + 'px'
 }
 function startSidebarResize(e: MouseEvent) {
   e.preventDefault()
@@ -633,7 +615,7 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   height: 100%;
-  background: var(--ma-bg-subtle);
+  background: #FFFFFF;
   font-family: var(--ma-font-sans);
   color: var(--ma-text-primary);
   box-sizing: border-box;
@@ -726,7 +708,7 @@ onMounted(() => {
   gap: 8px;
   padding: 40px 0;
   color: var(--ma-text-tertiary);
-  font-size: 13px;
+  font-size: var(--ma-font-sm);
 }
 .tpd-preview-empty svg { width: 32px; height: 32px; opacity: 0.5; }
 
@@ -748,7 +730,7 @@ onMounted(() => {
   width: 2px;
   height: 40px;
   border-radius: 2px;
-  background: #D1D5DB;
+  background: #E5E7EB;
   transition: background 0.15s ease, height 0.15s ease;
 }
 .tpd-preview-resizer:hover { background: rgba(59, 108, 246, 0.08); }
@@ -806,7 +788,7 @@ onMounted(() => {
   border: 1px solid var(--ma-border-default);
   border-radius: 8px;
   color: var(--ma-text-secondary);
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   font-family: inherit;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease;
@@ -830,7 +812,7 @@ onMounted(() => {
   border: 1px solid var(--ma-border-default);
   border-radius: 8px;
   color: var(--ma-text-secondary);
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   text-decoration: none;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -870,7 +852,7 @@ onMounted(() => {
   border-radius: 8px;
   background: var(--ma-blue-500);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
@@ -888,11 +870,11 @@ onMounted(() => {
   gap: 10px;
   padding: 80px 0;
   color: var(--ma-text-secondary);
-  font-size: 14px;
+  font-size: var(--ma-font-base);
 }
 .tpd-loading svg, .tpd-empty svg { width: 40px; height: 40px; color: var(--ma-text-tertiary); }
-.tpd-empty-title { font-size: 16px; font-weight: 600; color: var(--ma-text-secondary); }
-.tpd-empty-desc { font-size: 13px; color: var(--ma-text-tertiary); }
+.tpd-empty-title { font-size: var(--ma-font-md); font-weight: 600; color: var(--ma-text-secondary); }
+.tpd-empty-desc { font-size: var(--ma-font-sm); color: var(--ma-text-tertiary); }
 .tpd-retry-btn {
   display: inline-flex;
   align-items: center;
@@ -903,7 +885,7 @@ onMounted(() => {
   border-radius: 8px;
   background: var(--ma-blue-500);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   font-family: inherit;
   cursor: pointer;
 }
@@ -924,14 +906,14 @@ onMounted(() => {
   align-items: center;
   padding: 3px 10px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--ma-font-xs);
   font-weight: 500;
 }
 .tpd-meta-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--ma-font-sm);
   color: var(--ma-text-tertiary);
 }
 .tpd-meta-item svg { width: 13px; height: 13px; }
@@ -942,7 +924,7 @@ onMounted(() => {
 
 /* ===== 标题 ===== */
 .tpd-title {
-  font-size: 24px;
+  font-size: var(--ma-font-2xl);
   font-weight: 700;
   color: var(--ma-text-primary);
   line-height: 1.4;
@@ -975,7 +957,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   font-weight: 600;
   color: var(--ma-text-primary);
   margin-bottom: 10px;
@@ -991,7 +973,7 @@ onMounted(() => {
 }
 .tpd-summary p {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   color: var(--ma-text-secondary);
   line-height: 1.7;
 }
@@ -1006,7 +988,7 @@ onMounted(() => {
 }
 .tpd-ai-tag {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--ma-font-xs);
   font-weight: 400;
   color: var(--ma-text-tertiary);
 }
@@ -1016,12 +998,12 @@ onMounted(() => {
   gap: 8px;
   padding: 20px 0;
   color: var(--ma-blue-500);
-  font-size: 14px;
+  font-size: var(--ma-font-base);
 }
 .tpd-ai-generating svg { width: 18px; height: 18px; }
 .tpd-ai-content p {
   margin: 0 0 12px 0;
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   color: var(--ma-text-primary);
   line-height: 1.8;
 }
@@ -1036,7 +1018,7 @@ onMounted(() => {
   background: rgba(59, 108, 246, 0.1);
   color: #3B6CF6;
   border-radius: 12px;
-  font-size: 12px;
+  font-size: var(--ma-font-xs);
   font-weight: 500;
 }
 .tpd-ai-empty {
@@ -1045,7 +1027,7 @@ onMounted(() => {
   gap: 10px;
   padding: 8px 0;
   color: var(--ma-text-tertiary);
-  font-size: 14px;
+  font-size: var(--ma-font-base);
 }
 .tpd-ai-empty svg { width: 16px; height: 16px; }
 .tpd-ai-gen-btn {
@@ -1058,7 +1040,7 @@ onMounted(() => {
   border-radius: 8px;
   background: #3B6CF6;
   color: #fff;
-  font-size: 13px;
+  font-size: var(--ma-font-sm);
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
@@ -1084,7 +1066,7 @@ onMounted(() => {
   border-radius: 6px;
   background: var(--ma-bg-base);
   color: var(--ma-text-secondary);
-  font-size: 12px;
+  font-size: var(--ma-font-xs);
   font-family: inherit;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
@@ -1094,14 +1076,14 @@ onMounted(() => {
   color: var(--ma-blue-500);
 }
 .tpd-ai-refresh-btn svg { width: 12px; height: 12px; }
-.tpd-ai-tip { font-size: 12px; color: var(--ma-text-tertiary); }
+.tpd-ai-tip { font-size: var(--ma-font-xs); color: var(--ma-text-tertiary); }
 
 /* ===== 完整内容 ===== */
 .tpd-content {
   flex-shrink: 0;
 }
 .tpd-content-body {
-  font-size: 15px;
+  font-size: var(--ma-font-base);
   color: var(--ma-text-primary);
   line-height: 1.85;
   white-space: normal;
@@ -1164,14 +1146,14 @@ onMounted(() => {
 }
 .tpd-metric-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tpd-metric-num {
-  font-size: 18px;
+  font-size: var(--ma-font-lg);
   font-weight: 700;
   color: var(--ma-text-primary);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .tpd-metric-label {
-  font-size: 11px;
+  font-size: var(--ma-font-xs);
   color: var(--ma-text-tertiary);
 }
 
@@ -1189,11 +1171,11 @@ onMounted(() => {
   padding: 6px 12px;
   background: var(--ma-bg-subtle);
   border-radius: 16px;
-  font-size: 13px;
+  font-size: var(--ma-font-sm);
   color: var(--ma-text-primary);
 }
 .tpd-dim-label {
-  font-size: 11px;
+  font-size: var(--ma-font-xs);
   color: var(--ma-text-tertiary);
   font-weight: 500;
 }
@@ -1240,7 +1222,7 @@ onMounted(() => {
   left: 6px;
   padding: 2px 7px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--ma-font-xs);
   font-weight: 500;
   backdrop-filter: blur(4px);
 }
@@ -1254,11 +1236,11 @@ onMounted(() => {
   align-self: flex-start;
   padding: 2px 7px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--ma-font-xs);
   font-weight: 500;
 }
 .tpd-related-title {
-  font-size: 14px;
+  font-size: var(--ma-font-base);
   font-weight: 600;
   color: var(--ma-text-primary);
   line-height: 1.4;
@@ -1269,7 +1251,7 @@ onMounted(() => {
   overflow: hidden;
 }
 .tpd-related-summary {
-  font-size: 12px;
+  font-size: var(--ma-font-xs);
   color: var(--ma-text-secondary);
   line-height: 1.5;
   margin: 0;
@@ -1287,7 +1269,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--ma-font-xs);
   color: var(--ma-text-tertiary);
 }
 .tpd-related-metric svg { width: 11px; height: 11px; }
@@ -1351,7 +1333,7 @@ onMounted(() => {
   width: 2px;
   height: 40px;
   border-radius: 2px;
-  background: #D1D5DB;
+  background: #E5E7EB;
   transition: background 0.15s ease, height 0.15s ease;
 }
 .tpd-sidebar-resizer:hover { background: rgba(59, 108, 246, 0.08); }

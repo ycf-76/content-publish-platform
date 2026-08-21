@@ -7,3 +7,5 @@ export interface PendingReview { review_id: string; node_id: string; review_type
 export interface WorkflowResponse { workflow_id: string; user_id: string; account_id: string; topic: string; status: string; current_node: string; created_at: string }
 export interface AccountResponse { account_id: string; xhs_user_id: string; xhs_nickname: string; xhs_avatar_url: string; status: string; login_method: string }
 export interface SSEEvent { event_id: string; type: string; payload: any; timestamp: string }
+
+export type { Plugin, PluginCategory, PluginStatus, PricingModel, PluginStats, PluginVersion, PluginConfig, PluginReview, PluginListParams } from '@/api/plugins'

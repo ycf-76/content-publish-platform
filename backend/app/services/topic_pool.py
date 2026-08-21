@@ -11,10 +11,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import func, select, delete
+from sqlalchemy import func, select, delete, case, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import TopicPoolItem
+from app.db.session import is_sqlite, is_mysql
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +66,22 @@ class TopicPoolService:
                 | TopicPoolItem.summary.ilike(pattern)
                 | TopicPoolItem.source_keyword.ilike(pattern)
             )
-        # 维度筛选：dimensions 是 JSON 字段，用 like 做兼容查询（SQLite/MySQL/PG 通用）
+        # 维度筛选：PostgreSQL 用 JSONB 索引查询，SQLite/MySQL 回退 LIKE
         if emotion:
-            stmt = stmt.where(TopicPoolItem.dimensions.like(f'%"emotion": "{emotion}"%'))
+            if is_sqlite or is_mysql:
+                stmt = stmt.where(TopicPoolItem.dimensions.like(f'%"emotion": "{emotion}"%'))
+            else:
+                stmt = stmt.where(TopicPoolItem.dimensions["emotion"].as_string() == emotion)
         if scene:
-            stmt = stmt.where(TopicPoolItem.dimensions.like(f'%"scene": "{scene}"%'))
+            if is_sqlite or is_mysql:
+                stmt = stmt.where(TopicPoolItem.dimensions.like(f'%"scene": "{scene}"%'))
+            else:
+                stmt = stmt.where(TopicPoolItem.dimensions["scene"].as_string() == scene)
         if visual:
-            stmt = stmt.where(TopicPoolItem.dimensions.like(f'%"visual": "{visual}"%'))
+            if is_sqlite or is_mysql:
+                stmt = stmt.where(TopicPoolItem.dimensions.like(f'%"visual": "{visual}"%'))
+            else:
+                stmt = stmt.where(TopicPoolItem.dimensions["visual"].as_string() == visual)
 
         # 总数
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -335,37 +345,28 @@ class TopicPoolService:
         }
 
     async def get_stats(self) -> dict[str, Any]:
-        """统计：总数 + 收藏数 + 各平台数量 + monitor 条数 + 平均热度分 + 情绪分布。"""
-        # 总数
-        total_result = await self.db.execute(
-            select(func.count()).select_from(TopicPoolItem)
-        )
-        total = total_result.scalar_one()
+        """统计：总数 + 收藏数 + 各平台数量 + monitor 条数 + 平均热度分 + 情绪分布。
 
-        # 收藏数
-        fav_result = await self.db.execute(
-            select(func.count()).select_from(
-                select(TopicPoolItem).where(TopicPoolItem.is_favorited.is_(True)).subquery()
-            )
+        优化：将 5 次独立查询合并为 3 次（聚合统计 + 平台分布 + 情绪分布）。
+        使用 CASE WHEN 条件聚合替代 PostgreSQL 专有的 FILTER 语法，兼容 MySQL/SQLite。
+        """
+        agg_stmt = select(
+            func.count().label("total"),
+            func.sum(case((TopicPoolItem.is_favorited.is_(True), 1), else_=0)).label("favorited"),
+            func.sum(case((TopicPoolItem.auto_source == "monitor", 1), else_=0)).label("monitor_count"),
+            func.avg(
+                case(
+                    (TopicPoolItem.auto_source == "monitor", TopicPoolItem.heat_score),
+                    else_=None,
+                )
+            ).label("avg_heat"),
         )
-        favorited = fav_result.scalar_one()
-
-        # monitor 条数
-        monitor_result = await self.db.execute(
-            select(func.count()).select_from(
-                select(TopicPoolItem).where(TopicPoolItem.auto_source == "monitor").subquery()
-            )
-        )
-        monitor_count = monitor_result.scalar_one()
-
-        # 平均热度分（仅 monitor 数据有评分）
-        avg_result = await self.db.execute(
-            select(func.avg(TopicPoolItem.heat_score)).where(
-                TopicPoolItem.auto_source == "monitor",
-                TopicPoolItem.heat_score > 0,
-            )
-        )
-        avg_heat = float(avg_result.scalar() or 0)
+        agg_result = await self.db.execute(agg_stmt)
+        agg_row = agg_result.one()
+        total = agg_row.total
+        favorited = int(agg_row.favorited or 0)
+        monitor_count = int(agg_row.monitor_count or 0)
+        avg_heat = float(agg_row.avg_heat or 0)
 
         # 各平台数量
         plat_stmt = (
@@ -537,6 +538,22 @@ class TopicPoolService:
                 continue
 
             seen_titles.add(item["title"])
+
+            local_cover = item["cover_img"]
+            local_images = item["images"]
+            try:
+                from app.services.image_store import cache_cover_image, cache_detail_images
+                if local_cover:
+                    local_cover = await cache_cover_image(
+                        item["content_id"] or "", local_cover
+                    )
+                if local_images:
+                    local_images = await cache_detail_images(
+                        item["content_id"] or "", local_images
+                    )
+            except Exception as img_err:
+                logger.warning(f"fetch_and_save 图片下载失败: {img_err}")
+
             pool_item = TopicPoolItem(
                 platform=platform,
                 content_id=item["content_id"] or None,
@@ -550,8 +567,8 @@ class TopicPoolService:
                 collects=item["collects"],
                 shares=item["shares"],
                 fans_count=item["fans_count"],
-                cover_img=item["cover_img"],
-                images=item["images"],
+                cover_img=local_cover,
+                images=local_images,
                 source_keyword=keyword[:500],
                 auto_source="manual",
             )

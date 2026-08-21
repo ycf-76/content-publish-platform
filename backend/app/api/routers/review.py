@@ -66,6 +66,7 @@ async def submit_review(
 @router.get("/{workflow_id}/review/pending")
 async def get_pending_review(
     workflow_id: str,
+    user_id: str = Depends(get_current_user),
 ) -> StandardResponse[dict]:
     """获取当前待审核信息（轮询兜底接口）。
 

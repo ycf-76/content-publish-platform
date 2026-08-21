@@ -9,13 +9,17 @@
             卡片编辑器
             <code class="wf-node-key">image_gen</code>
           </div>
-
+          <div class="wf-node-subtitle">生成并编辑卡片图片</div>
         </div>
       </div>
       <span class="mint-badge wf-status-badge" :style="statusBadgeStyle">
         <span class="mint-status-dot" :style="{ background: statusColor }"></span>
         {{ statusLabel }}
       </span>
+    </div>
+
+    <div class="wf-node-summary" v-if="nodeStatus === 'completed'">
+      图片已生成并注入
     </div>
 
     <div class="wf-node-body">
@@ -25,8 +29,8 @@
         等待图片规划完成后，在卡片编辑器中调整并生成图片
       </div>
 
-      <!-- idle/pending 状态 + cardDraft 可用：显示卡片编辑器（工作流在 image_gen 前 interrupt 暂停） -->
-      <div v-else-if="(nodeStatus === 'idle' || nodeStatus === 'pending') && cardDraft" class="wf-card-editor-wrapper">
+      <!-- idle/pending/awaiting_review 状态 + cardDraft 可用：显示卡片编辑器（工作流在 image_gen 前 interrupt 暂停） -->
+      <div v-else-if="(nodeStatus === 'idle' || nodeStatus === 'pending' || nodeStatus === 'awaiting_review') && cardDraft" class="wf-card-editor-wrapper">
         <CardEditorPanel
           :card-draft="cardDraft"
           :injecting="injecting"
@@ -80,8 +84,7 @@ const props = defineProps<{
   workflowId?: string
 }>()
 
-watch(() => props.nodeStatus, (newStatus) => {
-  console.log('[ImageGenCard] nodeStatus changed to:', newStatus, 'cardDraft:', !!props.cardDraft)
+watch(() => props.nodeStatus, () => {
   nextTick(() => createIcons({ icons }))
 })
 watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
@@ -91,13 +94,13 @@ const injecting = ref(false)
 const injectError = ref('')
 
 const statusColor = computed(() => {
-  const map: Record<string, string> = { idle: '#9CA3AF', pending: '#9CA3AF', running: '#FF2442', completed: '#60A5FA', error: '#EF4444' }
+  const map: Record<string, string> = { idle: '#9CA3AF', pending: '#9CA3AF', awaiting_review: '#F59E0B', running: '#FF2442', completed: '#60A5FA', error: '#EF4444' }
   return map[props.nodeStatus] || '#9CA3AF'
 })
 
 const statusLabel = computed(() => {
   if (injecting.value) return '注入中'
-  const map: Record<string, string> = { idle: '待编辑', pending: '待编辑', running: '执行中', completed: '已完成', error: '失败' }
+  const map: Record<string, string> = { idle: '待编辑', pending: '待编辑', awaiting_review: '请编辑卡片', running: '执行中', completed: '已完成', error: '失败' }
   return map[props.nodeStatus] || '待执行'
 })
 
@@ -106,6 +109,7 @@ const statusBadgeStyle = computed(() => {
   if (props.nodeStatus === 'error') return { background: '#FEE2E2', color: '#DC2626' }
   if (props.nodeStatus === 'completed') return { background: '#DBEAFE', color: '#2563EB' }
   if (props.nodeStatus === 'running') return { background: '#FEE2E2', color: '#DC2626' }
+  if (props.nodeStatus === 'awaiting_review') return { background: '#FFFBEB', color: '#D97706' }
   return { background: '#F1F5F9', color: '#64748B' }
 })
 
@@ -132,8 +136,6 @@ async function handleGenerate(images: string[], planContext: Record<string, any>
 
   injecting.value = true
   injectError.value = ''
-  console.log('[ImageGenCard] handleGenerate: injecting', images.length, 'images, planContext:', planContext)
-  console.log('[ImageGenCard] image sizes (KB):', images.map(s => Math.round(s.length * 0.75 / 1024)))
 
   try {
     const resp: any = await workflowApi.injectCardImages(
@@ -148,7 +150,6 @@ async function handleGenerate(images: string[], planContext: Record<string, any>
     // { success: true, data: { success: true, message: "...", image_count: N }, message: "..." }
     const ok = resp?.success || resp?.data?.success
     if (ok) {
-      console.log('[ImageGenCard] injectCardImages success:', resp?.data?.message || resp?.message)
       // SSE 事件会推送 image_gen completed，nodeStatus 会自动更新
     } else {
       const msg = resp?.data?.message || resp?.message || '注入失败（未知原因）'

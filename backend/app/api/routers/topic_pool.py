@@ -183,6 +183,28 @@ async def monitor_fetch(
     return StandardResponse(data={"success": True, "result": result})
 
 
+@router.post("/test-notification")
+async def test_notification(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+) -> StandardResponse[dict[str, Any]]:
+    """发送测试通知（用于调试通知系统是否正常工作）。"""
+    from app.services.notification_bus import notification_bus
+
+    await notification_bus.publish(
+        "topic_pool_monitor",
+        {
+            "fetched": 1,
+            "new": 1,
+            "updated": 0,
+            "skipped": 0,
+            "failed": 0,
+            "message": "这是一条测试通知，如果你能看到说明通知系统正常工作",
+        },
+    )
+    return StandardResponse(data={"success": True, "message": "测试通知已发送"})
+
+
 @router.get("/{item_id}")
 async def get_detail(
     item_id: str,
@@ -214,6 +236,7 @@ async def generate_ai_summary(
     item_id: str,
     force: bool = Query(False, description="True=强制重新生成（消耗token），False=有缓存则用缓存"),
     db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ) -> StandardResponse[dict[str, Any]]:
     """调用 LLM 生成 AI 详细摘要 + 提取关键词标签。
 
@@ -235,6 +258,7 @@ async def generate_ai_summary(
 async def toggle_favorite(
     item_id: str,
     db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ) -> StandardResponse[dict[str, Any]]:
     """切换收藏状态。"""
     service = TopicPoolService(db)
@@ -248,6 +272,7 @@ async def toggle_favorite(
 async def delete_item(
     item_id: str,
     db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ) -> StandardResponse[dict[str, Any]]:
     """删除单个条目。"""
     service = TopicPoolService(db)

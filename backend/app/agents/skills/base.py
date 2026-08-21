@@ -15,7 +15,7 @@ Red line: skills layer must NOT import LangGraph or make flow decisions.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -55,6 +55,7 @@ class Skill(ABC):
     # ===== 通用元数据 =====
     input_schema: type[BaseModel] = BaseModel
     output_schema: type[BaseModel] = BaseModel
+    execution_policy: Literal["direct", "mcp", "sandbox"] = "direct"
     required_permissions: list[Permission] = []
 
     @abstractmethod

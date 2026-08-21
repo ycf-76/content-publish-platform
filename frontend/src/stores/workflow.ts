@@ -1,6 +1,6 @@
-﻿import { defineStore } from 'pinia'
+import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { workflowApi, type WorkflowResponse, type NodeSnapshot, type ModelSettings } from '@/api/workflow'
+import { workflowApi, type WorkflowResponse, type WorkflowListItem, type NodeSnapshot, type ModelSettings, type WorkflowResumeRequest } from '@/api/workflow'
 import { authApi } from '@/api/auth'
 
 /** SSE 事件日志条目（供 AgentFlow 日志面板显示） */
@@ -34,6 +34,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const sseSessionReady = ref(false)
   /** 通知列表（欠费/错误等，前端横幅展示） */
   const notifications = ref<WorkflowNotification[]>([])
+  /** 工作流历史列表 */
+  const workflowList = ref<WorkflowListItem[]>([])
+  const workflowListTotal = ref(0)
+  const workflowListLoading = ref(false)
 
   const pendingReviews = computed(() => nodes.value.filter(n => n.status === 'awaiting_review').length)
   const runningNodes = computed(() => nodes.value.filter(n => n.status === 'running').length)
@@ -63,8 +67,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       timestamp: Date.now(),
     }
     notifications.value.push(notification)
-    // 同时打印到控制台方便调试
-    console.warn(`[WorkflowNotification] ${n.type}: ${n.message}`)
   }
 
   /** 移除通知 */
@@ -83,14 +85,50 @@ export const useWorkflowStore = defineStore('workflow', () => {
     accountId: string,
     modelSettings?: ModelSettings,
     reference?: Record<string, any>,
+    creativeBrief?: string,
   ) {
-    // 防抖：工作流执行中禁止重复启动（避免浪费图片生成 token）
     if (isStreaming.value || isLoading.value) {
-      pushNotification({
-        type: 'workflow_error',
-        message: '工作流正在执行中，请等待当前工作流完成后再启动新的',
-      })
-      return null
+      if (isStreaming.value && !isLoading.value) {
+        const wfId = currentWorkflow.value?.workflow_id
+        if (wfId) {
+          try {
+            const resp: any = await workflowApi.getDetail(wfId)
+            const wfData = resp?.data ?? resp
+            const status = wfData?.status
+            if (['completed', 'error', 'terminated', 'cancelled', 'failed'].includes(status)) {
+              unsubscribeFromWorkflow()
+              if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+              if (publishCheckTimer) { clearInterval(publishCheckTimer); publishCheckTimer = null }
+              localStorage.removeItem('mint_active_workflow_id')
+              isStreaming.value = false
+            } else {
+              pushNotification({
+                type: 'workflow_error',
+                message: '工作流正在执行中，请等待当前工作流完成后再启动新的',
+              })
+              return null
+            }
+          } catch {
+            pushNotification({
+              type: 'workflow_error',
+              message: '工作流正在执行中，请等待当前工作流完成后再启动新的',
+            })
+            return null
+          }
+        } else {
+          pushNotification({
+            type: 'workflow_error',
+            message: '工作流正在执行中，请等待当前工作流完成后再启动新的',
+          })
+          return null
+        }
+      } else {
+        pushNotification({
+          type: 'workflow_error',
+          message: '工作流正在执行中，请等待当前工作流完成后再启动新的',
+        })
+        return null
+      }
     }
 
     try {
@@ -109,6 +147,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
       // modelSettings 来自右侧工作区用户选择的模型/温度/风格配置
       const resp: any = await workflowApi.start({
         topic,
+        search_keyword: topic,
+        creative_brief: creativeBrief || '',
         account_id: accountId,
         model_settings: modelSettings,
         reference,
@@ -116,7 +156,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const wfData = resp?.data ?? resp
       currentWorkflow.value = wfData as WorkflowResponse
 
-      // 订阅 SSE
       if (currentWorkflow.value?.workflow_id) {
         // 保存工作流 ID 到 localStorage，供页面刷新后恢复
         localStorage.setItem('mint_active_workflow_id', currentWorkflow.value.workflow_id)
@@ -160,10 +199,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   /** 恢复工作流 */
-  async function resumeWorkflow() {
+  async function resumeWorkflow(payload?: WorkflowResumeRequest) {
     if (!currentWorkflow.value) return
     try {
-      await workflowApi.resume(currentWorkflow.value.workflow_id)
+      await workflowApi.resume(currentWorkflow.value.workflow_id, payload)
     } catch (e: any) {
       error.value = e.response?.data?.message || '恢复失败'
       throw e
@@ -177,23 +216,21 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!currentWorkflow.value) return
     try {
       await workflowApi.cancel(currentWorkflow.value.workflow_id)
-      // 停止 SSE 和轮询
-      unsubscribeFromWorkflow()
-      if (pollTimer) {
-        clearInterval(pollTimer)
-        pollTimer = null
-      }
-      if (publishCheckTimer) {
-        clearInterval(publishCheckTimer)
-        publishCheckTimer = null
-      }
-      // 清理 localStorage
-      localStorage.removeItem('mint_active_workflow_id')
-      isStreaming.value = false
     } catch (e: any) {
       error.value = e.response?.data?.message || '取消工作流失败'
-      throw e
     }
+    // 无论 API 是否成功，都清理本地状态
+    unsubscribeFromWorkflow()
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+    if (publishCheckTimer) {
+      clearInterval(publishCheckTimer)
+      publishCheckTimer = null
+    }
+    localStorage.removeItem('mint_active_workflow_id')
+    isStreaming.value = false
   }
   async function terminateWorkflow() {
     if (!currentWorkflow.value) return
@@ -223,9 +260,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     action: 'pass' | 'reject' | 'regenerate',
     selectedCandidate?: string,
   ) {
-    console.log('[workflowStore] submitReview called:', reviewId, action, 'currentWorkflow:', !!currentWorkflow.value)
     if (!currentWorkflow.value) {
-      console.error('[workflowStore] submitReview ABORTED: currentWorkflow is null')
       return
     }
     try {
@@ -249,25 +284,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
       if (node) {
         node.status = action === 'pass' ? 'passed' : 'rejected'
       }
-      // reject 后立即把回退目标节点设为 idle，让前端显示编辑器（image_gen）或重新执行
-      // 避免审核按钮消失后到后端推 node_started 之间的 UI 空窗期
+      // reject 后立即把回退目标节点设为 idle，让前端显示编辑器
       if (action === 'reject') {
-        // image_review reject → image_gen 重跑（需要重新编辑卡片）
-        // final_review reject → copywrite 重跑
-        const rollbackTarget = reviewId === 'image_review' ? 'image_gen'
-                             : reviewId === 'final_review' ? 'copywrite'
-                             : null
-        console.log('[workflowStore] submitReview reject: reviewId=', reviewId, 'rollbackTarget=', rollbackTarget)
+        // image_review reject → image_gen 重做图片
+        const rollbackTarget = reviewId === 'image_review' ? 'image_gen' : null
         if (rollbackTarget) {
           const target = nodes.value.find(n => n.node_id === rollbackTarget)
-          console.log('[workflowStore] rollback target node found:', !!target, target?.status)
           if (target) {
-            // image_gen reject 时设为 idle 让 CardEditorPanel 重新显示
-            // 其他节点设为 running
-            target.status = rollbackTarget === 'image_gen' ? 'idle' : 'running'
-            // 清除旧的 output 数据，避免残留
+            target.status = 'idle'
             target.output = { _rollback: true }
-            console.log('[workflowStore] rollback target status set to:', target.status)
           }
         }
       }
@@ -425,8 +450,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
         handleWorkflowEvent(eventType, payload, eventId)
       },
       (err) => {
-        // 真实错误已在 workflowApi.subscribe 内 warn，这里仅更新状态
-        // 主动关闭不会触发此回调（fetch abort 被 filtered）
         isStreaming.value = false
       },
     )
@@ -470,16 +493,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
         // inject resume 后 image_gen/image_review 等节点状态通过此字段推送
         if (payload.node_statuses) {
           for (const [nid, status] of Object.entries(payload.node_statuses)) {
-            console.log('[workflowStore] workflow_snapshot updating node:', nid, 'status:', status)
             const idx = nodes.value.findIndex(n => n.node_id === nid)
             if (idx !== -1) {
               const existing = nodes.value[idx]
-              // 回退保护：只拦截 completed（第一次运行的残留状态）
-              // running/idle/pending 等是合法的重新执行信号，允许通过
               const isRollback = existing.output?._rollback === true
               const isStaleCompleted = isRollback && status === 'completed'
               if (isStaleCompleted) {
-                console.log('[workflowStore] workflow_snapshot: skipping stale completed for rollback node:', nid)
+                // skip stale completed for rollback node
               } else if (isRollback && status && status !== 'idle') {
                 // 合法状态转换：清除 _rollback 标记
                 const updatedOutput = { ...(existing.output || {}) }
@@ -583,7 +603,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
         // 更新单个节点状态
         const nodeId = payload.node_id || payload.id
         const newStatus = payload.status || payload.node_status
-        console.log('[workflowStore] node_status_changed:', nodeId, newStatus)
         const idx = nodes.value.findIndex(n => n.node_id === nodeId)
         if (idx !== -1) {
           const existing = nodes.value[idx]
@@ -593,7 +612,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
           const isRollback = existing.output?._rollback === true
           const isStaleCompleted = isRollback && newStatus === 'completed'
           if (isStaleCompleted) {
-            console.log('[workflowStore] node_status_changed: skipping stale completed for rollback node:', nodeId)
             const { status: _s, node_status: _ns, ...rest } = payload
             nodes.value[idx] = { ...existing, ...rest }
           } else {
@@ -603,7 +621,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
               delete updatedOutput._rollback
               nodes.value[idx] = { ...existing, ...payload, output: updatedOutput }
             } else {
-              nodes.value[idx] = { ...existing, ...payload }
+              // 节点重新 running 时清空上一轮流式文本（打字机从头开始）
+              const resetStream = newStatus === 'running' && existing.agent_thinking
+                ? { agent_thinking: '' }
+                : {}
+              nodes.value[idx] = { ...existing, ...payload, ...resetStream }
             }
           }
         } else {
@@ -619,7 +641,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
         if (idx !== -1) {
           nodes.value[idx] = { ...nodes.value[idx], ...payload, status: 'completed' }
         } else {
-          // snapshot 未带 nodes 数组时，node_started 可能没追加成功，这里兜底追加
           nodes.value.push({ node_id: nodeId, status: 'completed', ...payload })
         }
         break
@@ -648,10 +669,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
             nodes.value[idx] = {
               ...nodes.value[idx],
               status: 'running',
-              output: { status: 'awaiting_manual', message: payload.message || '' },
-              // nodeOutput() 读的是节点本身字段，这里也平铺一份
-              post_id: '',
-              message: payload.message || '',
+              output: { status: 'awaiting_manual', message: payload.message || '', post_id: '' },
             }
           }
           startPublishCheckPolling()
@@ -664,38 +682,49 @@ export const useWorkflowStore = defineStore('workflow', () => {
           if (idx !== -1) {
             const existing = nodes.value[idx].agent_thinking || ''
             const chunk = payload.chunk
-            const text = typeof chunk === 'string'
-              ? chunk
-              : chunk?.reasoning_content || chunk?.content || payload.text || ''
-            if (text) nodes.value[idx].agent_thinking = existing + text
+            // 优先追加式（analyze Layer2/3 的可读文本行，append-only）
+            const appendText = (payload as any)._append || ''
+            if (appendText) {
+              nodes.value[idx].agent_thinking = existing + appendText
+            } else {
+              const displayText = (payload as any)._display || ''
+              if (displayText) {
+                nodes.value[idx].agent_thinking = displayText
+              } else {
+                const text = typeof chunk === 'string'
+                  ? chunk
+                  : chunk?.reasoning_content || chunk?.content || payload.text || ''
+                if (text) nodes.value[idx].agent_thinking = existing + text
+              }
+            }
           }
         }
         break
 
       case 'review_required':
-        // 标记节点为待审核（image_review / final_review）
-        // 后端 payload 包含 review_node 字段（不是 node_id）
+        // 创作点 interrupt：copywrite 前（方向选择）、image_gen 前（卡片编辑器）、
+        // image_review 前（图片审核）、final_review 前（手机预览终审）、publish 前（安全门）
         {
           const reviewNode = payload.review_node || payload.node_id
+          const reviewType = payload.review_type || ''
           if (reviewNode) {
-            // 找到对应节点（node_id 或 node_type 匹配）
             const idx = nodes.value.findIndex(
               n => n.node_id === reviewNode || n.node_type === reviewNode
             )
             if (idx !== -1) {
               nodes.value[idx].status = 'awaiting_review'
-              // 保存审核数据到节点 output，供前端展示
               if (!nodes.value[idx].output) {
                 nodes.value[idx].output = {}
               }
               Object.assign(nodes.value[idx].output, payload)
+              // 保存 review_type 供前端区分交互模式
+              nodes.value[idx].output.review_type = reviewType
             } else {
-              // 节点列表中没有该节点，创建占位节点
               nodes.value.push({
                 node_id: reviewNode,
                 node_type: reviewNode,
                 status: 'awaiting_review',
-                output: { ...payload },
+                output: { ...payload, review_type: reviewType },
               })
             }
           }
@@ -706,16 +735,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
         // 审核结果已提交
         const action = payload.action as string
         if (action === 'reject') {
-          // 找到当前处于 awaiting_review 的审核节点，确定回退目标
           const reviewNode = nodes.value.find(n => n.status === 'awaiting_review')
           const reviewId = reviewNode?.node_id || reviewNode?.node_type
-          const rollbackTarget = reviewId === 'image_review' ? 'image_gen'
-                               : reviewId === 'final_review' ? 'copywrite'
-                               : null
+          // image_review reject → image_gen 重做图片
+          const rollbackTarget = reviewId === 'image_review' ? 'image_gen' : null
           if (rollbackTarget) {
             const target = nodes.value.find(n => n.node_id === rollbackTarget)
             if (target) {
-              target.status = rollbackTarget === 'image_gen' ? 'idle' : 'running'
+              target.status = 'idle'
               target.output = { _rollback: true }
             }
           }
@@ -849,6 +876,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function reset() {
     unsubscribeFromWorkflow()
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
     if (publishCheckTimer) {
       clearInterval(publishCheckTimer)
       publishCheckTimer = null
@@ -906,6 +937,63 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  /** 加载工作流历史列表 */
+  async function loadWorkflowList(params?: { status?: string; limit?: number; offset?: number }) {
+    workflowListLoading.value = true
+    try {
+      const result = await workflowApi.list(params)
+      workflowList.value = result.items
+      workflowListTotal.value = result.total
+    } catch (e) {
+      console.error('加载工作流列表失败', e)
+    } finally {
+      workflowListLoading.value = false
+    }
+  }
+
+  /** 切换到指定工作流（从历史列表点击恢复） */
+  async function switchToWorkflow(workflowId: string): Promise<boolean> {
+    try {
+      // 先清理旧的 SSE 和轮询
+      if (eventSource.value) {
+        eventSource.value.close()
+        eventSource.value = null
+      }
+      isStreaming.value = false
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+      if (publishCheckTimer) { clearInterval(publishCheckTimer); publishCheckTimer = null }
+
+      const resp: any = await workflowApi.getDetail(workflowId)
+      const wfData = resp?.data ?? resp
+      const wfStatus = wfData?.status || wfData?.workflow_status
+
+      currentWorkflow.value = wfData as WorkflowResponse
+      localStorage.setItem('mint_active_workflow_id', workflowId)
+
+      // 加载节点数据
+      try {
+        const nodesResp: any = await workflowApi.getNodes(workflowId)
+        const nodesData = nodesResp?.data ?? nodesResp
+        const nodeList = nodesData?.nodes || []
+        nodes.value = nodeList
+      } catch (e) {
+        console.error('[switchToWorkflow] getNodes failed:', e)
+        nodes.value = []
+      }
+
+      // 活跃工作流：恢复 SSE + 轮询
+      if (!['completed', 'error', 'terminated', 'failed', 'cancelled'].includes(wfStatus)) {
+        subscribeToWorkflow(workflowId)
+        startPollingFallback(workflowId)
+      }
+
+      return true
+    } catch (e) {
+      console.error('切换工作流失败', e)
+      return false
+    }
+  }
+
   return {
     currentWorkflow,
     nodes,
@@ -935,6 +1023,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     clearError,
     reset,
     restoreWorkflow,
+    loadWorkflowList,
+    switchToWorkflow,
+    workflowList,
+    workflowListTotal,
+    workflowListLoading,
     pushNotification,
     dismissNotification,
     clearNotifications,

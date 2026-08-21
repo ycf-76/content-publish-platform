@@ -102,7 +102,7 @@ class PluginMCPClient(MCPClient):
     async def publish_note(
         self, title: str, content: str, images_b64: list[str]
     ) -> dict[str, Any]:
-        """通过浏览器扩展在用户真实浏览器里发布小红书笔记（RPA 方案）。
+        """通过浏览器扩展在用户真实浏览器里发布小红书笔记。
 
         扩展会在用户浏览器里打开发布页 tab，操作 DOM 完成发布：
         点"发布笔记"入口 → popover 点"图片上传" → 上传图片 → 填标题/正文 → 点发布。

@@ -433,7 +433,7 @@ const previewScale = 0.26
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #F7F8FA;
+  background: #EEF0F4;
   color: #1A1A1A;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
@@ -603,7 +603,7 @@ const previewScale = 0.26
   transition: all 0.15s;
 }
 .ce-page-item:hover {
-  background: #F9FAFB;
+  background: #EEF0F4;
 }
 .ce-page-item.active {
   background: #F0FDF4;
@@ -620,7 +620,7 @@ const previewScale = 0.26
   padding: 2px 6px;
   background: #E5E7EB;
   border-radius: 3px;
-  color: #4B5563;
+  color: #6B7280;
   flex-shrink: 0;
 }
 .ce-page-item.active .ce-page-type {
@@ -681,7 +681,7 @@ const previewScale = 0.26
 .ce-add-btn {
   padding: 6px;
   background: transparent;
-  border: 1px dashed #D1D5DB;
+  border: 1px dashed #E5E7EB;
   border-radius: 6px;
   color: #6B7280;
   font-size: 12px;
@@ -711,7 +711,7 @@ const previewScale = 0.26
   transition: border-color 0.15s;
 }
 .ce-preview-card:hover {
-  border-color: #D1D5DB;
+  border-color: #E5E7EB;
 }
 .ce-preview-card.active {
   border-color: #065F46;
@@ -744,11 +744,11 @@ const previewScale = 0.26
 .ce-label {
   font-size: 12px;
   font-weight: 500;
-  color: #4B5563;
+  color: #6B7280;
 }
 .ce-input, .ce-select, .ce-textarea {
   padding: 8px 10px;
-  border: 1px solid #D1D5DB;
+  border: 1px solid #E5E7EB;
   border-radius: 6px;
   font-size: 14px;
   color: #1A1A1A;
@@ -773,7 +773,7 @@ const previewScale = 0.26
   width: 40px;
   height: 36px;
   padding: 2px;
-  border: 1px solid #D1D5DB;
+  border: 1px solid #E5E7EB;
   border-radius: 6px;
   cursor: pointer;
   background: #FFFFFF;
@@ -823,7 +823,7 @@ const previewScale = 0.26
 .ce-add-list-btn {
   padding: 6px;
   background: transparent;
-  border: 1px dashed #D1D5DB;
+  border: 1px dashed #E5E7EB;
   border-radius: 6px;
   color: #6B7280;
   font-size: 13px;
@@ -885,7 +885,7 @@ const previewScale = 0.26
   border-radius: 4px;
 }
 .ce-export-close:hover {
-  background: #F3F4F6;
+  background: #EEF0F4;
 }
 .ce-export-modal-body {
   flex: 1;
@@ -946,7 +946,7 @@ const previewScale = 0.26
   border: none;
 }
 .ce-action-btn-secondary {
-  background: #F3F4F6;
+  background: #EEF0F4;
   color: #1A1A1A;
 }
 .ce-action-btn-secondary:hover {

@@ -102,6 +102,7 @@ class TavilySource(ContentSource):
         - content: 正文摘要（已由 Tavily 提取，约 200-500 字）
         - score: 相关度分数（0-1，越高越相关）
         - raw_content: 原始 HTML（search_depth=advanced 时才有）
+        - images: 该页面提取的图片列表（include_images=True 时才有）
         """
         try:
             url = item.get("url") or ""
@@ -116,10 +117,18 @@ class TavilySource(ContentSource):
             # 把 score (0-1) 放大到 likes 量级（供 interactions 排序）
             likes = int(score * 1000)
 
-            # 封面图：优先用 images 列表（Tavily 已提取）
-            # Tavily images 格式可能是字符串列表 ["url1", "url2"] 或字典列表 [{"url": "..."}]
+            # 封面图：优先从 result 内部的 images 字段提取（Tavily 每条结果自带 images）
+            # 格式：["url1", "url2"] 或 [{"url": "..."}, ...]
             cover_img = ""
-            if idx < len(images):
+            result_images = item.get("images") or []
+            if result_images:
+                first_img = result_images[0]
+                if isinstance(first_img, str):
+                    cover_img = first_img
+                elif isinstance(first_img, dict):
+                    cover_img = first_img.get("url") or ""
+            # 兜底：用顶层 images 列表按索引匹配
+            if not cover_img and idx < len(images):
                 img_item = images[idx]
                 if isinstance(img_item, str):
                     cover_img = img_item
@@ -184,6 +193,7 @@ class TavilySource(ContentSource):
             "topic": topic,
             "max_results": min(limit, 20),  # Tavily 上限 20
             "include_images": True,
+            "include_image_descriptions": True,
             "include_answer": False,
             "include_raw_content": False,
         }
@@ -196,10 +206,15 @@ class TavilySource(ContentSource):
             resp.raise_for_status()
             return resp.json()
         except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
             logger.error(
-                f"[tavily] HTTP {e.response.status_code}: {e.response.text[:300]}"
+                f"[tavily] HTTP {status_code}: {e.response.text[:300]}"
             )
-            # 401/403: API Key 无效；429: 限流；402: 欠费
+            if status_code == 432:
+                logger.warning(
+                    "[tavily] API key usage limit exceeded. "
+                    "Please increase the limit on the Tavily dashboard: https://app.tavily.com/"
+                )
             return {}
         except Exception as e:
             logger.error(f"[tavily] search failed: {e}")

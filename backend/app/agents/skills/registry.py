@@ -32,6 +32,7 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import logging
 import sys
@@ -41,6 +42,24 @@ from typing import Any
 from app.agents.skills.base import Skill
 
 logger = logging.getLogger(__name__)
+
+
+BUILTIN_SKILL_MODULES = (
+    "app.agents.skills.analyze_skill",
+    "app.agents.skills.copywrite_builder",
+    "app.agents.skills.audit_skill",
+    "app.agents.skills.blueprint_skill",
+    "app.agents.skills.trending_search",
+    "app.agents.skills.vl_analyze",
+    "app.agents.skills.xhs_search",
+    "app.agents.skills.xhs_publish",
+)
+
+
+def ensure_builtin_skills_registered() -> None:
+    """确保内置 Skill 模块已导入并完成 @register。"""
+    for module_name in BUILTIN_SKILL_MODULES:
+        importlib.import_module(module_name)
 
 
 class SkillRegistry:
@@ -121,6 +140,15 @@ class SkillRegistry:
             node_type: [cls.metadata() for cls in skills_map.values()]
             for node_type, skills_map in self._skills.items()
         }
+
+    def find_by_name(self, name: str) -> list[type[Skill]]:
+        """跨 node_type 按 skill name 查找所有匹配项。"""
+        matches: list[type[Skill]] = []
+        for skills_map in self._skills.values():
+            skill_cls = skills_map.get(name)
+            if skill_cls is not None:
+                matches.append(skill_cls)
+        return matches
 
     def scan_third_party(self, force: bool = False) -> int:
         """扫描 backend/skills/ 目录，自动加载第三方 Skill 模块。
@@ -232,11 +260,28 @@ def get_skill_class(node_type: str, skill_name: str | None) -> type[Skill] | Non
     skill_name 为 None/空时返回该 node_type 的默认 Skill。
     第三方 Skill 在首次调用时懒加载扫描。
     """
-    # 懒加载扫描第三方 Skill（首次调用时触发）
-    registry = SkillRegistry.instance()
-    if not registry._third_party_scanned:
-        registry.scan_third_party()
+    registry = _ensure_registry_loaded()
 
     if skill_name:
         return registry.get(node_type, skill_name)
     return registry.get_default(node_type)
+
+
+def get_skill_class_by_name(name: str) -> type[Skill] | None:
+    """按 skill name 全局查找唯一 Skill 子类，供 AgentRegistry 装配用。"""
+    registry = _ensure_registry_loaded()
+    matches = registry.find_by_name(name)
+    if not matches:
+        return None
+    if len(matches) > 1:
+        names = ", ".join(f"{cls.node_type}.{cls.name}" for cls in matches)
+        raise ValueError(f"ambiguous skill name '{name}': {names}")
+    return matches[0]
+
+
+def _ensure_registry_loaded() -> SkillRegistry:
+    """导入内置 Skill 并扫描第三方 Skill，返回全局注册表。"""
+    ensure_builtin_skills_registered()
+    registry = SkillRegistry.instance()
+    registry.scan_third_party()
+    return registry

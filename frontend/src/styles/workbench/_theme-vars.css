@@ -1,4 +1,5 @@
-﻿@import "tailwindcss";
+/* ===== theme-vars ===== */
+/* ✅ Tailwind CSS v4: 使用 @tailwindcss/vite 插件，无需手动导入 */
 
 /* ===== theme-vars ===== */
 /* ============================================================
@@ -6,64 +7,54 @@
    涓ユ牸渚濇嵁銆婂墠绔牱寮忚鑼?v1.0銆嬫淳鐢?   姘旇川锛氬厠鍒朵笓涓?路 鍐疯皟钃?路 宸ュ叿鍨嬶紙瀵规爣 Linear/Vercel/Raycast锛?   涓昏壊锛氬崟涓€鍐疯皟钃?#3B6CF6锛屼笉鐢ㄦ銆佷笉鐢ㄧ传绮夋笎鍙?   ============================================================ */
 
 :root {
-  /* 鈥斺€?涓昏壊闃讹紙鍐疯皟钃濓紝HSL 215掳 90% 55% 鍩哄噯锛夆€斺€?*/
-  --ma-blue-50: #EFF4FF;
-  --ma-blue-100: #DBE6FE;
-  --ma-blue-200: #BFD3FE;
-  --ma-blue-300: #93B4FD;
-  --ma-blue-400: #608CFA;
-  --ma-blue-500: #3B6CF6;  /* 鈽?涓昏壊 */
-  --ma-blue-600: #2B52E0;
-  --ma-blue-700: #2342B8;
-  --ma-blue-800: #1F3891;
-  --ma-blue-900: #1C2F6E;
-
-  /* 鈥斺€?璇箟浠ょ墝锛坒ill-html-head 妗ユ帴锛屼寒鑹叉ā寮忥級鈥斺€?*/
-  --ma-background: #FFFFFF;            /* 椤甸潰搴曡壊 bg-base */
-  --ma-foreground: #111827;            /* 涓绘枃瀛?text-primary */
-  --ma-card: #FFFFFF;                  /* 鍗＄墖鑳屾櫙 bg-elevated */
-  --ma-card-foreground: #111827;
-  --ma-popover: #FFFFFF;               /* 娴眰鑳屾櫙 */
-  --ma-popover-foreground: #111827;
-  --ma-primary: #3B6CF6;               /* 涓昏壊 blue-500 */
+  /* ===== 品牌主色（Pulse Studio 红） ===== */
+  --ma-primary: #FF2442;
   --ma-primary-foreground: #FFFFFF;
-  --ma-secondary: #F7F8FA;             /* 娆＄骇鑳屾櫙 bg-subtle锛堜腑鎬э紝闈炵嫭绔嬭壊鐩革級*/
-  --ma-secondary-foreground: #4B5563;
-  --ma-muted: #F7F8FA;                 /* 娆＄骇鑳屾櫙 */
-  --ma-muted-foreground: #9CA3AF;      /* 杈呭姪鏂囧瓧 text-tertiary */
-  --ma-accent: #EFF4FF;                /* 閫変腑鎬佽儗鏅?blue-50 tint */
-  --ma-accent-foreground: #2342B8;     /* 閫変腑鎬佹枃瀛?blue-700 */
-  --ma-destructive: #EF4444;           /* 閿欒/鎵撳洖 */
+  --ma-ring: #FF2442;
+
+  /* ===== 语义牌（shadcn/ui 模式） ===== */
+  --ma-background: #FFFFFF;
+  --ma-foreground: #1A1A1A;
+  --ma-card: #FFFFFF;
+  --ma-card-foreground: #1A1A1A;
+  --ma-popover: #FFFFFF;
+  --ma-popover-foreground: #1A1A1A;
+  --ma-secondary: #F5F5F5;
+  --ma-secondary-foreground: #4B4B4B;
+  --ma-muted: #F5F5F5;
+  --ma-muted-foreground: #9A9A9A;
+  --ma-accent: rgba(255,36,66,0.08);
+  --ma-accent-foreground: #FF2442;
+  --ma-destructive: #EF4444;
   --ma-destructive-foreground: #FFFFFF;
-  --ma-border: #E5E7EB;                /* 榛樿杈规 */
-  --ma-input: #E5E7EB;                 /* 杈撳叆妗嗚竟妗?*/
-  --ma-ring: #3B6CF6;                  /* 鐒︾偣鐜?*/
+  --ma-border: #EDEDED;
+  --ma-input: #EDEDED;
 
-  /* 鈥斺€?渚ф爮璇箟 鈥斺€?*/
-  --ma-sidebar: #F7F8FA;               /* 渚ф爮鑳屾櫙 bg-subtle */
-  --ma-sidebar-foreground: #4B5563;    /* 渚ф爮鏂囧瓧 text-secondary */
-  --ma-sidebar-primary: #3B6CF6;
+  /* ===== 侧边栏 ===== */
+  --ma-sidebar: #F5F5F5;
+  --ma-sidebar-foreground: #4B4B4B;
+  --ma-sidebar-primary: #FF2442;
   --ma-sidebar-primary-foreground: #FFFFFF;
-  --ma-sidebar-accent: #EFF4FF;        /* 渚ф爮閫変腑鎬?*/
-  --ma-sidebar-accent-foreground: #2342B8;
+  --ma-sidebar-accent: rgba(255,36,66,0.08);
+  --ma-sidebar-accent-foreground: #FF2442;
 
-  /* 鈥斺€?涓€ф枃瀛楋紙瑙勮寖鏄庣ず锛夆€斺€?*/
-  --ma-text-primary: #111827;
-  --ma-text-secondary: #4B5563;
-  --ma-text-tertiary: #9CA3AF;
-  --ma-text-disabled: #D1D5DB;
+  /* ===== 文字层级 ===== */
+  --ma-text-primary: #1A1A1A;
+  --ma-text-secondary: #4B4B4B;
+  --ma-text-tertiary: #9A9A9A;
+  --ma-text-disabled: #9A9A9A;
 
-  /* 鈥斺€?鑳屾櫙灞傜骇 鈥斺€?*/
-  --ma-bg-base: #FFFFFF;
-  --ma-bg-subtle: #F7F8FA;
+  /* ===== 背景层级（苹果风格高级灰白） ===== */
+  --ma-bg-base: #F5F5F7;
+  --ma-bg-subtle: #EEEEEF;
   --ma-bg-elevated: #FFFFFF;
 
-  /* 鈥斺€?杈规灞傜骇 鈥斺€?*/
-  --ma-border-default: #E5E7EB;
-  --ma-border-strong: #D1D5DB;
+  /* ===== 边框层级 ===== */
+  --ma-border-default: #EDEDED;
+  --ma-border-strong: #EDEDED;
 
   /* 鈥斺€?9 绉嶈妭鐐圭姸鎬佽壊锛堜骇鍝佽瑙夌伒榄傦級鈥斺€?*/
-  --ma-status-pending: #9CA3AF;            /* 寰呮墽琛?鐏?*/
+  --ma-status-pending: #6B7280;            /* 寰呮墽琛?鐏?*/
   --ma-status-running: #FF2442;            /* 鎵ц涓?灏忕孩涔︾孩锛堝懠鍚哥伅锛?/
   --ma-status-awaiting: #F59E0B;           /* 寰呭鏍?鐞ョ弨锛堝皬閾冮摏锛?/
   --ma-status-passed: #10B981;             /* 閫氳繃 缁?*/
@@ -71,7 +62,7 @@
   --ma-status-error: #EF4444;              /* 寮傚父 绾紙鎶栧姩锛?/
   --ma-status-suspended: #8B5CF6;          /* 鎸傝捣 绱?*/
   --ma-status-completed: #2B52E0;          /* 瀹屾垚 钃濓紙娣憋級*/
-  --ma-status-terminated: #4B5563;         /* 缁堟 鐏帮紙娣憋級*/
+  --ma-status-terminated: #6B7280;         /* 缁堟 鐏帮紙娣憋級*/
 
   /* 鈥斺€?鐩戠潱寤鸿 severity 鈥斺€?*/
   --ma-severity-low: #3B6CF6;     /* 寤鸿鎬?钃?*/
@@ -84,19 +75,18 @@
   --state-error: #EF4444;
   --state-info: #3B6CF6;
 
-  /* 鈥斺€?瀛椾綋鏃?鈥斺€?*/
-  --ma-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  --ma-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
-  --ma-font-display: var(--ma-font-sans);
+  /* ===== 字体 ===== */
+  --ma-font-sans: 'Inter', -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ma-font-mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  --ma-font-display: 'LXGW WenKai', cursive;
 
-  /* 鈥斺€?瀛楀彿闃舵锛坮em锛屽熀鍑?16px锛涢粯璁ゆ鏂?14px 鎻愰珮瀵嗗害锛夆€斺€?*/
-  --ma-font-xs: 0.75rem;    /* 12px 瑙掓爣/鏃堕棿鎴?*/
-  --ma-font-sm: 0.875rem;   /* 14px 榛樿姝ｆ枃 */
-  --ma-font-base: 1rem;     /* 16px 鑺傜偣鍚?*/
-  --ma-font-md: 1.125rem;   /* 18px 鍗＄墖鏍囬 */
-  --ma-font-lg: 1.25rem;    /* 20px 鍖哄潡鏍囬 */
-  --ma-font-xl: 1.5rem;     /* 24px 椤甸潰涓绘爣棰?*/
+  /* ===== 字号（rem，基准 16px） ===== */
+  --ma-font-xs: 0.75rem;    /* 12px 标签/时间戳 */
+  --ma-font-sm: 0.8125rem;   /* 13px 辅助文字 */
+  --ma-font-base: 0.875rem;  /* 14px 正文 */
+  --ma-font-md: 1rem;         /* 16px H3 */
+  --ma-font-lg: 1.125rem;     /* 18px H2 */
+  --ma-font-xl: 1.375rem;     /* 22px H1 */
   --ma-font-2xl: 1.875rem;  /* 30px 浠呯櫥褰曢〉/绌虹姸鎬?*/
 
   /* 鈥斺€?闂磋窛锛?px 鍩哄噯锛夆€斺€?*/
@@ -112,7 +102,7 @@
   --ma-space-16: 64px;  /* 澶у尯鍧?鑺傜偣姘村钩闂磋窛 */
 
   /* 鈥斺€?鍦嗚锛堝垎绾э紝涓嶆互鐢ㄥぇ鍦嗚锛屾渶澶?12px锛夆€斺€?*/
-  --ma-radius-sm: 4px;    /* 杈撳叆妗?灏忔爣绛?鎸夐挳 */
+  --ma-radius-sm: 9999px;    /* 杈撳叆妗?灏忔爣绛?鎸夐挳 - 鑲冮厤鑴滅墿鍦嗚鍙?*/
   --ma-radius-md: 8px;    /* 鍗＄墖/涓嬫媺/鑺傜偣 */
   --ma-radius-lg: 12px;   /* 澶у崱鐗?瀵硅瘽妗?鎶藉眽 */
   --ma-radius-xl: 12px;   /* 涓婇檺灏侀《 */

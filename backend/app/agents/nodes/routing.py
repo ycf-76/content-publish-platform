@@ -25,28 +25,6 @@ def route_after_image_gen(state: WorkflowState) -> str:
     return "image_review"
 
 
-def route_after_analyze(state: WorkflowState) -> str:
-    """Route after quality_check_analyze: 始终继续到 copywrite。
-
-    工作流顺序调整（v2）：copywrite 移到 image_gen 之前，
-    让图片生成/卡片渲染能基于最终文案执行，而非选题方向。
-
-    MVP 阶段：quality_check 仅作为建议权，不影响路由。
-    """
-    return "copywrite"
-
-
-def route_after_copywrite(state: WorkflowState) -> str:
-    """Route after quality_check_copywrite: 始终继续到 image_plan。
-
-    工作流顺序（v3）：copywrite → image_plan → image_gen → image_review
-    image_plan 先规划图片类型和模板数据，image_gen 根据规划渲染。
-
-    MVP 阶段：quality_check 仅作为建议权，不影响路由。
-    """
-    return "image_plan"
-
-
 def route_after_image_review(state: WorkflowState) -> str:
     """Route after image review: pass -> audit, reject -> image_gen.
 
@@ -70,14 +48,6 @@ def route_after_final_review(state: WorkflowState) -> str:
     return "rollback"
 
 
-def route_after_audit(state: WorkflowState) -> str:
-    """Route after quality_check_audit: 始终继续到 final_review。
-
-    MVP 阶段：quality_check 仅作为建议权，不影响路由。
-    软语义 fail 的 suggestion 会写入 DB 并推送给前端，
-    用户在 final_review 审核时可参考 suggestion 决定是否通过。
-    """
-    return "final_review"
 
 
 async def rollback_to_node(state: WorkflowState, target_node: str) -> dict:

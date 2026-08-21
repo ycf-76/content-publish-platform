@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.security import decode_user_id
@@ -21,9 +21,13 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> str:
-    """从 Authorization: Bearer <jwt> 解析当前用户 ID。
+    """从 Authorization: Bearer <jwt> 或 ?token=<jwt> 解析当前用户 ID。
+
+    优先读取 Authorization header，若不存在则尝试 query 参数 token
+    （供 EventSource 等不支持自定义 header 的场景使用）。
 
     Returns:
         user_id（JWT sub claim）
@@ -31,10 +35,17 @@ async def get_current_user(
     Raises:
         HTTPException 401: 未提供 token / scheme 非 Bearer / token 无效或过期
     """
-    if credentials is None or (credentials.scheme or "").lower() != "bearer":
+    jwt_token: str | None = None
+
+    if credentials is not None and (credentials.scheme or "").lower() == "bearer":
+        jwt_token = credentials.credentials
+    else:
+        jwt_token = request.query_params.get("token")
+
+    if not jwt_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="未提供登录凭证",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return decode_user_id(credentials.credentials)
+    return decode_user_id(jwt_token)

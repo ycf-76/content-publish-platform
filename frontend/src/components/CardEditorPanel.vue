@@ -10,6 +10,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import html2canvas from 'html2canvas'
 import CardRenderer from '@/components/CardRenderer.vue'
+import EstherCardRenderer from '@/components/EstherCardRenderer.vue'
 import {
   TEMPLATES,
   PAGE_TYPE_LABELS,
@@ -24,6 +25,19 @@ import {
   type DecorationConfig,
   type DecorationType,
 } from '@/card-editor/templates'
+import {
+  ESTHER_TEMPLATES,
+  ESTHER_PAGE_TYPE_LABELS,
+  ESTHER_DECORATION_PRESETS,
+  FULL_PAGE_TYPE_LABELS,
+  createEstherDefaultPage,
+  createEstherDefaultPages,
+  isEstherTemplate,
+  isEstherPageType,
+  type EstherCardPage,
+  type EstherPageType,
+  type FullPageType,
+} from '@/card-editor/esther-templates'
 
 const props = defineProps<{
   /** image_plan 生成的文案初稿 */
@@ -35,12 +49,34 @@ const props = defineProps<{
       content?: string
       footer?: string
       listItems?: string[]
+      highlight?: string
+      tag?: string
+      emoji?: string
+      decoNumber?: string
+      ctaText?: string
+      compareLeftTitle?: string
+      compareRightTitle?: string
+      compareLeftItems?: string[]
+      compareRightItems?: string[]
+      iconTextPairs?: Array<{ icon: string; text: string }>
+      steps?: Array<{ title: string; desc: string }>
+      codeContent?: string
+      codeLang?: string
+      numberedItems?: Array<{ title: string; desc: string }>
+      newspaperCols?: Array<{ headline: string; body: string }>
+      masthead?: string
     }>
     suggested_template?: string
     /** LLM 推荐的强调色（十六进制），覆盖模板默认 accent */
     custom_accent?: string
     /** LLM 推荐的装饰配置 */
     suggested_decoration?: DecorationConfig
+    /** copywrite 原文上下文（后端 _ensure_copywrite_in_draft 注入） */
+    copywrite_context?: {
+      title: string
+      content: string
+      tags: string[]
+    }
   }
   /** 父组件正在将图片注入工作流 */
   injecting?: boolean
@@ -57,10 +93,16 @@ const emit = defineEmits<{
   }]
 }>()
 
+// ===== 合并模板列表（原有3套 + esther3套 = 6套） =====
+const ALL_TEMPLATES = [...TEMPLATES, ...ESTHER_TEMPLATES]
+
+// ===== 合并装饰预设 =====
+const ALL_DECORATION_PRESETS = [...DECORATION_PRESETS, ...ESTHER_DECORATION_PRESETS]
+
 // ===== 状态 =====
 const currentTemplateId = ref<string>('minimal_white')
 const currentDecoration = ref<DecorationConfig>(createDefaultDecoration())
-const pages = ref<CardPage[]>(createDefaultPages())
+const pages = ref<EstherCardPage[]>(createDefaultPages() as EstherCardPage[])
 const selectedPageId = ref<string>(pages.value[0].id)
 const customFontSize = ref<number | null>(null)
 const customBg = ref<string>('')
@@ -81,19 +123,38 @@ watch(() => props.cardDraft, (draft) => {
   if (signature === lastDraftSignature.value) return
   lastDraftSignature.value = signature
 
-  // 用 image_plan 生成的文案初稿替换默认页面
-  pages.value = draft.pages.map((p, i) => ({
-    id: `page_draft_${i}`,
-    type: (p.type as PageType) || 'content',
-    title: p.title || '',
-    subtitle: p.subtitle,
-    content: p.content || '',
-    footer: p.footer,
-    listItems: p.listItems,
-  }))
+  pages.value = draft.pages.map((p, i) => {
+    const base: EstherCardPage = {
+      id: `page_draft_${i}`,
+      type: (p.type as FullPageType) || 'content',
+      title: p.title || '',
+      subtitle: p.subtitle,
+      content: p.content || '',
+      footer: p.footer,
+      listItems: p.listItems,
+    }
+    const esther = p as Record<string, unknown>
+    if (esther.highlight) base.highlight = esther.highlight as string
+    if (esther.tag) base.tag = esther.tag as string
+    if (esther.emoji) base.emoji = esther.emoji as string
+    if (esther.decoNumber) base.decoNumber = esther.decoNumber as string
+    if (esther.ctaText) base.ctaText = esther.ctaText as string
+    if (esther.compareLeftTitle) base.compareLeftTitle = esther.compareLeftTitle as string
+    if (esther.compareRightTitle) base.compareRightTitle = esther.compareRightTitle as string
+    if (esther.compareLeftItems) base.compareLeftItems = esther.compareLeftItems as string[]
+    if (esther.compareRightItems) base.compareRightItems = esther.compareRightItems as string[]
+    if (esther.iconTextPairs) base.iconTextPairs = esther.iconTextPairs as Array<{ icon: string; text: string }>
+    if (esther.steps) base.steps = esther.steps as Array<{ title: string; desc: string }>
+    if (esther.codeContent) base.codeContent = esther.codeContent as string
+    if (esther.codeLang) base.codeLang = esther.codeLang as string
+    if (esther.numberedItems) base.numberedItems = esther.numberedItems as Array<{ title: string; desc: string }>
+    if (esther.newspaperCols) base.newspaperCols = esther.newspaperCols as Array<{ headline: string; body: string }>
+    if (esther.masthead) base.masthead = esther.masthead as string
+    return base
+  })
   selectedPageId.value = pages.value[0].id
   // 应用建议的模板
-  if (draft.suggested_template && TEMPLATES.find(t => t.id === draft.suggested_template)) {
+  if (draft.suggested_template && ALL_TEMPLATES.find(t => t.id === draft.suggested_template)) {
     currentTemplateId.value = draft.suggested_template
   }
   // 应用 LLM 推荐的强调色（覆盖模板默认 accent）
@@ -108,7 +169,7 @@ watch(() => props.cardDraft, (draft) => {
 
 // ===== 计算属性 =====
 const currentTemplate = computed<TemplateTheme>(() => {
-  return TEMPLATES.find(t => t.id === currentTemplateId.value) || TEMPLATES[0]
+  return ALL_TEMPLATES.find(t => t.id === currentTemplateId.value) || ALL_TEMPLATES[0]
 })
 
 const effectiveTheme = computed<TemplateTheme>(() => {
@@ -120,20 +181,28 @@ const effectiveTheme = computed<TemplateTheme>(() => {
   }
 })
 
-const selectedPage = computed<CardPage>(() => {
+const selectedPage = computed<EstherCardPage>(() => {
   return pages.value.find(p => p.id === selectedPageId.value) || pages.value[0]
 })
 
 const filteredDecoPresets = computed(() => {
   if (currentDecoration.value.type === 'none') return []
-  return DECORATION_PRESETS.filter(p => p.type === currentDecoration.value.type)
+  return ALL_DECORATION_PRESETS.filter(p => p.type === currentDecoration.value.type)
 })
+
+/** 判断当前模板是否为 esther 模板 */
+const isEsther = computed(() => isEstherTemplate(currentTemplateId.value))
 
 // ===== 页面操作 =====
 function selectPage(id: string) { selectedPageId.value = id }
 
-function addPage(type: PageType) {
-  const newPage = createDefaultPage(type, pages.value.length)
+function addPage(type: FullPageType) {
+  let newPage: EstherCardPage
+  if (isEstherPageType(type)) {
+    newPage = createEstherDefaultPage(type, pages.value.length)
+  } else {
+    newPage = createDefaultPage(type as PageType, pages.value.length) as EstherCardPage
+  }
   pages.value.push(newPage)
   selectedPageId.value = newPage.id
 }
@@ -157,15 +226,149 @@ function movePage(id: string, direction: 'up' | 'down') {
   pages.value[targetIdx] = tmp
 }
 
-function changePageType(id: string, newType: PageType) {
+/** 计算单页文案字数 */
+function pageCharCount(page: any): number {
+  const parts = [page.title || '', page.subtitle || '', page.content || '', ...(page.listItems || [])]
+  return parts.join('').length
+}
+
+/** 重新分配文案：把 copywrite 原文按段落拆分，均匀分配到各内容页 */
+function redistributeContent() {
+  const ctx = props.cardDraft?.copywrite_context
+  if (!ctx || !ctx.content) return
+
+  // 按段落拆分
+  let paragraphs = ctx.content.split('\n').filter((p: string) => p.trim())
+  if (paragraphs.length <= 1) {
+    // 没有换行分段，按句号拆
+    const sentences = ctx.content.split(/(?<=[。！？；])/).filter((s: string) => s.trim())
+    paragraphs = []
+    let chunk: string[] = []
+    for (const s of sentences) {
+      chunk.push(s)
+      if (chunk.length >= 2) {
+        paragraphs.push(chunk.join(''))
+        chunk = []
+      }
+    }
+    if (chunk.length) paragraphs.push(chunk.join(''))
+  }
+  if (!paragraphs.length) return
+
+  // 找出可接收正文的页面
+  const contentPages = pages.value.filter(p =>
+    ['content', 'list', 'dark_panel', 'quote', 'big_quote'].includes(p.type)
+  )
+
+  if (contentPages.length === 0) return
+
+  // 均匀分配
+  const perPage = Math.max(1, Math.ceil(paragraphs.length / contentPages.length))
+  let paraIdx = 0
+
+  for (const page of contentPages) {
+    if (paraIdx >= paragraphs.length) {
+      // 清空多余页面的内容
+      page.content = ''
+      page.listItems = []
+      continue
+    }
+    const chunk = paragraphs.slice(paraIdx, paraIdx + perPage)
+    paraIdx += perPage
+
+    if (page.type === 'list' || page.type === 'dark_panel') {
+      page.listItems = [...chunk]
+      page.content = ''
+    } else {
+      page.content = chunk.join('\n')
+      page.listItems = []
+    }
+  }
+
+  // 如果段落没分完，追加新页面
+  while (paraIdx < paragraphs.length) {
+    const chunk = paragraphs.slice(paraIdx, paraIdx + perPage)
+    paraIdx += perPage
+    const newPage = {
+      id: `page_${Date.now()}_${pages.value.length}`,
+      type: 'content' as FullPageType,
+      title: '',
+      subtitle: '',
+      content: chunk.join('\n'),
+      footer: '',
+      listItems: [] as string[],
+    }
+    pages.value.push(newPage)
+  }
+}
+
+function changePageType(id: string, newType: FullPageType) {
   const page = pages.value.find(p => p.id === id)
   if (!page) return
   page.type = newType
   if (newType === 'list' && !page.listItems) {
     page.listItems = ['第一项', '第二项', '第三项']
   }
-  if (newType !== 'list') delete page.listItems
+  if (newType === 'dark_panel' && !page.listItems) {
+    page.listItems = ['第一项关键洞察', '第二项关键洞察', '第三项关键洞察']
+    page.emoji = '🚀'
+    page.decoNumber = '01'
+  }
+  if (newType === 'end_page') {
+    page.decoNumber = page.decoNumber || '"'
+    page.ctaText = page.ctaText || '关注我，获取更多'
+  }
+  if (newType === 'compare' && !page.compareLeftItems) {
+    page.compareLeftTitle = '传统做法'
+    page.compareRightTitle = '新方法'
+    page.compareLeftItems = ['效率低', '成本高']
+    page.compareRightItems = ['效率高', '成本低']
+  }
+  if (newType === 'icon_text' && !page.iconTextPairs) {
+    page.iconTextPairs = [
+      { icon: '🎯', text: '第一项能力' },
+      { icon: '⚡', text: '第二项能力' },
+      { icon: '🔧', text: '第三项能力' },
+      { icon: '📊', text: '第四项能力' },
+    ]
+  }
+  if (!['list', 'dark_panel'].includes(newType)) delete page.listItems
   if (newType === 'cover' && !page.subtitle) page.subtitle = '副标题'
+  if (newType === 'steps' && !page.steps) {
+    page.steps = [
+      { title: '第一步', desc: '描述这个步骤' },
+      { title: '第二步', desc: '描述这个步骤' },
+      { title: '第三步', desc: '描述这个步骤' },
+    ]
+    page.decoNumber = page.decoNumber || '01'
+  }
+  if (newType === 'code_panel') {
+    page.codeContent = page.codeContent || 'def hello():\n    print("Hello, World!")'
+    page.codeLang = page.codeLang || 'python'
+    page.decoNumber = page.decoNumber || '02'
+  }
+  if (newType === 'numbered_cards' && !page.numberedItems) {
+    page.numberedItems = [
+      { title: '第一要点', desc: '简要说明' },
+      { title: '第二要点', desc: '简要说明' },
+      { title: '第三要点', desc: '简要说明' },
+    ]
+    page.decoNumber = page.decoNumber || '03'
+  }
+  if (newType === 'newspaper') {
+    page.masthead = page.masthead || 'THE DAILY BRIEF'
+    if (!page.newspaperCols) {
+      page.newspaperCols = [
+        { headline: '核心发现', body: '简要描述' },
+        { headline: '关键数据', body: '简要描述' },
+        { headline: '行动建议', body: '简要描述' },
+      ]
+    }
+    page.decoNumber = page.decoNumber || '04'
+  }
+  if (newType === 'big_quote') {
+    page.decoNumber = page.decoNumber || '"'
+  }
 }
 
 function addListItem() {
@@ -183,6 +386,10 @@ function selectTemplate(id: string) {
   customBg.value = ''
   customAccent.value = ''
   currentDecoration.value = createDefaultDecoration()
+  if (isEstherTemplate(id)) {
+    pages.value = createEstherDefaultPages()
+    selectedPageId.value = pages.value[0].id
+  }
 }
 
 function resetCustomStyle() {
@@ -214,7 +421,6 @@ async function generateImages() {
   if (exporting.value) return
   exporting.value = true
   exportProgress.value = '准备渲染...'
-  console.log('[CardEditorPanel] generateImages called')
 
   try {
     await nextTick()
@@ -222,7 +428,6 @@ async function generateImages() {
 
     const cardEls = exportContainer.value.querySelectorAll('.card-canvas')
     if (cardEls.length === 0) throw new Error('没有可导出的卡片')
-    console.log('[CardEditorPanel] found', cardEls.length, 'cards to export')
 
     const images: string[] = []
     for (let i = 0; i < cardEls.length; i++) {
@@ -239,11 +444,11 @@ async function generateImages() {
         windowWidth: 1080,
         windowHeight: 1440,
       })
-      images.push(canvas.toDataURL('image/png'))
+      images.push(canvas.toDataURL('image/jpeg', 0.92))
     }
 
     exportProgress.value = ''
-    const pureBase64 = images.map(d => d.replace(/^data:image\/png;base64,/, ''))
+    const pureBase64 = images.map(d => d.replace(/^data:image\/[a-z]+;base64,/, ''))
     const planContext = {
       template: currentTemplateId.value,
       accent: customAccent.value || currentTemplate.value.accent,
@@ -252,7 +457,6 @@ async function generateImages() {
       decoration: currentDecoration.value,
     }
     emit('generate', pureBase64, planContext)
-    console.log('[CardEditorPanel] emitted generate, images:', pureBase64.length, 'planContext:', planContext)
   } catch (e) {
     exportProgress.value = ''
     console.error('generateImages failed:', e)
@@ -325,7 +529,12 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
       <div class="cep-toolbar-left">
         <label class="cep-toolbar-label">模板：</label>
         <select class="cep-select" v-model="currentTemplateId" @change="selectTemplate(($event.target as HTMLSelectElement).value)">
-          <option v-for="tpl in TEMPLATES" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
+          <optgroup label="基础模板">
+            <option v-for="tpl in TEMPLATES" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
+          </optgroup>
+          <optgroup label="Esther 设计系统">
+            <option v-for="tpl in ESTHER_TEMPLATES" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -343,8 +552,9 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
               @click="selectPage(page.id)"
             >
               <span class="cep-page-num">{{ i + 1 }}</span>
-              <span class="cep-page-type">{{ PAGE_TYPE_LABELS[page.type] }}</span>
-              <span class="cep-page-title">{{ page.title || page.content.slice(0, 10) }}</span>
+              <span class="cep-page-type">{{ FULL_PAGE_TYPE_LABELS[page.type as FullPageType] || page.type }}</span>
+              <span class="cep-page-title">{{ page.title || (page.content || '').slice(0, 10) }}</span>
+              <span class="cep-page-chars">{{ pageCharCount(page) }}字</span>
               <div class="cep-page-actions">
                 <button class="cep-icon-btn" :disabled="i === 0" @click.stop="movePage(page.id, 'up')">↑</button>
                 <button class="cep-icon-btn" :disabled="i === pages.length - 1" @click.stop="movePage(page.id, 'down')">↓</button>
@@ -353,8 +563,8 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
             </div>
           </div>
           <div class="cep-add-page">
-            <button v-for="type in (['cover','content','quote','list'] as PageType[])" :key="type" class="cep-add-btn" @click="addPage(type)">
-              + {{ PAGE_TYPE_LABELS[type] }}
+            <button v-for="(label, key) in FULL_PAGE_TYPE_LABELS" :key="key" class="cep-add-btn" @click="addPage(key as FullPageType)">
+              + {{ label }}
             </button>
           </div>
         </div>
@@ -365,7 +575,7 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
         <!-- 模板候选条带：横向展示所有模板封面，点击切换，当前选中高亮 -->
         <div class="cep-template-strip">
           <div
-            v-for="tpl in TEMPLATES"
+            v-for="tpl in ALL_TEMPLATES"
             :key="tpl.id"
             class="cep-tpl-thumb"
             :class="{ active: tpl.id === currentTemplateId }"
@@ -374,7 +584,8 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
           >
             <div class="cep-tpl-thumb-box" :style="{ width: tplThumbWidth + 'px', height: tplThumbHeight + 'px' }">
               <div class="cep-tpl-thumb-inner" :style="{ transform: `scale(${tplThumbScale})` }">
-                <CardRenderer v-if="pages[0]" :page="pages[0]" :theme="tpl" :decoration="currentDecoration" />
+                <EstherCardRenderer v-if="isEstherTemplate(tpl.id) && pages[0]" :page="pages[0]" :theme="tpl" :decoration="currentDecoration" />
+                <CardRenderer v-else-if="pages[0]" :page="pages[0] as CardPage" :theme="tpl" :decoration="currentDecoration" />
               </div>
             </div>
             <div class="cep-tpl-thumb-name">{{ tpl.name }}</div>
@@ -396,10 +607,11 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
             >
               <!-- 内层：原尺寸 1080x1440，absolute 定位 + transform scale 缩放到容器大小 -->
               <div class="cep-preview-inner" :style="{ transform: `scale(${previewScale})` }">
-                <CardRenderer :page="page" :theme="effectiveTheme" :decoration="currentDecoration" />
+                <EstherCardRenderer v-if="isEsther" :page="page" :theme="effectiveTheme" :decoration="currentDecoration" />
+                <CardRenderer v-else :page="page as CardPage" :theme="effectiveTheme" :decoration="currentDecoration" />
               </div>
             </div>
-            <div class="cep-preview-label">{{ i + 1 }} · {{ PAGE_TYPE_LABELS[page.type] }}</div>
+            <div class="cep-preview-label">{{ i + 1 }} · {{ FULL_PAGE_TYPE_LABELS[page.type as FullPageType] || page.type }}</div>
           </div>
         </div>
       </main>
@@ -412,11 +624,16 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
           <div class="cep-form">
             <div class="cep-form-row">
               <label class="cep-label">类型</label>
-              <select class="cep-select" :value="selectedPage.type" @change="changePageType(selectedPage.id, ($event.target as HTMLSelectElement).value as PageType)">
-                <option v-for="(label, key) in PAGE_TYPE_LABELS" :key="key" :value="key">{{ label }}</option>
+              <select class="cep-select" :value="selectedPage.type" @change="changePageType(selectedPage.id, ($event.target as HTMLSelectElement).value as FullPageType)">
+                <optgroup label="基础页面">
+                  <option v-for="(label, key) in PAGE_TYPE_LABELS" :key="key" :value="key">{{ label }}</option>
+                </optgroup>
+                <optgroup label="Esther 页面">
+                  <option v-for="(label, key) in ESTHER_PAGE_TYPE_LABELS" :key="key" :value="key">{{ label }}</option>
+                </optgroup>
               </select>
             </div>
-            <div v-if="selectedPage.type !== 'quote'" class="cep-form-row">
+            <div v-if="!['quote'].includes(selectedPage.type)" class="cep-form-row">
               <label class="cep-label">标题</label>
               <input class="cep-input" v-model="selectedPage.title" />
             </div>
@@ -428,7 +645,23 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
               <label class="cep-label">{{ selectedPage.type === 'quote' ? '金句' : '正文' }}</label>
               <textarea class="cep-textarea" v-model="selectedPage.content" :rows="selectedPage.type === 'quote' ? 3 : 5"></textarea>
             </div>
-            <div v-if="selectedPage.type === 'list'" class="cep-form-row">
+            <div v-if="selectedPage.type === 'cover' && isEsther" class="cep-form-row">
+              <label class="cep-label">高亮关键词</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).highlight" placeholder="标题中需高亮的关键词" />
+            </div>
+            <div v-if="selectedPage.type === 'cover' && isEsther" class="cep-form-row">
+              <label class="cep-label">分类标签</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).tag" placeholder="如：干货分享" />
+            </div>
+            <div v-if="selectedPage.type === 'dark_panel'" class="cep-form-row">
+              <label class="cep-label">装饰数字</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).decoNumber" placeholder="如 01、02" />
+            </div>
+            <div v-if="selectedPage.type === 'dark_panel'" class="cep-form-row">
+              <label class="cep-label">Emoji</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).emoji" placeholder="如 🚀" />
+            </div>
+            <div v-if="selectedPage.type === 'list' || selectedPage.type === 'dark_panel'" class="cep-form-row">
               <label class="cep-label">清单项</label>
               <div class="cep-list-editor">
                 <div v-for="(item, i) in selectedPage.listItems" :key="i" class="cep-list-edit-item">
@@ -439,9 +672,165 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
                 <button class="cep-add-list-btn" @click="addListItem">+ 添加</button>
               </div>
             </div>
+            <div v-if="selectedPage.type === 'compare'" class="cep-form-row">
+              <label class="cep-label">左侧标题</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).compareLeftTitle" />
+            </div>
+            <div v-if="selectedPage.type === 'compare'" class="cep-form-row">
+              <label class="cep-label">右侧标题</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).compareRightTitle" />
+            </div>
+            <div v-if="selectedPage.type === 'compare'" class="cep-form-row">
+              <label class="cep-label">左侧要点</label>
+              <div class="cep-list-editor">
+                <div v-for="(item, i) in (selectedPage as EstherCardPage).compareLeftItems" :key="'l'+i" class="cep-list-edit-item">
+                  <span class="cep-list-edit-num">{{ i + 1 }}</span>
+                  <input class="cep-input cep-list-edit-input" v-model="(selectedPage as EstherCardPage).compareLeftItems![i]" />
+                  <button class="cep-icon-btn cep-icon-btn-danger" @click="(selectedPage as EstherCardPage).compareLeftItems?.splice(i, 1)">×</button>
+                </div>
+                <button class="cep-add-list-btn" @click="((selectedPage as EstherCardPage).compareLeftItems ??= []).push('新要点')">+ 添加</button>
+              </div>
+            </div>
+            <div v-if="selectedPage.type === 'compare'" class="cep-form-row">
+              <label class="cep-label">右侧要点</label>
+              <div class="cep-list-editor">
+                <div v-for="(item, i) in (selectedPage as EstherCardPage).compareRightItems" :key="'r'+i" class="cep-list-edit-item">
+                  <span class="cep-list-edit-num">{{ i + 1 }}</span>
+                  <input class="cep-input cep-list-edit-input" v-model="(selectedPage as EstherCardPage).compareRightItems![i]" />
+                  <button class="cep-icon-btn cep-icon-btn-danger" @click="(selectedPage as EstherCardPage).compareRightItems?.splice(i, 1)">×</button>
+                </div>
+                <button class="cep-add-list-btn" @click="((selectedPage as EstherCardPage).compareRightItems ??= []).push('新要点')">+ 添加</button>
+              </div>
+            </div>
+            <div v-if="selectedPage.type === 'icon_text'" class="cep-form-row">
+              <label class="cep-label">图标文字对</label>
+              <div class="cep-list-editor">
+                <div v-for="(pair, i) in (selectedPage as EstherCardPage).iconTextPairs" :key="'p'+i" class="cep-list-edit-item">
+                  <input class="cep-input cep-list-edit-input" style="width:40px" v-model="pair.icon" />
+                  <input class="cep-input cep-list-edit-input" v-model="pair.text" />
+                  <button class="cep-icon-btn cep-icon-btn-danger" @click="(selectedPage as EstherCardPage).iconTextPairs?.splice(i, 1)">×</button>
+                </div>
+                <button class="cep-add-list-btn" @click="((selectedPage as EstherCardPage).iconTextPairs ??= []).push({ icon: '🎯', text: '新项目' })">+ 添加</button>
+              </div>
+            </div>
+            <div v-if="selectedPage.type === 'end_page'" class="cep-form-row">
+              <label class="cep-label">装饰符号</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).decoNumber" placeholder="如 &quot; 或 ❞" />
+            </div>
+            <div v-if="selectedPage.type === 'end_page'" class="cep-form-row">
+              <label class="cep-label">CTA 文字</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).ctaText" placeholder="如：关注我，获取更多" />
+            </div>
+
+            <!-- ===== 步骤流程编辑 ===== -->
+            <div v-if="selectedPage.type === 'steps'" class="cep-form-row">
+              <label class="cep-label">装饰数字</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).decoNumber" placeholder="如 01、02" />
+            </div>
+            <div v-if="selectedPage.type === 'steps'" class="cep-form-row">
+              <label class="cep-label">步骤</label>
+              <div class="cep-list-editor">
+                <div v-for="(step, i) in (selectedPage as EstherCardPage).steps" :key="'s'+i" class="cep-step-edit-item">
+                  <span class="cep-list-edit-num">{{ i + 1 }}</span>
+                  <div class="cep-step-edit-fields">
+                    <input class="cep-input" v-model="step.title" placeholder="步骤标题" />
+                    <input class="cep-input" v-model="step.desc" placeholder="步骤描述" />
+                  </div>
+                  <button class="cep-icon-btn cep-icon-btn-danger" @click="(selectedPage as EstherCardPage).steps?.splice(i, 1)">×</button>
+                </div>
+                <button class="cep-add-list-btn" @click="((selectedPage as EstherCardPage).steps ??= []).push({ title: '新步骤', desc: '描述' })">+ 添加步骤</button>
+              </div>
+            </div>
+
+            <!-- ===== 代码面板编辑 ===== -->
+            <div v-if="selectedPage.type === 'code_panel'" class="cep-form-row">
+              <label class="cep-label">装饰数字</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).decoNumber" placeholder="如 02" />
+            </div>
+            <div v-if="selectedPage.type === 'code_panel'" class="cep-form-row">
+              <label class="cep-label">代码语言</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).codeLang" placeholder="如 python、javascript" />
+            </div>
+            <div v-if="selectedPage.type === 'code_panel'" class="cep-form-row">
+              <label class="cep-label">代码内容</label>
+              <textarea class="cep-textarea" v-model="(selectedPage as EstherCardPage).codeContent" :rows="6" placeholder="粘贴代码"></textarea>
+            </div>
+
+            <!-- ===== 编号卡片编辑 ===== -->
+            <div v-if="selectedPage.type === 'numbered_cards'" class="cep-form-row">
+              <label class="cep-label">装饰数字</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).decoNumber" placeholder="如 03" />
+            </div>
+            <div v-if="selectedPage.type === 'numbered_cards'" class="cep-form-row">
+              <label class="cep-label">编号项</label>
+              <div class="cep-list-editor">
+                <div v-for="(item, i) in (selectedPage as EstherCardPage).numberedItems" :key="'n'+i" class="cep-step-edit-item">
+                  <span class="cep-list-edit-num">{{ i + 1 }}</span>
+                  <div class="cep-step-edit-fields">
+                    <input class="cep-input" v-model="item.title" placeholder="要点标题" />
+                    <input class="cep-input" v-model="item.desc" placeholder="要点描述" />
+                  </div>
+                  <button class="cep-icon-btn cep-icon-btn-danger" @click="(selectedPage as EstherCardPage).numberedItems?.splice(i, 1)">×</button>
+                </div>
+                <button class="cep-add-list-btn" @click="((selectedPage as EstherCardPage).numberedItems ??= []).push({ title: '新要点', desc: '简要说明' })">+ 添加要点</button>
+              </div>
+            </div>
+
+            <!-- ===== 报纸多栏编辑 ===== -->
+            <div v-if="selectedPage.type === 'newspaper'" class="cep-form-row">
+              <label class="cep-label">报头</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).masthead" placeholder="如 THE DAILY BRIEF" />
+            </div>
+            <div v-if="selectedPage.type === 'newspaper'" class="cep-form-row">
+              <label class="cep-label">栏目</label>
+              <div class="cep-list-editor">
+                <div v-for="(col, i) in (selectedPage as EstherCardPage).newspaperCols" :key="'np'+i" class="cep-step-edit-item">
+                  <span class="cep-list-edit-num">{{ i + 1 }}</span>
+                  <div class="cep-step-edit-fields">
+                    <input class="cep-input" v-model="col.headline" placeholder="栏目标题" />
+                    <input class="cep-input" v-model="col.body" placeholder="栏目正文" />
+                  </div>
+                  <button class="cep-icon-btn cep-icon-btn-danger" @click="(selectedPage as EstherCardPage).newspaperCols?.splice(i, 1)">×</button>
+                </div>
+                <button class="cep-add-list-btn" @click="((selectedPage as EstherCardPage).newspaperCols ??= []).push({ headline: '新栏目', body: '栏目内容' })">+ 添加栏目</button>
+              </div>
+            </div>
+
+            <!-- ===== 大字金句编辑 ===== -->
+            <div v-if="selectedPage.type === 'big_quote'" class="cep-form-row">
+              <label class="cep-label">金句内容</label>
+              <textarea class="cep-textarea" v-model="selectedPage.content" :rows="3" placeholder="一句足够大的话"></textarea>
+            </div>
+            <div v-if="selectedPage.type === 'big_quote'" class="cep-form-row">
+              <label class="cep-label">装饰符号</label>
+              <input class="cep-input" v-model="(selectedPage as EstherCardPage).decoNumber" placeholder='如 &quot; 或 ❞' />
+            </div>
+
             <div class="cep-form-row">
               <label class="cep-label">页脚</label>
               <input class="cep-input" v-model="selectedPage.footer" />
+            </div>
+          </div>
+        </section>
+
+        <!-- 文案原文参考（来自 copywrite 节点） -->
+        <section v-if="cardDraft?.copywrite_context" class="cep-panel">
+          <h4 class="cep-panel-title">
+            文案原文
+            <button class="cep-redistribute-btn" @click="redistributeContent">重新分配</button>
+          </h4>
+          <div class="cep-form">
+            <div class="cep-form-row">
+              <label class="cep-label">标题</label>
+              <div class="cep-readonly-text">{{ cardDraft.copywrite_context.title }}</div>
+            </div>
+            <div class="cep-form-row">
+              <label class="cep-label">正文</label>
+              <div class="cep-readonly-text cep-readonly-scroll">{{ cardDraft.copywrite_context.content }}</div>
+            </div>
+            <div v-if="cardDraft.copywrite_context.tags?.length" class="cep-form-row">
+              <label class="cep-label">标签</label>
+              <div class="cep-readonly-text">{{ cardDraft.copywrite_context.tags.join(' · ') }}</div>
             </div>
           </div>
         </section>
@@ -534,7 +923,10 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
 
     <!-- 隐藏的导出容器 -->
     <div ref="exportContainer" class="cep-export-container" aria-hidden="true">
-      <CardRenderer v-for="page in pages" :key="page.id" :page="page" :theme="effectiveTheme" :decoration="currentDecoration" />
+      <template v-for="page in pages" :key="page.id">
+        <EstherCardRenderer v-if="isEsther" :page="page" :theme="effectiveTheme" :decoration="currentDecoration" />
+        <CardRenderer v-else :page="page as CardPage" :theme="effectiveTheme" :decoration="currentDecoration" />
+      </template>
     </div>
   </div>
 </template>
@@ -598,7 +990,7 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
 .cep-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) 180px;
+  grid-template-columns: 180px minmax(0, 1fr) 180px;
   overflow: hidden;
   min-height: 0;
 }
@@ -619,7 +1011,7 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
   display: block;
   width: 100%;
   min-width: 0;
-  background: #F3F4F6;
+  background: #EEF0F4;
   border-radius: 12px;
 }
 
@@ -630,7 +1022,7 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
   padding: 12px;
   border-bottom: none;
   margin-bottom: 14px;
-  background: #F3F4F6;
+  background: #EEF0F4;
   border-radius: 8px;
 }
 .cep-tpl-thumb {
@@ -674,8 +1066,8 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
 .cep-page-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 4px;
+  padding: 5px 4px;
   border: none;
   border-radius: 5px;
   cursor: pointer;
@@ -683,48 +1075,48 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
 }
 .cep-page-item:hover { background: #F3F4F6; }
 .cep-page-item.active { background: #F3F4F6; }
-.cep-page-num { font-size: 11px; font-weight: 600; color: #6B7280; min-width: 14px; }
+.cep-page-num { font-size: 11px; font-weight: 600; color: #6B7280; min-width: 14px; flex-shrink: 0; }
 .cep-page-type {
-  font-size: 11px;
-  padding: 1px 5px;
+  font-size: 10px;
+  padding: 1px 4px;
   background: #E5E7EB;
   border-radius: 3px;
   color: #4B5563;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .cep-page-item.active .cep-page-type { background: #065F46; color: #FFFFFF; }
 .cep-page-title {
   flex: 1;
-  font-size: 12px;
+  font-size: 11px;
   color: #1A1A1A;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
 }
-.cep-page-actions { display: flex; gap: 1px; opacity: 0; transition: opacity 0.15s; }
-.cep-page-item:hover .cep-page-actions,
-.cep-page-item.active .cep-page-actions { opacity: 1; }
+.cep-page-actions { display: flex; gap: 1px; flex-shrink: 0; }
 .cep-icon-btn {
-  width: 20px; height: 20px;
+  width: 18px; height: 18px;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; border-radius: 3px;
-  color: #6B7280; cursor: pointer; font-size: 13px;
+  color: #9CA3AF; cursor: pointer; font-size: 12px;
 }
 .cep-icon-btn:hover:not(:disabled) { background: #E5E7EB; color: #1A1A1A; }
 .cep-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .cep-icon-btn-danger:hover { background: #FEE2E2; color: #DC2626; }
-.cep-add-page { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 8px; }
+.cep-add-page { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
 .cep-add-btn {
-  padding: 4px;
-  background: #F3F4F6;
+  padding: 3px 6px;
+  background: #EEF0F4;
   border: none;
   border-radius: 5px;
   color: #6B7280;
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
+  white-space: nowrap;
 }
-.cep-add-btn:hover { color: #065F46; }
+.cep-add-btn:hover { color: #065F46; background: #D1FAE5; }
 
 /* 预览：横向 flex，卡片自动缩放，放不下时滚动 */
 .cep-preview-grid {
@@ -747,7 +1139,7 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
   padding: 6px; border: 2px solid transparent; border-radius: 6px; cursor: pointer;
   flex-shrink: 0;
 }
-.cep-preview-card:hover { border-color: #D1D5DB; }
+.cep-preview-card:hover { border-color: #E5E7EB; }
 .cep-preview-card.active { border-color: #065F46; }
 /* 卡片容器：固定像素尺寸，不依赖容器宽度 */
 .cep-preview-box {
@@ -793,6 +1185,30 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
 }
 .cep-reset-btn:hover { color: #065F46; }
 
+/* 文案原文只读展示 */
+.cep-readonly-text {
+  font-size: 12px; line-height: 1.6; color: #374151;
+  background: #F9FAFB; border-radius: 4px; padding: 6px 8px;
+  word-break: break-all; white-space: pre-wrap;
+}
+.cep-readonly-scroll {
+  max-height: 120px; overflow-y: auto;
+}
+
+/* 重新分配按钮 */
+.cep-redistribute-btn {
+  font-size: 11px; color: #059669; background: #ECFDF5;
+  border: 1px solid #A7F3D0; border-radius: 4px;
+  padding: 2px 8px; cursor: pointer; margin-left: auto;
+  transition: all 0.15s;
+}
+.cep-redistribute-btn:hover { background: #D1FAE5; color: #047857; }
+
+/* 页面字数统计 */
+.cep-page-chars {
+  font-size: 9px; color: #9CA3AF; flex-shrink: 0; white-space: nowrap;
+}
+
 /* 列表编辑 */
 .cep-list-editor { display: flex; flex-direction: column; gap: 4px; }
 .cep-list-edit-item { display: flex; align-items: center; gap: 4px; }
@@ -803,6 +1219,19 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
   border-radius: 5px; color: #6B7280; font-size: 12px; cursor: pointer;
 }
 .cep-add-list-btn:hover { color: #065F46; }
+
+.cep-step-edit-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 0;
+}
+.cep-step-edit-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 
 /* 隐藏导出容器：用 absolute + clip 保证 html2canvas 能正确渲染（fixed + left:-99999px 会导致空白） */
 .cep-export-container { position: absolute; clip: rect(0, 0, 0, 0); width: 1080px; pointer-events: none; }
@@ -820,7 +1249,7 @@ const tplThumbHeight = Math.floor(tplThumbWidth * 1440 / 1080)        // 64px
   padding: 3px 6px;
   border: none;
   border-radius: 5px;
-  background: #F3F4F6;
+  background: #EEF0F4;
   cursor: pointer;
   font-size: 11px;
   color: #4B5563;

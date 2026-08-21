@@ -25,6 +25,7 @@ async def audit_node(state: WorkflowState) -> dict:
     logger.info(f"[{workflow_id}] {node_id} started")
 
     topic = state.get("topic", "")
+    creative_brief = (state.get("creative_brief") or "").strip()
     copywrite_output = state.get("node_outputs", {}).get("copywrite", {})
 
     # 用户在右侧工作区选择的 audit skill 配置
@@ -62,7 +63,7 @@ async def audit_node(state: WorkflowState) -> dict:
     try:
         audit_result = await audit_skill.execute({
             "llm": llm,
-            "topic": topic,
+            "topic": creative_brief or topic,
             "copywrite": copywrite_output,
         })
         output = {

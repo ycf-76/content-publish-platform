@@ -19,9 +19,14 @@ export interface QRCodeResponse {
 export interface QRCodeStatusResponse {
   status: 'pending' | 'scanned' | 'confirmed' | 'expired'
   message: string
+  qrcode_base64?: string
 }
 
 export const accountApi = {
+  async checkWorkerHealth() {
+    return await apiClient.get('/accounts/worker-health')
+  },
+
   async listAccounts() {
     return await apiClient.get('/accounts')
   },

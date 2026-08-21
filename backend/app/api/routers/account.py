@@ -39,16 +39,28 @@ async def list_accounts(
     ])
 
 
+@router.get("/worker-health")
+async def worker_health() -> StandardResponse[dict]:
+    login_svc = get_login_service()
+    ok = await login_svc.health_check()
+    return StandardResponse(data={"online": ok})
+
+
 @router.post("/qrcode")
 async def get_qrcode(
     db: AsyncSession = Depends(get_db),
 ) -> StandardResponse[dict]:
+    login_svc = get_login_service()
+    if not await login_svc.health_check():
+        raise HTTPException(
+            status_code=503,
+            detail="QR_WORKER_OFFLINE:扫码服务未启动，请先启动 QR Worker 进程",
+        )
     service = get_account_service(db)
     try:
         result = await service.generate_qrcode()
         return StandardResponse(data=result)
     except RuntimeError as e:
-        # worker 未启动 / chromium 缺失等可预期错误，转 400 让前端拿到具体原因
         raise HTTPException(status_code=400, detail=f"生成二维码失败：{e}")
 
 
@@ -62,6 +74,9 @@ async def poll_qrcode(
         result = await service.poll_qr_status(qr_id)
         return StandardResponse(data=result)
     except RuntimeError as e:
+        err_msg = str(e)
+        if "无法连接 QR worker" in err_msg:
+            raise HTTPException(status_code=503, detail=f"QR_WORKER_OFFLINE:{err_msg}")
         raise HTTPException(status_code=400, detail=f"查询扫码状态失败：{e}")
 
 

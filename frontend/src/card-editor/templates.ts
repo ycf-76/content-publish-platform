@@ -1,14 +1,17 @@
 /**
- * 卡片模板系统：3 套预置模板 × 装饰层 × 4 种 page type
+ * 卡片模板系统：3 套预置模板 × 装饰层 × 13 种 page type
  *
  * 设计原则：
  * - 模板只定义"视觉骨架"（配色、字号、布局），内容由用户/LLM 填充
  * - 装饰层叠加在背景上方、文字下方，提供视觉丰富度（渐变光斑/几何/纹理等）
- * - 4 种 page type 覆盖小红书常见场景：封面/正文/金句/清单
+ * - 13 种 page type 覆盖小红书常见场景：封面/正文/金句/清单 + Esther 扩展 9 种
  * - 画布固定 1080×1440（3:4），导出时 html2canvas 2x 缩放
  */
 
-export type PageType = 'cover' | 'content' | 'quote' | 'list'
+export type PageType =
+  | 'cover' | 'content' | 'quote' | 'list'
+  | 'dark_panel' | 'end_page' | 'compare' | 'icon_text'
+  | 'steps' | 'code_panel' | 'numbered_cards' | 'newspaper' | 'big_quote'
 
 export interface CardPage {
   id: string
@@ -18,6 +21,22 @@ export interface CardPage {
   content: string
   footer?: string
   listItems?: string[]
+  highlight?: string
+  tag?: string
+  emoji?: string
+  decoNumber?: string
+  ctaText?: string
+  compareLeftTitle?: string
+  compareRightTitle?: string
+  compareLeftItems?: string[]
+  compareRightItems?: string[]
+  iconTextPairs?: Array<{ icon: string; text: string }>
+  steps?: Array<{ title: string; desc: string }>
+  codeContent?: string
+  codeLang?: string
+  numberedItems?: Array<{ title: string; desc: string }>
+  newspaperCols?: Array<{ headline: string; body: string }>
+  masthead?: string
 }
 
 export interface TemplateTheme {
@@ -264,6 +283,15 @@ export const PAGE_TYPE_LABELS: Record<PageType, string> = {
   content: '正文',
   quote: '金句',
   list: '清单',
+  dark_panel: '深色面板',
+  end_page: '尾页',
+  compare: '对比',
+  icon_text: '图标文字',
+  steps: '步骤流程',
+  code_panel: '代码面板',
+  numbered_cards: '编号卡片',
+  newspaper: '报纸多栏',
+  big_quote: '大字金句',
 }
 
 /** 创建默认页面（用于"添加页面"按钮） */
@@ -299,6 +327,97 @@ export function createDefaultPage(type: PageType, index: number): CardPage {
         content: '',
         listItems: ['第一项要点', '第二项要点', '第三项要点'],
         footer: '',
+      }
+    case 'dark_panel':
+      return {
+        id, type,
+        title: '核心洞察',
+        content: '',
+        emoji: '💡',
+        decoNumber: '01',
+        listItems: ['洞察一', '洞察二', '洞察三'],
+      }
+    case 'end_page':
+      return {
+        id, type,
+        title: '',
+        content: '一句让人记住你的话',
+        ctaText: '关注我，获取更多',
+        footer: '@灵犀工坊',
+        decoNumber: '"',
+      }
+    case 'compare':
+      return {
+        id, type,
+        title: '对比分析',
+        content: '',
+        compareLeftTitle: '传统做法',
+        compareRightTitle: '更好方式',
+        compareLeftItems: ['痛点一', '痛点二'],
+        compareRightItems: ['优势一', '优势二'],
+      }
+    case 'icon_text':
+      return {
+        id, type,
+        title: '能力卡片',
+        content: '',
+        iconTextPairs: [
+          { icon: '🎯', text: '精准定位' },
+          { icon: '💡', text: '创新思维' },
+          { icon: '⚡', text: '高效执行' },
+          { icon: '🔥', text: '热情驱动' },
+        ],
+      }
+    case 'steps':
+      return {
+        id, type,
+        title: '操作步骤',
+        content: '',
+        decoNumber: '01',
+        steps: [
+          { title: '第一步', desc: '操作描述' },
+          { title: '第二步', desc: '操作描述' },
+          { title: '第三步', desc: '操作描述' },
+        ],
+      }
+    case 'code_panel':
+      return {
+        id, type,
+        title: '代码示例',
+        content: '',
+        codeContent: 'console.log("Hello World")',
+        codeLang: 'javascript',
+      }
+    case 'numbered_cards':
+      return {
+        id, type,
+        title: '核心要点',
+        content: '',
+        decoNumber: '01',
+        numberedItems: [
+          { title: '要点一', desc: '详细描述' },
+          { title: '要点二', desc: '详细描述' },
+          { title: '要点三', desc: '详细描述' },
+        ],
+      }
+    case 'newspaper':
+      return {
+        id, type,
+        title: '',
+        content: '',
+        masthead: 'THE DAILY BRIEF',
+        newspaperCols: [
+          { headline: '栏目标题一', body: '栏目正文内容' },
+          { headline: '栏目标题二', body: '栏目正文内容' },
+        ],
+      }
+    case 'big_quote':
+      return {
+        id, type,
+        title: '',
+        content: '一句震撼人心的话',
+        footer: '@灵犀工坊',
+        decoNumber: '"',
       }
   }
 }

@@ -105,6 +105,9 @@ class WorkflowState(TypedDict, total=False):
     user_id: str
     account_id: str
     topic: str
+    # topic 兼容旧工作流；新工作流将搜索词和创作要求拆开传递
+    search_keyword: str
+    creative_brief: str
     current_node: str
     # Annotated reducer：节点返回的部分 dict 会被合并到现有 state，
     # 而不是覆盖整个 node_statuses / node_outputs。
@@ -128,28 +131,36 @@ def initial_state(
     user_id: str,
     account_id: str,
     topic: str,
+    search_keyword: str = "",
+    creative_brief: str = "",
     model_settings: dict | None = None,
     reference: dict | None = None,
     user_memory: dict | None = None,
+    node_types: list[str] | None = None,
 ) -> WorkflowState:
-    """Create initial workflow state."""
+    """Create initial workflow state.
+
+    Args:
+        node_types: 动态节点类型列表。如果为 None，使用默认9个节点。
+                    传入后，node_statuses 只包含这些节点。
+    """
+    if node_types is None:
+        node_types = [
+            "search", "analyze", "copywrite", "image_plan",
+            "image_gen", "image_review", "audit", "final_review", "publish",
+        ]
+
+    node_statuses_init = {nt: NodeStatus.PENDING.value for nt in node_types}
+
     return WorkflowState(
         workflow_id=workflow_id,
         user_id=user_id,
         account_id=account_id,
         topic=topic,
-        current_node="search",
-        node_statuses={
-            "search": NodeStatus.PENDING.value,
-            "analyze": NodeStatus.PENDING.value,
-            "image_plan": NodeStatus.PENDING.value,
-            "image_gen": NodeStatus.PENDING.value,
-            "image_review": NodeStatus.PENDING.value,
-            "copywrite": NodeStatus.PENDING.value,
-            "audit": NodeStatus.PENDING.value,
-            "final_review": NodeStatus.PENDING.value,
-            "publish": NodeStatus.PENDING.value,
-        },
+        search_keyword=(search_keyword or topic).strip(),
+        creative_brief=(creative_brief or "").strip(),
+        current_node=node_types[0] if node_types else "search",
+        node_statuses=node_statuses_init,
         node_outputs={},
         node_errors={},
         recovery_attempts={},

@@ -30,6 +30,10 @@ async def copywrite_node(state: WorkflowState) -> dict:
     logger.info(f"[{workflow_id}] {node_id} started")
 
     topic = state.get("topic", "")
+    search_keyword = (state.get("search_keyword") or topic).strip()
+    creative_brief = (state.get("creative_brief") or "").strip()
+    # 文案主题以用户创作要求为主；旧工作流无 brief 时保持原 topic。
+    copywrite_topic = creative_brief or topic
 
     # 用户在右侧工作区选择的模型/温度/文风配置
     model_settings = state.get("model_settings", {}) or {}
@@ -38,6 +42,13 @@ async def copywrite_node(state: WorkflowState) -> dict:
     user_writing_style = model_settings.get("writing_style", "")
     # 用户可直接指定 copywrite skill name（优先级高于 writing_style 中文名）
     copywrite_skill_name = model_settings.get("copywrite_skill")
+    # 风格开关（来自右侧配置中心）：
+    # - content_length: 用户期望的文案正文字数（100-500），覆盖 prompt 硬编码长度规则
+    # - auto_emoji: False 时指示 LLM 不使用 emoji，覆盖风格 skill 默认
+    # - auto_tags: False 时指示 LLM 不生成标签，返回空 tags 数组
+    content_length = model_settings.get("content_length")
+    auto_emoji = model_settings.get("auto_emoji", True)
+    auto_tags = model_settings.get("auto_tags", True)
 
     # 选题池参考素材（从选题池"发起新工作流"时携带，注入 LLM prompt）
     reference = state.get("reference", {}) or {}
@@ -54,14 +65,29 @@ async def copywrite_node(state: WorkflowState) -> dict:
     patterns = analyze_output.get("patterns", {}) or {}
     insights = analyze_output.get("insights", {}) or {}
 
-    # 提取 execution_brief：analyze Layer3 给下游的执行指令
-    # 从 recommendations[0].execution_brief 取（取首条推荐方向的指令）
+    # 提取 execution_brief：优先使用用户在 analyze 后选择的推荐方向。
     execution_brief = {}
     recommendations = insights.get("recommendations") or []
-    if recommendations and isinstance(recommendations[0], dict):
-        brief = recommendations[0].get("execution_brief")
+    selected_direction = analyze_output.get("selected_direction", 0)
+    try:
+        selected_direction = int(selected_direction)
+    except (TypeError, ValueError):
+        selected_direction = 0
+    if selected_direction < 0 or selected_direction >= len(recommendations):
+        selected_direction = 0
+    selected_recommendation = {}
+    if recommendations and isinstance(recommendations[selected_direction], dict):
+        selected_recommendation = recommendations[selected_direction]
+        brief = selected_recommendation.get("execution_brief")
         if isinstance(brief, dict):
-            execution_brief = brief
+            execution_brief = dict(brief)
+    direction_note = str(analyze_output.get("direction_note") or "").strip()
+    if creative_brief:
+        execution_brief["user_creative_brief"] = creative_brief
+    if selected_recommendation.get("topic_direction"):
+        execution_brief["selected_direction"] = selected_recommendation["topic_direction"]
+    if direction_note:
+        execution_brief["direction_note"] = direction_note
 
     image_gen_output = node_outputs.get("image_gen", {})
     image_details = image_gen_output.get("image_details", [])
@@ -75,6 +101,9 @@ async def copywrite_node(state: WorkflowState) -> dict:
         f"patterns={'yes' if patterns else 'no'}, "
         f"insights={'yes' if insights else 'no'}, "
         f"execution_brief={'yes' if execution_brief else 'no'}, "
+        f"selected_direction={selected_direction}, "
+        f"creative_brief={'yes' if creative_brief else 'no'}, "
+        f"search_keyword={search_keyword or '(none)'}, "
         f"image_details={len(image_details)}, "
         f"review_feedback={'yes' if review_feedback else 'no'}, "
         f"writing_style={user_writing_style or '(default)'}, "
@@ -124,10 +153,11 @@ async def copywrite_node(state: WorkflowState) -> dict:
     )
 
     # 检测 DeepSeek 余额不足
+    # 使用流式输出：LLM streaming → SSE stream_chunk → 前端逐字显示
     try:
-        result = await copywrite_skill.execute({
+        result = await copywrite_skill.execute_streaming({
             "llm": llm,
-            "topic": topic,
+            "topic": copywrite_topic,
             "insights": insights,
             "patterns": patterns,
             "execution_brief": execution_brief,
@@ -135,6 +165,11 @@ async def copywrite_node(state: WorkflowState) -> dict:
             "image_style": image_style,
             "reference": reference,
             "user_memory": user_memory,
+            "content_length": content_length,
+            "auto_emoji": auto_emoji,
+            "auto_tags": auto_tags,
+            "workflow_id": workflow_id,
+            "node_id": node_id,
         })
     except Exception as e:
         err_str = str(e)
@@ -152,7 +187,7 @@ async def copywrite_node(state: WorkflowState) -> dict:
             })
 
         # 降级为模板生成
-        result = copywrite_skill.fallback(topic, insights, image_details)
+        result = copywrite_skill.fallback(copywrite_topic, insights, image_details)
 
     # ===== Step 3: 组装输出 =====
     output = {

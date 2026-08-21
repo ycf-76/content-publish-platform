@@ -76,6 +76,10 @@
           <span class="wf-meta-item" style="font-size: 15px;color:#94A3B8;"><i data-lucide="cpu" style="width:11px;height:11px;"></i>{{ auditMethodLabel(result.audit_method) }}</span>
         </div>
       </template>
+      <div v-else-if="nodeStatus === 'completed'" class="wf-empty-hint">
+        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        合规审核已完成（详细数据不可用）
+      </div>
     </div>
     <div class="wf-node-meta" v-if="nodeMeta">
       <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>

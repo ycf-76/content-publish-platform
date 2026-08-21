@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="wf-stepper" role="tablist" aria-label="工作流分组导航">
     <button
       v-for="(g, i) in groups"
@@ -168,10 +168,10 @@ function onStepClick(_g: GroupDef, i: number) {
   line-height: 1.3;
 }
 .wf-step.is-active .wf-step-name {
-  color: #333333;
+  color: #111827;
 }
 .wf-step.is-done .wf-step-name {
-  color: #333333;
+  color: #111827;
 }
 .wf-step-node-list {
   font-size: 14px;

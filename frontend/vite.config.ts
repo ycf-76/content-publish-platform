@@ -17,6 +17,7 @@ export default defineConfig({
   },
   server: {
     port: 3001,
+    host: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
@@ -28,6 +29,8 @@ export default defineConfig({
           proxy.on('proxyRes', (proxyRes) => {
             if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
               delete proxyRes.headers['content-encoding']
+              proxyRes.headers['cache-control'] = 'no-cache'
+              proxyRes.headers['connection'] = 'keep-alive'
             }
           })
         },

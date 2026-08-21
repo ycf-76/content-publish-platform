@@ -216,7 +216,7 @@
   align-items: center;
   gap: 0;
   padding: 10px 14px;
-  border-bottom: 1px solid #F1F5F9;
+  border-bottom: 1px solid #F3F4F6;
   background: #FAFBFC;
   overflow-x: auto;
 }
@@ -306,7 +306,7 @@
   font-size: 11px;
   color: #64748B;
   padding: 1px 6px;
-  background: #F1F5F9;
+  background: #F3F4F6;
   border-radius: 4px;
 }
 
@@ -445,7 +445,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: #D1D5DB transparent;
+  scrollbar-color: #E5E7EB transparent;
 }
 .wf-review-aside {
   display: flex;
@@ -457,7 +457,7 @@
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: #EEF0F2;
+  background: #F3F4F6;
   border-radius: 16px;
   margin-bottom: 12px;
 }
@@ -496,7 +496,7 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: #D1D5DB transparent;
+  scrollbar-color: #E5E7EB transparent;
 }
 
 
@@ -602,7 +602,7 @@
   width: 2px;
   height: 40px;
   border-radius: 2px;
-  background: #D1D5DB;
+  background: #E5E7EB;
   transition: background 0.15s ease, height 0.15s ease;
 }
 .wf-canvas-resizer:hover {

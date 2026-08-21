@@ -69,6 +69,22 @@ _HIGH_RISK_ALL: frozenset[Permission] = frozenset(
 )
 
 
+def resolve_execution_policy(execution_policy: str) -> tuple[bool, bool]:
+    """把 Skill.execution_policy 收敛为「是否可信 + 是否沙箱」的单一决策。
+
+    这是信任/沙箱决策的唯一入口，替代 sandbox_workflow_bridge 里分散的
+    is_trusted_plugin / should_use_sandbox 判断。
+
+    Returns:
+        (is_trusted, use_sandbox)
+        - direct / mcp：可信，直接/内置执行
+        - sandbox：不可信，Docker 沙箱隔离执行
+    """
+    if execution_policy == "sandbox":
+        return (False, True)
+    return (True, False)
+
+
 class PermissionDeniedError(Exception):
     """权限被拒绝。"""
 

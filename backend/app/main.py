@@ -6,14 +6,20 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import logging
+import os
 
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.routers import account, auth, config, mcp_bridge, memory, proxy, recovery, review, rollback, search, skills, sse, topic_pool, workflow
+from app.api.routers import account, auth, chat, chat_agent, chat_session, config, esther_factory, mcp_bridge, memory, plugins, proxy, recovery, review, rollback, search, skills, sse, topic_pool, workflow
 from app.config import get_settings
 from app.db.session import engine, Base
-from app.db.models import User, XhsAccount, Workflow, WorkflowNode, TopicPoolItem
+import app.db.models  # noqa: F401 — ensure all ORM models registered with Base.metadata
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -27,54 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # topic_pool_items 增量迁移：create_all 不会给已存在的表加列，
-            # 手动补齐 v2 新增字段（collects/shares/fans_count/images）。
-            from sqlalchemy import text, inspect as sa_inspect
-            try:
-                def _has_col(sync_conn, table: str, col: str) -> bool:
-                    insp = sa_inspect(sync_conn)
-                    return col in {c["name"] for c in insp.get_columns(table)}
-                # MySQL 用 JSON，PostgreSQL 用 JSONB，SQLite 用 JSON
-                json_type = "JSON"
-                for col in ("collects", "shares", "fans_count"):
-                    if not await conn.run_sync(_has_col, "topic_pool_items", col):
-                        await conn.execute(text(
-                            f"ALTER TABLE topic_pool_items ADD COLUMN {col} INT NOT NULL DEFAULT 0"
-                        ))
-                if not await conn.run_sync(_has_col, "topic_pool_items", "images"):
-                    await conn.execute(text(
-                        f"ALTER TABLE topic_pool_items ADD COLUMN images {json_type} NULL"
-                    ))
-                # v6 合并：选题池监控字段（auto_source/simhash/heat_score/heat_status/dimensions/published_at）
-                for col, col_type in [
-                    ("auto_source", "VARCHAR(20) NOT NULL DEFAULT 'manual'"),
-                    ("simhash_fingerprint", "VARCHAR(64) NULL"),
-                    ("heat_score", "FLOAT NOT NULL DEFAULT 0"),
-                    ("heat_status", "VARCHAR(20) NOT NULL DEFAULT '活跃'"),
-                    ("dimensions", json_type),
-                    ("published_at", "DATETIME NULL"),
-                ]:
-                    if not await conn.run_sync(_has_col, "topic_pool_items", col):
-                        await conn.execute(text(
-                            f"ALTER TABLE topic_pool_items ADD COLUMN {col} {col_type}"
-                        ))
-                # v7 详情页字段：tags（关键词标签）/ ai_summary（AI详细摘要）/
-                # view_count（访问次数）/ ai_summary_generated_at（AI摘要生成时间）
-                for col, col_type in [
-                    ("tags", json_type),
-                    ("ai_summary", "TEXT NULL"),
-                    ("view_count", "INT NOT NULL DEFAULT 0"),
-                    ("ai_summary_generated_at", "DATETIME NULL"),
-                ]:
-                    if not await conn.run_sync(_has_col, "topic_pool_items", col):
-                        await conn.execute(text(
-                            f"ALTER TABLE topic_pool_items ADD COLUMN {col} {col_type}"
-                        ))
-                logger.info("topic_pool_items migration checked (v6 monitor + v7 detail fields added)")
-            except Exception as me:
-                logger.warning(f"topic_pool_items migration skipped: {me}")
         logger.info("Database tables ready")
-        # 用户通过小红书扫码登录自动创建（/api/auth/qr-login），无需启动时初始化默认用户
     except Exception as e:
         logger.warning(f"Database init skipped: {e}")
 
@@ -137,15 +96,142 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("[lifespan] step 4: init pool monitor...")
     try:
         from app.pool_monitor.main import pool_startup
-        await pool_startup()
-        logger.info("Pool monitor module started")
+        # await pool_startup()  # temporarily disabled: Tavily API rate-limited
+        logger.info("Pool monitor module skipped (Tavily rate-limited)")
     except Exception as e:
         logger.warning(f"Pool monitor init failed: {e}")
+
+    # 反馈闭环定时任务（T+7 回采 + 权重校准）
+    logger.info("[lifespan] step 4.5: init performance collector scheduler...")
+    try:
+        from app.pool_monitor.scheduler import scheduler
+        from app.services.performance_collector import (
+            collect_performance_7d,
+            calibrate_weights,
+        )
+        scheduler.add_job(
+            collect_performance_7d,
+            "cron",
+            hour=3,
+            minute=0,
+            id="collect_performance_7d",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            calibrate_weights,
+            "cron",
+            day_of_week="mon",
+            hour=4,
+            minute=0,
+            id="calibrate_weights",
+            replace_existing=True,
+        )
+        logger.info("Performance collector scheduler registered (T+7 daily 03:00, calibration weekly Mon 04:00)")
+    except Exception as e:
+        logger.warning(f"Performance collector scheduler init failed: {e}")
+
+    # 工作流僵尸清理：PAUSED 超时终止 + running 卡死挂起
+    logger.info("[lifespan] step 4.6: init workflow cleanup scheduler...")
+    try:
+        from apscheduler.triggers.interval import IntervalTrigger
+        from app.pool_monitor.scheduler import scheduler
+        from app.services.workflow_cleanup import cleanup_stale_workflows
+
+        scheduler.add_job(
+            cleanup_stale_workflows,
+            IntervalTrigger(minutes=10),
+            id="workflow_cleanup",
+            name="工作流僵尸清理",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info("Workflow cleanup scheduler registered (every 10 min)")
+    except Exception as e:
+        logger.warning(f"Workflow cleanup scheduler init failed: {e}")
+
+    # 初始化 Redis 缓存
+    logger.info("[lifespan] step 5: init Redis cache...")
+    try:
+        from app.cache import redis_client
+        await redis_client.connect()
+        mode = "Redis" if redis_client.is_connected else "in-memory fallback"
+        logger.info(f"Cache initialized ({mode})")
+    except Exception as e:
+        logger.warning(f"Redis cache init failed: {e}")
+
+    # Phase 5: 初始化节点注册中心（动态工作流编排支持）
+    try:
+        from app.core.node_registry import register_default_workflow_nodes
+        success = register_default_workflow_nodes()
+        if success:
+            logger.info("✅ NodeRegistry initialized with default workflow nodes")
+        else:
+            logger.warning("⚠️ NodeRegistry initialization failed (some nodes may not be registered)")
+    except Exception as e:
+        logger.warning(f"NodeRegistry init failed: {e} (dynamic workflow features may be limited)")
+
+    # Phase 5.5: 初始化插件→工作流节点桥接（扫描并注册所有 workflow_node 插件）
+    logger.info("[lifespan] step 5.5: init plugin-workflow bridge...")
+    try:
+        from app.core.plugin_node_bridge import initialize_plugin_nodes
+        bridge_result = await initialize_plugin_nodes()
+        
+        if bridge_result["success"]:
+            logger.info(
+                f"✅ Plugin-Workflow bridge initialized: "
+                f"{bridge_result['registered_count']}/{bridge_result['plugins_scanned']} nodes registered"
+            )
+            
+            if bridge_result["errors"]:
+                for err in bridge_result["errors"][:3]:  # 只打印前3个错误
+                    logger.warning(f"   ⚠️ {err}")
+        else:
+            logger.warning(
+                f"⚠️ Plugin-Workflow bridge init failed: {bridge_result['errors'][:1]}"
+            )
+    except Exception as e:
+        logger.warning(f"Plugin-Workflow bridge init failed: {e} (plugin nodes unavailable)")
+
+    # Phase 5.6: 同步插件到数据库（扫描 plugins/builtin/ + plugins/third_party/ → upsert DB）
+    logger.info("[lifespan] step 5.6: sync all plugins (builtin + third_party) to DB...")
+    try:
+        from app.core.sync_builtin_plugins import sync_all_plugins_to_db
+        sync_result = await sync_all_plugins_to_db()
+        logger.info(
+            f"✅ Plugins synced: "
+            f"{sync_result['synced']}/{sync_result['scanned']} upserted, "
+            f"{sync_result['skipped']} unchanged"
+        )
+    except Exception as e:
+        logger.warning(f"Plugins sync failed: {e} (plugin list may be incomplete)")
+
+    # Phase 5.7: 预置内置工作流模板到数据库
+    logger.info("[lifespan] step 5.7: seed builtin workflow definitions...")
+    try:
+        from app.db.seed_workflow_definitions import seed_builtin_workflow_definitions
+        from app.db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as seed_db:
+            seed_result = await seed_builtin_workflow_definitions(seed_db)
+            logger.info(
+                f"✅ Builtin workflow definitions seeded: "
+                f"{seed_result['seeded']} new, {seed_result['skipped']} existing"
+            )
+    except Exception as e:
+        logger.warning(f"Builtin workflow definitions seed failed: {e} (templates may be unavailable)")
+
     logger.info("[lifespan] all steps done, entering yield")
 
     yield
 
     # 关闭资源
+    # 关闭 Redis 连接
+    try:
+        from app.cache import redis_client
+        await redis_client.close()
+        logger.info("Redis connection closed")
+    except Exception as e:
+        logger.warning(f"Redis close failed: {e}")
     # 选题池调度器关闭
     try:
         from app.pool_monitor.main import pool_shutdown
@@ -175,6 +261,17 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    logger.error(f"Unhandled exception on {request.method} {request.url}: {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {str(exc)}", "traceback": tb},
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -184,14 +281,74 @@ app.add_middleware(
 )
 
 
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """P2：API 限流中间件，基于 Redis 滑动窗口计数器。
+
+    规则：每个 user_id 每分钟最多 RATE_LIMIT_PER_MINUTE 次请求。
+    未登录用户按 IP 限流。
+    配置类、插件类、Skills 类等轻量查询接口不限流。
+    """
+
+    RATE_LIMIT_PER_MINUTE = 300
+    WINDOW_SECONDS = 60
+
+    RATE_LIMIT_EXEMPT_PATHS = {
+        "/health", "/docs", "/redoc", "/openapi.json",
+        "/api/v1/plugins", "/api/v1/plugins/installed",
+        "/api/v1/skills", "/api/v1/config",
+    }
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in self.RATE_LIMIT_EXEMPT_PATHS or request.url.path.startswith("/api/v1/plugins") or request.url.path.startswith("/api/v1/skills") or request.url.path.startswith("/api/v1/config"):
+            return await call_next(request)
+
+        from app.cache import redis_client
+
+        user_id = None
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            try:
+                from app.security import verify_jwt
+                payload = verify_jwt(auth_header[7:])
+                user_id = payload.get("sub")
+            except Exception:
+                pass
+
+        limit_key = f"ratelimit:user:{user_id}" if user_id else f"ratelimit:ip:{request.client.host if request.client else 'unknown'}"
+
+        try:
+            count = await redis_client.incr(limit_key)
+            if count == 1:
+                await redis_client.expire(limit_key, self.WINDOW_SECONDS)
+
+            if count > self.RATE_LIMIT_PER_MINUTE:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": f"请求过于频繁，请稍后再试（限制：{self.RATE_LIMIT_PER_MINUTE}次/分钟）"},
+                )
+        except Exception:
+            pass
+
+        response = await call_next(request)
+        return response
+
+
+app.add_middleware(RateLimitMiddleware)
+
+
 @app.get("/health", tags=["系统"])
 async def health_check() -> dict[str, str]:
     """健康检查端点。"""
-    return {"status": "ok", "app": settings.app_name}
+    from app.cache import redis_client
+    cache_status = "redis" if redis_client.is_connected else "fallback"
+    return {"status": "ok", "app": settings.app_name, "cache": cache_status}
 
 
 # ===== 路由注册 =====
 app.include_router(auth.router)
+app.include_router(chat.router)
+app.include_router(chat_agent.router)
+app.include_router(chat_session.router)
 app.include_router(search.router)
 app.include_router(workflow.router)
 app.include_router(sse.router)
@@ -205,6 +362,17 @@ app.include_router(mcp_bridge.router)
 app.include_router(proxy.router)
 app.include_router(topic_pool.router)
 app.include_router(memory.router)
+app.include_router(esther_factory.router)
+app.include_router(plugins.router)  # Plugin system API (v2.0)
+from app.api.routers import workflow_definitions
+app.include_router(workflow_definitions.router)  # Workflow Definitions API (v5.0 - Dynamic Orchestration)
+from app.api.routers import wechat_bot
+app.include_router(wechat_bot.router)  # WeChat Bot API (v6.0 - iLink协议)
+
+# 挂载 uploads 目录为静态文件服务（选题池封面图/详情图 + 用户头像）
+_upload_dir = Path(os.environ.get("UPLOAD_DIR", "uploads"))
+_upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_upload_dir)), name="uploads")
 
 if __name__ == "__main__":
     import uvicorn

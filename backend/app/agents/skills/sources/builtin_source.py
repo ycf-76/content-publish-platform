@@ -292,7 +292,7 @@ def _to_trending_content(item: _TopicItem) -> TrendingContent:
         comments=item.comments,
         shares=item.shares,
         views=item.likes * 8,  # 估算浏览量
-        cover_img="",
+        cover_img=f"https://picsum.photos/seed/{abs(hash(item.title)) % 10000}/400/300",
         published_at=published_at,
         tags=item.tags,
         title_original=item.title,

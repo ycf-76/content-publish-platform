@@ -30,6 +30,9 @@ async def analyze_node(state: WorkflowState) -> dict:
     logger.info(f"[{workflow_id}] {node_id} started (3-layer analysis)")
 
     topic = state.get("topic", "")
+    search_keyword = (state.get("search_keyword") or topic).strip()
+    creative_brief = (state.get("creative_brief") or "").strip()
+    analysis_topic = creative_brief or search_keyword
     # 用户在右侧工作区选择的模型/温度/analyze skill 配置
     model_settings = state.get("model_settings", {}) or {}
     user_temperature = model_settings.get("temperature")
@@ -45,6 +48,8 @@ async def analyze_node(state: WorkflowState) -> dict:
     user_preferences = {
         "preferred_topics": user_memory.get("preferred_topics") or [],
         "avoided_topics": user_memory.get("avoided_topics") or [],
+        "creative_brief": creative_brief,
+        "search_keyword": search_keyword,
     }
 
     # 通过 registry 加载 analyze Skill（支持第三方插件）
@@ -115,7 +120,9 @@ async def analyze_node(state: WorkflowState) -> dict:
             "input_size": min(5, len(with_metrics)),
         })
         top5 = with_metrics[:5]
-        patterns = await analyze_skill.analyze_layer2(llm, top5, topic)
+        patterns = await analyze_skill.analyze_layer2_streaming(
+            llm, top5, analysis_topic, workflow_id=workflow_id, node_id=node_id
+        )
         await emit_node_event(workflow_id, node_id, "tool_call_end", {
             "tool": "deepseek_layer2",
             "success": "_error" not in patterns and "_parse_failed" not in patterns,
@@ -137,8 +144,9 @@ async def analyze_node(state: WorkflowState) -> dict:
             "input_size": min(2, len(with_metrics)),
         })
         top2 = with_metrics[:2]
-        insights = await analyze_skill.analyze_layer3(
-            llm, top2, with_metrics, patterns, topic, user_preferences
+        insights = await analyze_skill.analyze_layer3_streaming(
+            llm, top2, with_metrics, patterns, analysis_topic, user_preferences,
+            workflow_id=workflow_id, node_id=node_id
         )
         await emit_node_event(workflow_id, node_id, "tool_call_end", {
             "tool": "deepseek_layer3",

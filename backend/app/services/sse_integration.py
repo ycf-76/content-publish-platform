@@ -1,4 +1,4 @@
-﻿"""SSE integration helpers.
+"""SSE integration helpers.
 
 Provides factory functions to create Observer with SSE callback.
 Architecture: Layer A (LangGraph) imports this, injects into Layer B (Harness).

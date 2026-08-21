@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.skills.base import Skill
 from app.agents.skills.permissions import Permission
+from app.agents.skills.registry import register
 
 if TYPE_CHECKING:
     from app.agents.adapters.llm_base import LLMProtocol
@@ -41,6 +42,7 @@ class XhsNoteSummary(BaseModel):
     images_base64: list[str] = Field(default_factory=list)
 
 
+@register
 class XhsSearchSkill(Skill):
     """Xiaohongshu search skill.
 
@@ -49,6 +51,7 @@ class XhsSearchSkill(Skill):
     增强逻辑：过滤无效/低热度结果 + 按点赞数降序排序，聚焦热门和趋势话题。
     """
 
+    node_type = "search"
     name = "xhs_search"
     description = "Search Xiaohongshu notes by keyword (filtered by popularity, sorted by likes desc)"
     input_schema = XhsSearchInput
@@ -132,7 +135,12 @@ class XhsSearchSkill(Skill):
 
     @staticmethod
     def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
-        """把 MCP 返回的 raw dict 清洗成稳定的 XhsNoteSummary 兼容结构。"""
+        """把 MCP 返回的 raw dict 清洗成稳定的 XhsNoteSummary 兼容结构。
+
+        P0 字段：author_fans / published_at 是 Layer 1 爆款分类的核心依赖。
+        MCP 返回的 raw 中可能包含这些字段，也可能不包含（取决于搜索 JS 版本）。
+        缺失时设为 None，viral_analyzer 会降级处理。
+        """
         return {
             "note_id": str(raw.get("note_id", "")).strip(),
             "title": str(raw.get("title", "")).strip(),
@@ -142,6 +150,11 @@ class XhsSearchSkill(Skill):
             "url": str(raw.get("url", "")).strip(),
             "cover_img": str(raw.get("cover_img", "")).strip(),
             "author": str(raw.get("author", "")).strip(),
+            "author_fans": int(raw["author_fans"]) if raw.get("author_fans") not in (None, "") else None,
+            "published_at": str(raw.get("published_at", "")).strip() or None,
+            "collects": int(raw.get("collects", 0) or 0) if raw.get("collects") not in (None, "") else None,
+            "note_type": str(raw.get("note_type", "")).strip() or None,
+            "tags": raw.get("tags") if isinstance(raw.get("tags"), list) else None,
         }
 
     @staticmethod

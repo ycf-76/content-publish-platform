@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.skills.base import Skill
 from app.agents.skills.permissions import Permission
+from app.agents.skills.registry import register
 
 if TYPE_CHECKING:
     from app.agents.adapters.llm_base import LLMProtocol
@@ -46,6 +47,7 @@ class TrendingSearchInput(BaseModel):
     )
 
 
+@register
 class TrendingSearchSkill(Skill):
     """多平台热门内容搜索 skill。
 
@@ -53,6 +55,7 @@ class TrendingSearchSkill(Skill):
     自动过滤低互动量内容，按互动量降序排序。
     """
 
+    node_type = "search"
     name = "trending_search"
     description = (
         "Search trending content from multiple platforms "
@@ -172,9 +175,15 @@ class TrendingSearchSkill(Skill):
             return [], []
         try:
             results = await source.search_trending(keyword, limit, time_range)
+        except RuntimeError as e:
+            err_msg = str(e)
+            logger.error(f"[skill] trending_search failed on {source.name}: {err_msg}")
+            if "local client" in err_msg or "无 local client" in err_msg:
+                logger.warning(f"[skill] {source.name} source unavailable (client not connected), returning empty")
+                return [], [source.name]
+            raise
         except Exception as e:
             logger.error(f"[skill] trending_search failed on {source.name}: {e}")
-            # 向上抛，让 fetch_and_save 能透传真实错误给前端
             raise
         return results, [source.name]
 
@@ -322,6 +331,7 @@ class XhsSearchSkill(TrendingSearchSkill):
     """兼容包装：XhsSearchSkill 现在委托给多平台搜索。
 
     保留旧名称避免破坏现有 import，但行为已改为多平台。
+    不单独注册到 SkillRegistry，避免与 xhs_search.py 的正式实现冲突。
     默认平台由 settings.default_source_platform 决定。
     """
 

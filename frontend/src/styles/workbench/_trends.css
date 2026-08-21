@@ -259,12 +259,13 @@
 .wf-top-item {
   display: grid;
   grid-template-columns: 18px 1fr 50px 50px;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
-  padding: 4px 6px;
+  padding: 3px 8px;
   background: #F8FAFC;
   border-radius: 3px;
   font-size: 11px;
+  line-height: 1.25;
 }
 .wf-top-rank {
   font-weight: 700;
@@ -743,7 +744,7 @@
 /* 正文 */
 .xhs-preview-text {
   font-size: 14px;
-  color: #333333;
+  color: #111827;
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
@@ -773,7 +774,7 @@
   align-items: center;
   justify-content: space-between;
   padding-top: 8px;
-  border-top: 1px solid #F1F5F9;
+  border-top: 1px solid #F3F4F6;
 }
 .xhs-preview-date {
   font-size: 12px;

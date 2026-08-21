@@ -64,6 +64,10 @@
           <span>内容已填好，请在浏览器窗口手动点击「发布」按钮完成发布</span>
         </div>
       </template>
+      <div v-else-if="nodeStatus === 'completed'" class="wf-empty-hint">
+        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        发布已完成（详细数据不可用）
+      </div>
     </div>
     <div class="wf-node-meta" v-if="nodeMeta">
       <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
@@ -164,7 +168,7 @@ const publishTextColor = computed(() => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #374151;
+  color: #6B7280;
   font-weight: 500;
 }
 .wf-publish-manual-title {

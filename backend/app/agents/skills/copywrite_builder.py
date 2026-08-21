@@ -64,6 +64,9 @@ class CopywriteSkillBase(Skill):
 
 **主题（必须围绕，不可偏离）**: {topic}
 
+**优先级规则**: 执行指令中的 user_creative_brief、selected_direction、direction_note
+优先于热点分析；如果热点执行建议与用户创作要求冲突，必须服从用户创作要求。
+
 **【执行指令】（来自分析节点，必须严格遵循）**:
 {execution_brief_section}
 
@@ -115,6 +118,43 @@ class CopywriteSkillBase(Skill):
   "key_points": ["知识点1", "知识点2", "知识点3"],
   "structured_items": [{{"term": "词条", "definition": "释义"}}]
 }}
+"""
+
+    STREAMING_PROMPT_TEMPLATE = """你是一位资深小红书内容创作师，请直接产出高质量的小红书文案。
+
+**主题**: {topic}
+
+**执行指令**:
+{execution_brief_section}
+
+**爆款参考**:
+{patterns_json}
+
+**深度分析**:
+{insights_json}
+{reference_section}{memory_section}
+
+**要求**:
+- 内容类型：{content_type_hint}
+- 结构：{structure_hint}
+- 标题风格：{title_style_hint}
+- 语气：{tone_hint} + {style_instruction}
+- 长度：{length_instruction}
+- 标签：{tag_instruction}
+{emoji_clause}
+
+**请直接输出文案，格式如下**（不要输出JSON，不要加任何解释说明）:
+
+---
+📌 标题：（你的标题）
+
+正文开始...
+（按要求的结构和类型撰写正文内容）
+
+#标签1 #标签2 #标签3 #标签4 #标签5
+---
+
+直接开始写，不要有任何前缀或解释。
 """
 
     async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -177,6 +217,163 @@ class CopywriteSkillBase(Skill):
         except Exception as e:
             logger.exception(f"[{self.__class__.__name__}] LLM call failed: {e}")
             return self.fallback(topic, insights, image_details)
+
+    async def execute_streaming(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """流式文案生成：纯文本prompt → LLM streaming → SSE逐字推送 → 完成后解析为结构化数据。
+
+        与 execute 的区别：
+        - 使用 STREAMING_PROMPT_TEMPLATE（纯文本输出，不强制JSON）
+        - 不使用 response_format={"type": "json_object"}
+        - 每个 chunk 直接推送给前端显示（用户看到的是可读文案）
+        - 收集完整文本后，后处理解析为结构化字段用于卡片渲染
+        """
+        from app.services.sse_bus import sse_bus
+        import re as _re
+
+        llm = inputs.get("llm")
+        topic = inputs.get("topic", "")
+        insights = inputs.get("insights", {}) or {}
+        patterns = inputs.get("patterns", {}) or {}
+        execution_brief = inputs.get("execution_brief", {}) or {}
+        image_details = inputs.get("image_details", []) or []
+        image_style = inputs.get("image_style", "")
+        reference = inputs.get("reference", {}) or {}
+        user_memory = inputs.get("user_memory", {}) or {}
+        content_length = inputs.get("content_length")
+        auto_emoji = inputs.get("auto_emoji", True)
+        auto_tags = inputs.get("auto_tags", True)
+        workflow_id = inputs.get("workflow_id", "")
+        node_id = inputs.get("node_id", "copywrite")
+
+        if not llm:
+            logger.warning(f"[{self.__class__.__name__}] LLM unavailable, using fallback")
+            return self.fallback(topic, insights, image_details)
+
+        prompt = self._build_streaming_prompt(
+            topic, insights, patterns, execution_brief,
+            image_details, image_style, reference, user_memory,
+            content_length=content_length,
+            auto_emoji=auto_emoji,
+            auto_tags=auto_tags,
+        )
+
+        try:
+            raw_parts: list[str] = []
+            async for chunk in llm.stream_chat(
+                messages=[{"role": "user", "content": prompt}],
+            ):
+                content = chunk.get("content")
+                if content:
+                    raw_parts.append(content)
+                    if workflow_id:
+                        await sse_bus.publish(workflow_id, "agent_thinking", {
+                            "node_id": node_id,
+                            "chunk": {"content": content},
+                        })
+
+            full_text = "".join(raw_parts)
+            result = self._parse_streaming_response(full_text)
+            return result
+        except Exception as e:
+            logger.exception(f"[{self.__class__.__name__}] LLM streaming failed: {e}")
+            return self.fallback(topic, insights, image_details)
+
+    def _build_streaming_prompt(
+        self,
+        topic: str,
+        insights: dict,
+        patterns: dict,
+        execution_brief: dict,
+        image_details: list[dict],
+        image_style: str,
+        reference: dict | None = None,
+        user_memory: dict | None = None,
+        content_length: int | None = None,
+        auto_emoji: bool = True,
+        auto_tags: bool = True,
+    ) -> str:
+        """构造流式输出的纯文本prompt。"""
+        execution_brief_section = _build_execution_brief_section(execution_brief)
+        patterns_summary = _build_patterns_summary(patterns)
+        insights_summary = _build_insights_summary(insights)
+        reference_section = _build_reference_summary(reference or {})
+        memory_section = _build_memory_summary(user_memory or {})
+        length_instruction = _build_length_instruction(content_length)
+        emoji_clause = _build_emoji_clause(auto_emoji)
+        tag_instruction = _build_tag_instruction(auto_tags)
+
+        content_type_hint = execution_brief.get("content_type", "叙事型") or "叙事型"
+        structure_hint = ", ".join(execution_brief.get("recommended_structure", []) or ["引入", "主体内容", "总结"])
+        title_style_hint = execution_brief.get("title_style", "利益型") or "利益型"
+        tone_hint = execution_brief.get("tone", "自然口语化") or "自然口语化"
+
+        return self.STREAMING_PROMPT_TEMPLATE.format(
+            topic=topic,
+            execution_brief_section=execution_brief_section,
+            patterns_json=patterns_summary[:1500],
+            insights_json=insights_summary[:1000],
+            reference_section=reference_section,
+            memory_section=memory_section,
+            style_instruction=self.style_instruction,
+            length_instruction=length_instruction,
+            emoji_clause=emoji_clause,
+            tag_instruction=tag_instruction,
+            content_type_hint=content_type_hint,
+            structure_hint=structure_hint,
+            title_style_hint=title_style_hint,
+            tone_hint=tone_hint,
+        )
+
+    def _parse_streaming_response(self, text: str) -> dict[str, Any]:
+        """从流式纯文本中解析出结构化字段。
+
+        尝试多种模式匹配：
+        1. 📌 标题：xxx → 提取标题
+        2. #标签 格式 → 提取tags
+        3. 剩余正文 → content
+        """
+        import re as _re
+
+        result = {
+            "title": "",
+            "content": text,
+            "tags": [],
+            "key_points": [],
+            "structured_items": [],
+            "_source": "streaming",
+        }
+
+        cleaned = text.strip()
+
+        title_match = _re.search(r"[📌｜]*\s*标题[：:]\s*(.+?)(?:\n|$)", cleaned)
+        if title_match:
+            result["title"] = title_match.group(1).strip()
+            cleaned = cleaned[title_match.end():].strip()
+
+        tags_matches = _re.findall(r"#([\w\u4e00-\u9fff]+)", cleaned)
+        if tags_matches:
+            result["tags"] = tags_matches[:5]
+            cleaned = _re.sub(r"\s*#[\w\u4e00-\u9fff]+\s*", "", cleaned).strip()
+
+        if cleaned.startswith("---"):
+            cleaned = _re.sub(r"^---+\s*", "", cleaned).strip()
+        if cleaned.endswith("---"):
+            cleaned = _re.sub(r"\s*---+$", "", cleaned).strip()
+
+        result["content"] = cleaned.strip() or text
+
+        lines = [l.strip() for l in result["content"].split("\n") if l.strip()]
+        key_points = [l for l in lines if len(l) <= 50 and not l.startswith("#")]
+        result["key_points"] = key_points[:10]
+
+        if not result["title"]:
+            first_line = lines[0] if lines else topic
+            result["title"] = first_line[:30]
+
+        if not result["tags"]:
+            result["tags"] = ["小红书运营", "内容创作", "干货分享"]
+
+        return result
 
     def build_prompt(
         self,
@@ -422,8 +619,20 @@ def _build_execution_brief_section(brief: dict) -> str:
     tone = brief.get("tone", "自然口语化")
     title_style = brief.get("title_style", "利益型")
     visual = brief.get("visual_suggestion", "简洁排版")
+    user_brief = str(brief.get("user_creative_brief", "") or "").strip()
+    selected_direction = str(brief.get("selected_direction", "") or "").strip()
+    direction_note = str(brief.get("direction_note", "") or "").strip()
 
-    return (
+    priority_lines: list[str] = []
+    if user_brief:
+        priority_lines.append(f"- 用户创作要求（最高优先级）: {user_brief[:1200]}")
+    if selected_direction:
+        priority_lines.append(f"- 用户选择方向: {selected_direction[:300]}")
+    if direction_note:
+        priority_lines.append(f"- 用户补充要求: {direction_note[:600]}")
+
+    priority_section = "\n".join(priority_lines) + "\n" if priority_lines else ""
+    return priority_section + (
         f"- 内容类型 (content_type): {content_type}\n"
         f"- 正文结构 (recommended_structure): {structure_str}\n"
         f"- 语气风格 (tone): {tone}\n"

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="wf-group-summary" :class="{ 'is-expanded': expanded }">
     <!-- 摘要条（始终可见） -->
     <button
@@ -124,12 +124,12 @@ function toggle() {
 .wf-summary-text {
   flex: 1;
   font-size: 15px;
-  color: #4B5563;
+  color: #6B7280;
   line-height: 1.4;
   min-width: 0;
 }
 .wf-summary-text strong {
-  color: #333333;
+  color: #111827;
   font-weight: 600;
 }
 .wf-summary-chips {
@@ -226,7 +226,7 @@ function toggle() {
 .wf-detail-node-name {
   font-size: 15px;
   font-weight: 600;
-  color: #333333;
+  color: #111827;
 }
 .wf-detail-node-status {
   font-size: 15px;

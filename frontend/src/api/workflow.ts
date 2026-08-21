@@ -1,4 +1,4 @@
-﻿import apiClient from './client'
+import apiClient from './client'
 
 /** 用户在右侧工作区选择的模型/温度/风格配置（对齐后端 StartWorkflowRequest.model_settings） */
 export interface ModelSettings {
@@ -31,9 +31,22 @@ export interface SkillMeta {
   default_config: Record<string, any>
 }
 
+/** Skill 注册结果（对齐后端 SkillRegisterResult） */
+export interface SkillRegisterResult {
+  filename: string
+  skill_name: string
+  node_type: string
+  display_name: string
+  description: string
+}
+
 /** 启动工作流请求（对齐后端 StartWorkflowRequest） */
 export interface WorkflowStartRequest {
   topic: string
+  /** 搜索用关键词；为空时后端兼容使用 topic */
+  search_keyword?: string
+  /** 用户想写的内容；生成时优先级最高 */
+  creative_brief?: string
   account_id: string
   /** 用户在右侧工作区选择的模型/温度/风格配置 */
   model_settings?: ModelSettings
@@ -50,6 +63,17 @@ export interface WorkflowResponse {
   status: string
   current_node: string
   created_at: string
+}
+
+/** 工作流列表项（对齐后端 WorkflowListItem） */
+export interface WorkflowListItem {
+  workflow_id: string
+  topic: string
+  status: string
+  current_node: string
+  account_id: string
+  created_at: string
+  updated_at: string | null
 }
 
 /** 节点快照 */
@@ -75,18 +99,33 @@ export interface WorkflowSnapshot {
   updated_at: string
 }
 
-/** 审核提交请求 */
-export interface ReviewSubmitRequest {
-  action: 'pass' | 'reject' | 'regenerate'
-}
-
 /** 工作流控制动作 */
 export type WorkflowControlAction = 'pause' | 'resume' | 'rollback' | 'terminate'
+
+/** 方向选择后恢复工作流 */
+export interface WorkflowResumeRequest {
+  selected_direction?: number
+  direction_note?: string
+}
 
 export const workflowApi = {
   /** 启动工作流 POST /api/workflows */
   start(data: WorkflowStartRequest) {
     return apiClient.post<WorkflowResponse>('/workflows', data)
+  },
+
+  /** 列出当前用户的工作流 GET /api/workflows */
+  async list(params?: { status?: string; limit?: number; offset?: number }): Promise<{ items: WorkflowListItem[]; total: number }> {
+    const query = new URLSearchParams()
+    if (params?.status) query.set('status', params.status)
+    if (params?.limit) query.set('limit', String(params.limit))
+    if (params?.offset) query.set('offset', String(params.offset))
+    const qs = query.toString()
+    const resp: any = await apiClient.get(`/workflows${qs ? '?' + qs : ''}`)
+    const data = resp?.data ?? resp
+    const items = Array.isArray(data) ? data : (data?.items ?? [])
+    const total = parseInt(resp?.message?.replace('total=', '') || '0', 10) || items.length
+    return { items, total }
   },
 
   /** 拉取可用 Skill 列表 GET /api/skills?node_type=xxx */
@@ -95,6 +134,23 @@ export const workflowApi = {
     const resp: any = await apiClient.get(url)
     // 后端 StandardResponse 包装：{success, data, message}
     return (resp?.data ?? resp) as Record<string, SkillMeta[]>
+  },
+
+  /** 上传 .py 文件注册第三方 Skill POST /api/skills/register */
+  async registerSkill(file: File): Promise<{ success: boolean; data?: SkillRegisterResult; message?: string }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const resp: any = await apiClient.post('/skills/register', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    })
+    return resp
+  },
+
+  /** 注销第三方 Skill DELETE /api/skills/{node_type}/{skill_name} */
+  async unregisterSkill(nodeType: string, skillName: string): Promise<{ success: boolean; message?: string }> {
+    const resp: any = await apiClient.delete(`/skills/${encodeURIComponent(nodeType)}/${encodeURIComponent(skillName)}`)
+    return resp
   },
 
   /** 获取工作流详情 GET /api/workflows/{id} */
@@ -124,13 +180,18 @@ export const workflowApi = {
   },
 
   /** 恢复 POST /api/workflows/{id}/resume */
-  resume(workflowId: string) {
-    return apiClient.post<{ success: boolean; message: string }>(`/workflows/${workflowId}/resume`)
+  resume(workflowId: string, data?: WorkflowResumeRequest) {
+    return apiClient.post<{ success: boolean; message: string }>(`/workflows/${workflowId}/resume`, data || {})
   },
 
   /** 终止 POST /api/workflows/{id}/terminate */
   terminate(workflowId: string) {
     return apiClient.post<{ success: boolean; message: string }>(`/workflows/${workflowId}/terminate`)
+  },
+
+  /** 取消工作流 POST /api/workflows/{id}/cancel */
+  cancel(workflowId: string) {
+    return apiClient.post<{ success: boolean; message: string }>(`/workflows/${workflowId}/cancel`)
   },
 
   /** 回滚 POST /api/workflows/{id}/rollback */
@@ -210,9 +271,8 @@ export const workflowApi = {
     onEvent: (eventType: string, payload: any, eventId: string) => void,
     onError?: (error: unknown) => void,
   ): { close: () => void } {
-    // SSE 直接打后端 8000，绕过 vite 代理（vite 代理不转发 SSE 流式响应，curl 确认 0 字节）
-    const SSE_BASE = import.meta.env.VITE_SSE_BASE_URL || 'http://localhost:8000'
-    const url = `${SSE_BASE}/api/sse/workflow/${workflowId}`
+    // P2-12：SSE 走 Vite 代理 / Nginx 反代，不再硬编码后端地址
+    const url = `/api/sse/workflow/${workflowId}`
     const controller = new AbortController()
     let closed = false // 前端是否主动关闭
 
@@ -223,13 +283,20 @@ export const workflowApi = {
 
     async function consume() {
       try {
+        // P0-1：SSE 鉴权 — 携带 JWT Authorization header
+        const token = localStorage.getItem('token')
+        const headers: Record<string, string> = {
+          'Accept': 'text/event-stream',
+        }
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
         const resp = await fetch(url, {
           method: 'GET',
-          credentials: 'include', // 携带 sse_token cookie
+          credentials: 'include',
           signal: controller.signal,
-          headers: {
-            'Accept': 'text/event-stream',
-          },
+          headers,
         })
 
         if (!resp.ok) {
@@ -300,8 +367,7 @@ export const workflowApi = {
       } catch (err: any) {
         // AbortError 是前端主动关闭，不算错误，不回调
         if (err?.name === 'AbortError') return
-        if (closed) return // 已主动关闭，忽略后续错误
-        console.warn('SSE connection interrupted:', err?.message || err)
+        if (closed) return
         if (onError) onError(err)
       }
     }
@@ -316,5 +382,15 @@ export const workflowApi = {
         }
       },
     }
+  },
+
+  /** 删除工作流实例 DELETE /api/workflows/{id} */
+  delete(workflowId: string) {
+    return apiClient.delete<{ deleted: boolean }>(`/workflows/${workflowId}`)
+  },
+
+  async getWeeklyStats(): Promise<{ published_count: number; total_workflows: number; completed_rate: number; active_count: number }> {
+    const resp: any = await apiClient.get('/workflows/stats/weekly')
+    return (resp?.data ?? resp) as any
   },
 }

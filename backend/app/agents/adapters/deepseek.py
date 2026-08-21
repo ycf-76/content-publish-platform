@@ -54,7 +54,7 @@ class DeepSeekAdapter(BaseLLM):
     def model_name(self) -> str:
         return self.model
 
-    async def chat(
+    async def _chat_impl(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
@@ -94,7 +94,7 @@ class DeepSeekAdapter(BaseLLM):
             logger.error(f"DeepSeek chat failed: {e}")
             raise
 
-    async def stream_chat(
+    async def _stream_chat_impl(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,

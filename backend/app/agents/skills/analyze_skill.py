@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.agents.skills.analyze_layer import run_layer2, run_layer3
+from app.agents.skills.analyze_layer import run_layer2, run_layer3, run_layer2_streaming, run_layer3_streaming
 from app.agents.skills.base import Skill
 from app.agents.skills.registry import register
 
@@ -122,6 +122,17 @@ class AnalyzeSkillBase(Skill):
         """
         return await run_layer2(llm, top_notes, topic)
 
+    async def analyze_layer2_streaming(
+        self,
+        llm: Any,
+        top_notes: list[dict],
+        topic: str,
+        workflow_id: str = "",
+        node_id: str = "analyze",
+    ) -> dict:
+        """Layer 2 流式版本：LLM streaming → SSE stream_chunk → 前端逐字显示。"""
+        return await run_layer2_streaming(llm, top_notes, topic, workflow_id, node_id)
+
     async def analyze_layer3(
         self,
         llm: Any,
@@ -140,6 +151,22 @@ class AnalyzeSkillBase(Skill):
         """
         return await run_layer3(
             llm, top2, all_notes, layer2_output, topic, user_preferences
+        )
+
+    async def analyze_layer3_streaming(
+        self,
+        llm: Any,
+        top2: list[dict],
+        all_notes: list[dict],
+        layer2_output: dict,
+        topic: str,
+        user_preferences: dict | None = None,
+        workflow_id: str = "",
+        node_id: str = "analyze",
+    ) -> dict:
+        """Layer 3 流式版本：LLM streaming → SSE stream_chunk → 前端逐字显示。"""
+        return await run_layer3_streaming(
+            llm, top2, all_notes, layer2_output, topic, user_preferences, workflow_id, node_id
         )
 
 

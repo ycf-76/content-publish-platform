@@ -1,4 +1,4 @@
-﻿﻿﻿额﻿/* ===== Magic UI Particles 鑳屾櫙灞?===== */
+/* ===== Magic UI Particles 鑳屾櫙灞?===== */
 /* canvas 缁濆瀹氫綅閾烘弧 mint-shell锛屼笉鍙備笌 grid 甯冨眬锛屼笉鍗犲崱鐗囦綅缃?*/
 /* pointer-events: none 璁╀簨浠剁┛閫忓埌鍗＄墖锛堝崱鐗囧彲姝ｅ父鐐瑰嚮锛夛紝榧犳爣浜や簰鏀圭敱 mint-shell 鐩戝惉鍐掓场 */
 .magic-particles {
@@ -10,6 +10,7 @@
 }
 /* 璁?grid 鍐呯殑鍗＄墖鑷劧浣嶄簬 particles canvas 涔嬩笂锛屼笖鍗＄墖鍙甯哥偣鍑?*/
 .mint-shell > aside,
+.mint-shell > .mint-sidebar-wrapper,
 .mint-shell > section,
 .mint-shell > nav,
 .mint-shell > footer,
@@ -58,13 +59,13 @@
 .mint-card:hover {
   transform: translateY(-3px);
   box-shadow:
-    0 4px 8px rgba(16,185,129,0.08),
+    0 4px 8px rgba(107,114,128,0.08),
     0 12px 24px rgba(0,0,0,0.08),
     inset 0 1px 0 rgba(255,255,255,0.9);
-  border-color: rgba(16,185,129,0.3);
+  border-color: rgba(107,114,128,0.3);
 }
 .mint-card:hover .mint-config-title {
-  color: #10B981;
+  color: #6B7280;
 }
 .mint-config-title {
   transition: color 0.25s ease;
@@ -76,7 +77,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(16,185,129,0.3), transparent);
+  background: linear-gradient(90deg, transparent, rgba(107,114,128,0.3), transparent);
 }
 
 .mint-btn {
@@ -84,7 +85,7 @@
   align-items: center;
   gap: 6px;
   border: none;
-  border-radius: 50px;
+  border-radius: 9999px;
   padding: 8px 16px;
   font-size: 14px;
   font-weight: 500;
@@ -97,13 +98,13 @@
 .mint-btn-primary:hover { background: #FF2442; }
 .mint-btn-ghost { background: #FFF1F3; color: #FF2442; }
 .mint-btn-ghost:hover { background: #FFE4E8; }
-.mint-btn-outline { background: #EEF0F2; color: #4B5563; border: 1px solid #EEF0F2; }
+.mint-btn-outline { background: #F3F4F6; color: #6B7280; border: 1px solid #F3F4F6; }
 .mint-btn-outline:hover { border-color: #FF2442; color: #FF2442; }
 
 .mint-input {
-  background: #EEF0F2;
-  border: 1px solid #EEF0F2;
-  border-radius: 8px;
+  background: #F3F4F6;
+  border: 1px solid #F3F4F6;
+  border-radius: 9999px;
   padding: 8px 12px;
   font-size: 14px;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -114,10 +115,10 @@
   box-sizing: border-box;
 }
 .mint-input:focus {
-  border-color: #FF2442;
-  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1);
+  border-color: transparent;
+  box-shadow: none;
 }
-.mint-input::placeholder { color: #9CA3AF; }
+.mint-input::placeholder { color: #6B7280; }
 
 .mint-badge {
   display: inline-flex;
@@ -143,18 +144,91 @@
   flex-shrink: 0;
 }
 
+.mint-sidebar-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: var(--left-sidebar-width, 216px);
+  position: relative;
+  z-index: 5;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.mint-logo-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 1px 4px;
+  background: radial-gradient(ellipse at center, rgba(255,36,66,0.08) 0%, rgba(255,36,66,0.03) 50%, transparent 100%);
+  border-radius: 20px;
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  margin-top: 0;
+  border: none;
+  box-shadow: none;
+  width: fit-content;
+  transition: padding 0.25s ease, background 0.25s ease, gap 0.25s ease, box-shadow 0.25s ease;
+}
+.mint-logo-top:hover {
+  box-shadow: 0 2px 8px rgba(255,36,66,0.08);
+}
+.mint-logo-top::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  background: rgba(17, 24, 39, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 10px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.3px;
+}
+.mint-logo-top::before {
+  content: '';
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  border: 5px solid transparent;
+  border-bottom-color: rgba(17, 24, 39, 0.92);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 600;
+}
+.mint-logo-top:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.mint-logo-top:hover::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .mint-sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  width: 192px;
+  width: calc(var(--left-sidebar-width, 216px) - 4px);
   padding-right: 4px;
-  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 .mint-sidebar-main {
   flex: 1;
@@ -163,6 +237,9 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding-top: 50px;
+  padding-left: 6px;
+  transition: padding-top 0.28s cubic-bezier(0.4, 0, 0.2, 1), gap 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .mint-sidebar-main::-webkit-scrollbar { width: auto; }
 .mint-sidebar-main::-webkit-scrollbar-track { background: initial; }
@@ -172,8 +249,9 @@
   padding-top: 12px;
   border-top: 1px solid rgba(0,0,0,0.06);
   position: relative;
+  z-index: 10;
 }
-/* 底部收起按钮 + 用户卡片：自适应宽度，信息完整展示 */
+/* 底部收起按钮：自适应宽度 */
 .mint-sidebar-bottom { align-items: stretch; }
 .mint-sidebar-bottom .mint-sidebar-toggle {
   width: auto;
@@ -181,11 +259,10 @@
 }
 .mint-sidebar-bottom .mint-user-card {
   width: auto;
-  margin: 0 6px;
+  margin: 6px;
 }
-/* 收起态下恢复小尺寸 */
-.mint-shell.mint-collapsed .mint-sidebar-bottom .mint-sidebar-toggle { width: 40px; }
-.mint-shell.mint-collapsed .mint-sidebar-bottom .mint-user-card { width: auto; }
+.mint-shell.mint-collapsed .mint-sidebar-bottom .mint-sidebar-toggle { width: 40px; margin: 0 auto; }
+.mint-shell.mint-collapsed .mint-sidebar-bottom .mint-user-card { width: 40px; margin: 0 auto; }
 
 .mint-sidebar-actions {
   display: flex;
@@ -205,166 +282,46 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  height: 36px;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.55);
-  border: 1px solid rgba(0,0,0,0.06);
-  color: #6B7280;
+  height: 30px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  color: #9CA3AF;
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
 }
-.mint-sidebar-toggle:hover { background: rgba(0,0,0,0.05); color: #374151; }
+.mint-sidebar-toggle:hover { background: rgba(0,0,0,0.04); color: #6B7280; }
 .mint-sidebar-toggle svg { width: 16px; height: 16px; flex-shrink: 0; transition: transform 0.28s ease; }
 .mint-sidebar-toggle span { transition: opacity 0.2s ease; }
 
-.mint-shell.mint-collapsed .mint-sidebar { width: 56px; }
+.mint-shell.mint-collapsed .mint-sidebar-wrapper {
+  overflow: hidden;
+  width: 56px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), overflow 0.28s ease 0.05s;
+}
+.mint-shell.mint-collapsed .mint-sidebar { width: 56px; overflow: hidden; padding-right: 0; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.25s ease; }
 .mint-shell.mint-right-collapsed { grid-template-columns: auto 1fr 0px; }
 .mint-shell.mint-collapsed.mint-right-collapsed { grid-template-columns: auto 1fr 0px; }
 .mint-shell.mint-right-collapsed .mint-resize-handle { display: none; }
-.mint-shell.mint-collapsed .mint-logo-top { padding: 14px 8px 0; flex-direction: column; align-items: flex-start; gap: 8px; background: transparent; }
 .mint-shell.mint-collapsed .mint-sidebar-footer { padding: 6px; }
-.mint-shell.mint-collapsed .mint-sidebar-actions { flex-direction: column; align-items: flex-start; padding: 0; gap: 4px; }
+.mint-shell.mint-collapsed .mint-sidebar-actions { flex-direction: column; align-items: center; padding: 0; gap: 4px; }
 .mint-shell.mint-collapsed .mint-sidebar-toggle {
   width: 40px;
   height: 40px;
-  margin: 0;
-  border-radius: 8px;
+  margin: 0 auto;
+  border-radius: 10px;
 }
 .mint-shell.mint-collapsed .mint-sidebar-toggle span { opacity: 0; width: 0; overflow: hidden; }
 .mint-shell.mint-collapsed .mint-sidebar-toggle svg { transform: rotate(180deg); }
-
-.mint-shell.mint-collapsed .mint-logo-title,
-.mint-shell.mint-collapsed .mint-logo-sub { opacity: 0; width: 0; }
-.mint-shell.mint-collapsed .mint-user-card { justify-content: flex-start; padding: 12px 8px; }
+.mint-shell.mint-collapsed .mint-user-card { justify-content: center; padding: 0; width: 40px; height: 40px; margin: 0 auto; border-radius: 10px; }
 .mint-shell.mint-collapsed .mint-user-card > :not(.mint-avatar) { display: none; }
 
-.mint-shell.mint-collapsed .mint-nav-item span,
-.mint-shell.mint-collapsed .mint-nav-sub span { opacity: 0; width: 0; }
-.mint-shell.mint-collapsed .mint-nav-item { justify-content: flex-start; padding: 10px 8px; width: auto; position: relative; }
-.mint-shell.mint-collapsed .mint-nav-sub { justify-content: flex-start; padding: 8px 8px; width: auto; }
-.mint-shell.mint-collapsed .mint-nav-subgroup { display: none; }
-.mint-shell.mint-collapsed .mint-nav-item::after,
-.mint-shell.mint-collapsed .mint-nav-sub::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%) skew(-5deg);
-  background: rgba(255, 255, 255, 0.95);
-  color: #10B981;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 12px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.3s ease;
-  z-index: 600;
-  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.3),
-              inset 0 0 5px rgba(255, 255, 255, 0.5),
-              0 5px 15px rgba(0, 0, 0, 0.1),
-              -5px 0 1px rgba(153, 153, 153, 0.2),
-              -10px 0 1px rgba(153, 153, 153, 0.2);
-}
-.mint-shell.mint-collapsed .mint-nav-item:hover::after,
-.mint-shell.mint-collapsed .mint-nav-sub:hover::after {
-  opacity: 1;
-  transform: translateY(-50%) translateX(5px) skew(-5deg);
-}
-.mint-shell.mint-collapsed .mint-nav-item svg,
-.mint-shell.mint-collapsed .mint-nav-sub svg { margin: 0; }
-
-.mint-shell.mint-collapsed .mint-sidebar { gap: 10px; padding-right: 0; }
-
-/* .mint-logo-box {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 14px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
-}
-.mint-logo-box:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-} */
-
-
-
-
-.mint-logo-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  background: linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%);
-  border-radius: 8px;
-}
-
-/* .mint-logo-divider {
-  height: 1px;
-  background: rgba(16,185,129,0.12);
-  margin: 0 2px;
-} */
-
-
-
-.mint-logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: #3B82F6;
-  box-shadow: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  flex-shrink: 0;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-/* .mint-logo-box:hover .mint-logo-icon {
-  transform: translateY(-1px) scale(1.03);
-  box-shadow:
-    0 2px 4px rgba(5,150,105,0.22),
-    0 5px 10px rgba(16,185,129,0.28),
-    0 10px 20px rgba(16,185,129,0.18),
-    inset 0 1.5px 1px rgba(255,255,255,0.8),
-    inset 0 -2px 3px rgba(6,95,70,0.3),
-    inset 0 0 0 0.5px rgba(255,255,255,0.4);
-} */
-.mint-logo-top:hover .mint-logo-icon { transform: translateY(-1px) scale(1.03); }
-.mint-logo-icon svg { width: 16px; height: 16px; filter: none; }
-.mint-logo-title {
-  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.2;
-  color: #1E40AF;
-  letter-spacing: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transition: opacity 0.2s ease, width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.mint-logo-sub {
-  font-size: 14px;
-  letter-spacing: 2px;
-  color: #3B82F6;
-  font-weight: 500;
-  text-transform: uppercase;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  transition: opacity 0.2s ease, width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
+/* ===== 用户卡片（头像 + 昵称 + 小红书号） ===== */
 .mint-user-card {
   display: flex;
   align-items: center;
@@ -395,13 +352,12 @@
   white-space: nowrap;
 }
 .mint-user-card .mint-badge > span:first-child { flex-shrink: 0; }
-
-/* 鐢ㄦ埛鍗＄墖灞曞紑鎬侀珮浜?*/
+/* 用户卡片展开态高亮 */
 .mint-user-card-active {
   background: rgba(0,0,0,0.05);
   box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
 }
-/* 鏇存崲璐﹀彿鎸夐挳 */
+/* 切换账号按钮 */
 .mint-user-switch-btn {
   display: inline-flex;
   align-items: center;
@@ -424,10 +380,10 @@
   width: 14px;
   height: 14px;
 }
-/* 鎶樺彔鎬侀殣钘忓垏鎹㈡寜閽?*/
+/* 折叠态隐藏切换按钮 */
 .mint-shell.mint-collapsed .mint-user-switch-btn { display: none; }
 
-/* 鏇存崲璐﹀彿涓嬫媺娴眰 */
+/* ===== 切换账号下拉浮层 ===== */
 .mint-account-dropdown {
   position: absolute;
   bottom: 100%;
@@ -571,7 +527,7 @@
   height: 15px;
   flex-shrink: 0;
 }
-/* 涓嬫媺杩囨浮鍔ㄧ敾 */
+/* 下拉过渡动画 */
 .mint-dropdown-enter-active {
   transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -586,28 +542,15 @@
   opacity: 0;
   transform: translateY(4px);
 }
-/* 鎶樺彔鎬侀殣钘忎笅鎷?*/
+/* 折叠态隐藏下拉 */
 .mint-shell.mint-collapsed .mint-account-dropdown { display: none; }
 
-/* 閫€鍑虹櫥褰曟寜閽?*/
-.mint-logout-btn {
-  color: var(--ma-text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-}
-.mint-logout-btn:hover {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--ma-destructive);
-}
-.mint-logout-btn svg {
-  color: inherit;
-}
+/* 头像基础样式 */
 .mint-avatar {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: var(--mint-gradient);
+  background: var(--mint-gradient, linear-gradient(135deg, #FF2442, #FF6B6B));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -615,82 +558,311 @@
   font-weight: 600;
   font-size: 14px;
   flex-shrink: 0;
+  overflow: hidden;
 }
-.mint-user-name { font-size: 14px; font-weight: 600; color: #111827; line-height: 1.3; }
 
-.mint-nav { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.mint-shell.mint-collapsed .mint-nav-item span,
+.mint-shell.mint-collapsed .mint-nav-sub span { opacity: 0; width: 0; margin-left: 0; overflow: hidden; display: none; }
+.mint-shell.mint-collapsed .mint-nav { max-width: none; }
+.mint-shell.mint-collapsed .mint-nav-item {
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  position: relative;
+  box-sizing: border-box;
+  text-align: center;
+  gap: 0;
+  border-radius: 10px;
+}
+.mint-shell.mint-collapsed .mint-nav-item > :not(svg):not(:first-child) {
+  display: none !important;
+}
+
+.mint-shell.mint-collapsed .mint-nav-sub {
+  justify-content: center;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  gap: 0;
+}
+.mint-shell.mint-collapsed .mint-nav-subgroup { display: none; }
+.mint-shell.mint-collapsed .mint-nav-item::after,
+.mint-shell.mint-collapsed .mint-nav-sub::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) skew(-5deg);
+  background: rgba(255, 255, 255, 0.95);
+  color: #10B981;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  z-index: 600;
+  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.3),
+              inset 0 0 5px rgba(255, 255, 255, 0.5),
+              0 5px 15px rgba(0, 0, 0, 0.1),
+              -5px 0 1px rgba(153, 153, 153, 0.2),
+              -10px 0 1px rgba(153, 153, 153, 0.2);
+}
+.mint-shell.mint-collapsed .mint-nav-item:hover::after,
+.mint-shell.mint-collapsed .mint-nav-sub:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(5px) skew(-5deg);
+}
+.mint-shell.mint-collapsed .mint-nav-item svg,
+.mint-shell.mint-collapsed .mint-nav-sub svg {
+  margin: 0;
+  flex-shrink: 0;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.mint-shell.mint-collapsed .mint-sidebar { gap: 10px; padding-right: 0; }
+.mint-shell.mint-collapsed .mint-sidebar-wrapper { padding-right: 0; }
+.mint-logo-collapsed-item {
+  cursor: pointer !important;
+  margin-top: -16px;
+}
+.mint-logo-collapsed-item:hover {
+  transform: none !important;
+  background: transparent !important;
+}
+.mint-logo-collapsed-item::before {
+  display: none !important;
+}
+.mint-logo-collapsed-item .mint-logo-icon {
+  transition: transform 0.3s ease;
+}
+.mint-logo-collapsed-item:hover .mint-logo-icon {
+  transform: scale(1.08);
+}
+
+/* .mint-logo-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+}
+.mint-logo-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+} */
+
+
+
+
+.mint-logo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #F59E0B 0%, #F97316 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1), height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mint-logo-icon svg { width: 18px; height: 18px; }
+.mint-logo-top:hover .mint-logo-icon { transform: translateY(-1px) scale(1.03); }
+
+.mint-logo-img {
+  height: 48px;
+  width: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mint-logo-top:hover .mint-logo-img { transform: translateY(-1px) scale(1.03); }
+
+/* 展开状态：文字 logo */
+.mint-logo-text {
+  width: auto;
+  height: 64px;
+  object-fit: contain;
+  margin-top: -52px;
+}
+
+/* Logo 切换过渡动画 */
+.logo-fade-enter-active,
+.logo-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.logo-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.95);
+}
+.logo-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* 收起状态：螃蟹图形 logo（原地切换，不偏移） */
+.mint-logo-crab {
+  width: 36px;
+  height: 33px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease, opacity 0.25s ease, border-color 0.2s ease;
+}
+.mint-logo-crab:hover {
+  border-color: #9ca3af;
+}
+.mint-shell.mint-collapsed .mint-logo-top {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  background: transparent !important;
+  width: 40px !important;
+  height: 40px !important;
+  transition: padding 0.25s ease, background 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+.mint-shell.mint-collapsed .mint-sidebar-main {
+  padding-top: 4px !important;
+  align-items: center !important;
+}
+.mint-shell.mint-collapsed .mint-nav {
+  margin-top: 12px !important;
+  align-items: center !important;
+}
+.mint-shell.mint-collapsed .mint-logo-crab:hover {
+  transform: scale(1.08);
+}
+
+.mint-nav { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 4px; 
+  align-items: stretch; 
+  transition: margin-top 0.28s cubic-bezier(0.4, 0, 0.2, 1), gap 0.28s cubic-bezier(0.4, 0, 0.2, 1); 
+  padding: 0 4px;
+  max-width: 200px;
+}
+.mint-nav-workflow + .mint-nav-item {
+  margin-top: 16px;
+}
 .mint-nav-item {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 10px 12px;
   border-radius: 10px;
-  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
-  font-size: 14.5px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  border: 2px solid transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.2px;
   color: #374151;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.3s ease;
-  width: 130px;
+  transition: gap 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease, border-color 0.15s ease;
+  width: 100%;
   position: relative;
   backdrop-filter: blur(15px);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  box-sizing: border-box;
 }
 .mint-nav-item span,
 .mint-nav-sub span {
   white-space: nowrap;
   overflow: hidden;
-  transition: opacity 0.2s ease, width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.18s ease-out, width 0.22s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .mint-nav-item::before {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 8px;
-  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.192),
-              inset 0 0 5px rgba(255, 255, 255, 0.274),
-              0 5px 5px rgba(0, 0, 0, 0.164);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
   pointer-events: none;
 }
 .mint-nav-item:hover {
-  background: rgba(0,0,0,0.05);
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.06) 100%);
   color: #1F2937;
-  transform: translate(5px, -5px);
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 .mint-nav-item:hover::before {
   opacity: 1;
 }
 .mint-nav-item:hover svg {
-  transform: translate(5px, -5px);
+  transform: scale(1.05);
 }
-.mint-nav-item svg { 
-  width: 18px; 
-  height: 18px; 
-  flex-shrink: 0; 
-  transition: transform 0.3s ease;
+.mint-nav-item svg {
+  flex-shrink: 0;
+  color: #6B7280;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.mint-nav-item:hover svg {
+  color: #374151;
 }
 .mint-nav-active {
-  background: rgba(0,0,0,0.06);
-  color: #111827;
-  font-weight: 700;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, rgba(249, 115, 22, 0.12) 100%);
+  color: #EA580C;
+  font-weight: 600 !important;
   border-radius: 10px;
   position: relative;
+  box-shadow: 0 2px 12px rgba(249, 115, 22, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .mint-nav-active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3.5px;
-  height: 18px;
-  background: #4B5563;
-  border-radius: 0 3px 3px 0;
+  display: none;
+}
+.mint-nav-active svg {
+  color: #EA580C;
+}
+
+.mint-nav-workflow {
+  background: #F97316;
+  border: 2px solid #F97316;
+  border-radius: 10px;
+  color: #fff;
+  width: 100%;
+}
+.mint-nav-workflow svg {
+  stroke: #fff;
+}
+.mint-nav-workflow:hover {
+  background: #EA580C;
+  border-color: #EA580C;
+  color: #fff;
+}
+.mint-nav-workflow:hover svg {
+  stroke: #fff;
+}
+.mint-nav-workflow.mint-nav-active {
+  background: #EA580C;
+  border-color: #EA580C;
+  color: #fff;
+  font-weight: 700;
+}
+.mint-nav-workflow.mint-nav-active::before {
+  background: #fff;
 }
 
 /* ===== 鍙姌鍙犲鑸」 + chevron 鏃嬭浆 ===== */
@@ -702,19 +874,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   color: #9CA3AF;
   cursor: pointer;
-  border-radius: 5px;
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-              background 0.18s ease,
-              color 0.18s ease;
+  border-radius: 6px;
+  transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .mint-nav-chevron:hover {
-  background: rgba(16,185,129,0.12);
-  color: #10B981;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, rgba(249, 115, 22, 0.12) 100%);
+  color: #F97316;
 }
 .mint-nav-chevron svg {
   width: 16px;
@@ -727,6 +897,7 @@
   transform: rotate(180deg);
 }
 .mint-shell.mint-collapsed .mint-nav-chevron { display: none; }
+.mint-shell.mint-collapsed .mint-nav-new-chat { display: none; }
 
 /* 瀛愰€夐」 stagger 鍔ㄧ敾鍗犱綅锛堝疄闄呰繃娓＄敱 JS 鎺у埗锛?*/
 .mint-nav-sub-stagger {
@@ -736,86 +907,199 @@
 .mint-nav-subgroup {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-left: 14px;
-  margin-top: 2px;
-  border-left: 2px solid rgba(16,185,129,0.18);
-  margin-left: 10px;
-  align-items: flex-start;
+  gap: 2px;
+  padding-left: 16px;
+  margin-top: 4px;
+  margin-left: 8px;
+  align-items: stretch;
+  border-left: 2px solid rgba(0, 0, 0, 0.06);
 }
 .mint-nav-sub {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 7px 12px;
-  font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px !important;
+  font-weight: 400 !important;
   color: #6B7280;
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.3s ease;
-  width: 130px;
+  transition: gap 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease;
+  width: 100%;
   position: relative;
   backdrop-filter: blur(15px);
+  box-sizing: border-box;
 }
 .mint-nav-sub::before {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 7px;
-  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.192),
-              inset 0 0 5px rgba(255, 255, 255, 0.274),
-              0 5px 5px rgba(0, 0, 0, 0.164);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.2) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
   pointer-events: none;
 }
 .mint-nav-sub:hover {
-  background: rgba(0,0,0,0.05);
+  background: rgba(0, 0, 0, 0.03);
   color: #374151;
-  transform: translate(5px, -5px);
+  transform: translateX(2px);
 }
 .mint-nav-sub:hover::before {
   opacity: 1;
 }
 .mint-nav-sub:hover svg {
-  transform: translate(5px, -5px);
+  transform: scale(1.05);
+  color: #4B5563;
 }
-.mint-nav-sub svg { 
-  width: 16px; 
-  height: 16px; 
-  flex-shrink: 0; 
-  transition: transform 0.3s ease;
+.mint-nav-sub svg {
+  flex-shrink: 0;
+  color: #9CA3AF;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .mint-nav-sub.mint-nav-active {
-  background: rgba(0,0,0,0.05);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.06) 0%, rgba(249, 115, 22, 0.1) 100%);
+  color: #EA580C;
+  font-weight: 500 !important;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(249, 115, 22, 0.08);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.mint-nav-sub.mint-nav-active svg {
+  color: #EA580C;
+}
+
+.mint-nav-new-chat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: #9CA3AF;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.mint-nav-new-chat:hover {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(249, 115, 22, 0.15) 100%);
+  color: #F97316;
+  transform: scale(1.1) rotate(90deg);
+}
+
+.mint-chat-history-group {
+  position: relative;
+}
+.mint-chat-history-item {
+  cursor: pointer;
+}
+.mint-chat-history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+  font-size: 13px !important;
+}
+.mint-chat-history-fade {
+  position: relative;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.15) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.15) 100%);
+}
+.mint-chat-more {
+  justify-content: center;
+  color: #9CA3AF;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  cursor: pointer;
+  padding: 6px 12px !important;
+  letter-spacing: 0.5px;
+}
+.mint-chat-more:hover {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.06) 0%, rgba(249, 115, 22, 0.1) 100%);
+  color: #F97316;
+}
+
+.mint-context-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9998;
+}
+.mint-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 120px;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+  animation: mint-context-in 0.15s ease-out;
+}
+@keyframes mint-context-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.mint-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  font-size: 13px;
   color: #374151;
-  font-weight: 600;
-  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  font-family: inherit;
+}
+.mint-context-menu-item:hover {
+  background: #F3F4F6;
+}
+.mint-context-delete {
+  color: #DC2626;
+}
+.mint-context-delete:hover {
+  background: #FEF2F2;
+  color: #B91C1C;
 }
 
 .mint-main {
-  padding: 56px 20px 16px 208px;
+  padding: 56px 20px 16px 20px;
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 14px;
   min-height: 0;
   height: 100%;
-  overflow: hidden;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-width: 0;
-  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #F5F5F7;
+  border-radius: 16px;
 }
 .page-container {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 16px;
   height: 100%;
   min-height: 0;
+  width: 100%;
+  max-width: 960px;
 }
 .page-container > .wf-groups-scroll {
   flex: 1;
   min-height: 0;
+  width: 100%;
 }
 
 .mint-hero {
@@ -847,7 +1131,7 @@
   color: #111827;
   letter-spacing: 2px;
 }
-.mint-hero-sub { font-size: 14px; color: #4B5563; margin-top: 6px; }
+.mint-hero-sub { font-size: 14px; color: #6B7280; margin-top: 6px; }
 
 @keyframes mintShimmer {
   0% { background-position: 100% 0; }
@@ -889,19 +1173,19 @@
 .mint-wf-card {
   position: relative;
   background: #FFFFFF;
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
   border: 1px solid #E5E7EB;
   padding: 16px;
   display: flex;
   flex-direction: column;
-  height: 480px;
-  min-height: 480px;
-  max-height: 480px;
+  height: auto;
+  min-height: 200px;
+  max-height: none;
   gap: 9px;
   scroll-margin-top: 24px;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
 }
 /* 配置中心卡片：自适应高度，展开/收起 */
@@ -913,13 +1197,14 @@
   min-height: 0;
 }
 .cfg-cards {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
+  align-content: start;
 }
 .cfg-card.mint-wf-card {
   height: auto;
@@ -937,7 +1222,7 @@
 .cfg-card-header .mint-wf-title-row { flex: 1; }
 .cfg-chevron {
   flex-shrink: 0;
-  color: #9CA3AF;
+  color: #6B7280;
   transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   margin-top: 4px;
 }
@@ -962,7 +1247,7 @@
   padding: 6px 14px;
   border-radius: 8px;
   border: none;
-  background: #EEF0F2;
+  background: #F3F4F6;
   color: #6B7280;
   font-size: 13px;
   font-weight: 500;
@@ -973,14 +1258,14 @@
 }
 .cfg-option:hover {
   background: #E5E7EB;
-  color: #374151;
+  color: #6B7280;
 }
 .cfg-option-active {
   background: #111827;
   color: #fff;
 }
 .cfg-option-active:hover {
-  background: #1F2937;
+  background: #6B7280;
   color: #fff;
 }
 /* search 节点：自适应高度，响应式撑开 */
@@ -996,18 +1281,11 @@
   min-height: auto;
   max-height: none;
   overflow: visible;
-}
-
-/* copywrite 节点：自适应高度，左右分栏布局 */
+}  /* copywrite 节点：overflow:visible 让文字不被截断 */
 .wf-node-copywrite.mint-wf-card {
-  height: auto;
+  overflow: visible;
+  height: auto !important;
   min-height: auto;
-  max-height: none;
-  overflow: visible;
-}
-.wf-node-copywrite .wf-node-body {
-  flex: 0 0 auto;
-  overflow: visible;
   max-height: none;
 }
 
@@ -1140,7 +1418,7 @@
   font-weight: 700;
   flex-shrink: 0;
 }
-.mint-wf-title { font-size: 16px; font-weight: 600; color: #333333; line-height: 1.3; }
+.mint-wf-title { font-size: 16px; font-weight: 600; color: #111827; line-height: 1.3; }
 .mint-wf-desc { font-size: 15px; color: #6B7280; margin-top: 2px; }
 .mint-wf-footer {
   display: flex;
@@ -1149,3 +1427,28 @@
   padding-top: 14px;
   border-top: 1px solid #F3F4F6;
 }
+/* ===== left sidebar resize handle ===== */
+.mint-left-resize-handle {
+  position: absolute;
+  top: 20px;
+  bottom: 20px;
+  left: calc(var(--left-sidebar-width, 216px) + 20px);
+  width: 10px;
+  margin-left: -5px;
+  cursor: col-resize;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  border-radius: 5px;
+}
+.mint-left-resize-handle:hover { background-color: rgba(59, 108, 246, 0.1); }
+.mint-left-resize-handle:hover .mint-resize-line { background-color: var(--ma-blue-500); }
+.mint-shell.is-left-resizing .mint-sidebar,
+.mint-shell.is-left-resizing .mint-sidebar-wrapper,
+.mint-shell.is-left-resizing .mint-nav,
+.mint-shell.is-left-resizing .mint-nav-item,
+.mint-shell.is-left-resizing .mint-nav-sub,
+.mint-shell.is-left-resizing .mint-nav-subgroup,
+.mint-shell.is-left-resizing .mint-nav-active { transition: none !important; }

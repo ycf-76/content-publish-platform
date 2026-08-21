@@ -72,7 +72,7 @@ async function loadRecommended() {
     recommendedItems.value = data.items || []
     recommendedKeywords.value = data.keywords || []
   } catch (e) {
-    console.warn('[RecommendedCard] loadRecommended failed:', e)
+    // loadRecommended failed
   } finally {
     auxLoading.value = false
     nextTick(() => createIcons({ icons }))
@@ -83,12 +83,11 @@ onMounted(() => {
   loadRecommended()
 })
 
-/** 封面图代理 */
 function coverSrc(cover: string): string {
-  const needsProxy = cover.includes('xhscdn.com') ||
-    cover.includes('xiaohongshu.com') ||
-    cover.includes('picasso-static')
-  return needsProxy ? '/api/proxy/image?url=' + encodeURIComponent(cover) : cover
+  if (!cover) return ''
+  if (cover.startsWith('/uploads/')) return cover
+  if (cover.startsWith('data:')) return cover
+  return cover
 }
 
 /** 平台配色 */
@@ -97,6 +96,13 @@ function letterColor(platform: string) {
     hackernews: { bg: '#FF6600', fg: '#FFFFFF' },
     reddit: { bg: '#FF4500', fg: '#FFFFFF' },
     xiaohongshu: { bg: '#FF2442', fg: '#FFFFFF' },
+    xiaohongshu_web: { bg: '#FF2442', fg: '#FFFFFF' },
+    zhihu: { bg: '#0066FF', fg: '#FFFFFF' },
+    weibo: { bg: '#E6162D', fg: '#FFFFFF' },
+    bilibili: { bg: '#00A1D6', fg: '#FFFFFF' },
+    douyin: { bg: '#000000', fg: '#FFFFFF' },
+    pinterest: { bg: '#E60023', fg: '#FFFFFF' },
+    instagram: { bg: '#E4405F', fg: '#FFFFFF' },
     builtin: { bg: '#FF2442', fg: '#FFFFFF' },
     tavily: { bg: '#2563EB', fg: '#FFFFFF' },
   }
@@ -106,9 +112,16 @@ function letterColor(platform: string) {
 /** 平台简称 */
 function platformLabel(platform: string): string {
   const map: Record<string, string> = {
-    hackernews: 'HN',
-    reddit: 'RD',
+    hackernews: 'HackerNews',
+    reddit: 'Reddit',
     xiaohongshu: '小红书',
+    xiaohongshu_web: '小红书',
+    zhihu: '知乎',
+    weibo: '微博',
+    bilibili: 'B站',
+    douyin: '抖音',
+    pinterest: 'Pinterest',
+    instagram: 'Instagram',
     builtin: '热门',
     tavily: '全网',
   }
@@ -121,6 +134,13 @@ function letterLabel(platform: string, url: string, title: string): string {
     hackernews: 'HN',
     reddit: 'RD',
     xiaohongshu: 'XHS',
+    xiaohongshu_web: 'XHS',
+    zhihu: '知',
+    weibo: '微',
+    bilibili: 'B',
+    douyin: '抖',
+    pinterest: 'Pi',
+    instagram: 'IG',
     builtin: '热门',
   }
   if (palette[platform]) return palette[platform]
@@ -135,9 +155,21 @@ function letterLabel(platform: string, url: string, title: string): string {
   return letter
 }
 
-/** 封面加载失败 */
 function onAuxCoverError(e: Event, item: TopicPoolItem) {
   const img = e.target as HTMLImageElement
+  const currentSrc = img.src
+
+  if (!currentSrc.includes('/api/proxy/image')) {
+    const originalUrl = item.cover_img || ''
+    if (originalUrl && (originalUrl.includes('xhscdn.com') ||
+        originalUrl.includes('xiaohongshu.com') ||
+        originalUrl.includes('picasso-static') ||
+        originalUrl.startsWith('http'))) {
+      img.src = '/api/proxy/image?url=' + encodeURIComponent(originalUrl)
+      return
+    }
+  }
+
   const color = letterColor(item.platform)
   const label = letterLabel(item.platform, item.url || '', item.title)
   const fallback = document.createElement('div')

@@ -6,10 +6,10 @@
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
             <i data-lucide="eye" class="wf-node-icon"></i>
-            图片审核
+            图片确认
             <code class="wf-node-key">image_review</code>
           </div>
-
+          <div class="wf-node-subtitle">确认图片样式与质量</div>
         </div>
       </div>
       <span class="mint-badge wf-status-badge" :style="statusBadgeStyle">
@@ -17,18 +17,21 @@
         {{ statusLabel }}
       </span>
     </div>
+    <div class="wf-node-summary" v-if="nodeStatus === 'completed' && result">
+      {{ reviewStatusLabel }}
+    </div>
     <div class="wf-node-body">
       <div v-if="nodeStatus === 'idle' || nodeStatus === 'pending'" class="wf-empty-hint">
         <i data-lucide="info" style="width:14px;height:14px;"></i>
-        等待卡片编辑器生成图片后进行审核
+        等待图片生成后进行确认
       </div>
       <div v-else-if="nodeStatus === 'awaiting_review'" class="wf-review-container">
         <!-- 顶部提示 -->
         <div class="wf-review-header">
           <div class="wf-review-header-icon"><i data-lucide="clock" style="width:20px;height:20px;"></i></div>
           <div class="wf-review-header-text">
-            <div class="wf-review-header-title">等待人工审核</div>
-            <div class="wf-review-header-desc">请查看下方图片，确认样式与质量后点击通过或打回</div>
+            <div class="wf-review-header-title">请确认图片样式与质量</div>
+            <div class="wf-review-header-desc">查看下方图片，满意则通过，不满意可调优重做</div>
           </div>
         </div>
 
@@ -44,8 +47,8 @@
           </div>
           <div v-else-if="reviewImages.length" class="wf-image-grid">
             <div v-for="(img, i) in reviewImages" :key="i" class="wf-image-thumb">
-              <img :src="'data:image/png;base64,' + img" :alt="'图片 ' + (i + 1)" loading="lazy" />
-              <div class="wf-image-overlay"><span class="wf-image-role">第 {{ i + 1 }} 页</span></div>
+              <img :src="imageDataUrl(img)" :alt="'图片 ' + (Number(i) + 1)" loading="lazy" />
+              <div class="wf-image-overlay"><span class="wf-image-role">第 {{ Number(i) + 1 }} 页</span></div>
             </div>
           </div>
           <div v-else class="wf-empty-hint">
@@ -58,22 +61,22 @@
         <div v-if="!imagesLoading && reviewImages.length" class="wf-review-actions">
           <button class="wf-review-btn wf-review-pass" @click="submitReviewAction('pass')" :disabled="submitting">
             <i data-lucide="check" style="width:16px;height:16px;"></i>
-            {{ submitting ? '提交中...' : '通过' }}
+            {{ submitting ? '提交中...' : '确认通过' }}
           </button>
           <button class="wf-review-btn wf-review-reject" @click="submitReviewAction('reject')" :disabled="submitting">
             <i data-lucide="rotate-ccw" style="width:16px;height:16px;"></i>
-            {{ submitting ? '提交中...' : '打回重做' }}
+            {{ submitting ? '提交中...' : '调优重做' }}
           </button>
         </div>
       </div>
 
       <div v-else-if="nodeStatus === 'running'" class="wf-copywrite-loading">
         <div class="mint-loader"><div class="mint-loader-ball"></div></div>
-        <div class="wf-copywrite-loading-text">审核处理中...</div>
+        <div class="wf-copywrite-loading-text">图片确认处理中...</div>
       </div>
       <div v-else-if="nodeStatus === 'error'" class="mint-search-error">
         <i data-lucide="alert-circle" style="width:20px;height:20px;"></i>
-        <span>{{ errorMessage || '图片审核失败' }}</span>
+        <span>{{ errorMessage || '图片确认失败' }}</span>
       </div>
       <template v-else-if="result">
         <div class="wf-plan-summary" :style="{ background: reviewBgColor }">
@@ -88,8 +91,8 @@
         <div v-if="result.images_base64 && result.images_base64.length" class="wf-review-images-area">
           <div class="wf-image-grid">
             <div v-for="(img, i) in result.images_base64" :key="i" class="wf-image-thumb">
-              <img :src="'data:image/png;base64,' + img" :alt="'图片 ' + (i + 1)" loading="lazy" />
-              <div class="wf-image-overlay"><span class="wf-image-role">第 {{ i + 1 }} 页</span></div>
+              <img :src="imageDataUrl(img)" :alt="'图片 ' + (Number(i) + 1)" loading="lazy" />
+              <div class="wf-image-overlay"><span class="wf-image-role">第 {{ Number(i) + 1 }} 页</span></div>
             </div>
           </div>
         </div>
@@ -98,6 +101,10 @@
           <span v-if="result.card_draft_summary.template_changed" style="color:#D97706;margin-left:8px;">（已修改）</span>
         </div>
       </template>
+      <div v-else class="wf-empty-hint">
+        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        图片确认已完成（详细数据不可用）
+      </div>
     </div>
     <div class="wf-node-meta" v-if="nodeMeta">
       <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
@@ -158,16 +165,12 @@ async function fetchReviewImages() {
     const sseImages = imageGenNode?.images_base64 || imageGenNode?.output?.images_base64
 
     if (sseImages && Array.isArray(sseImages) && sseImages.length > 0) {
-      console.log('[ImageReviewCard] images from SSE store:', sseImages.length)
       reviewImages.value = sseImages
     } else {
-      // SSE 没有图片数据，调后端 API 获取（兜底）
-      console.log('[ImageReviewCard] images not in SSE store, fetching from API')
       const resp: any = await workflowApi.getNodeImages(props.workflowId, 'image_gen')
       const images = resp?.images_base64 || resp?.data?.images_base64 || []
       if (images.length > 0) {
         reviewImages.value = images
-        console.log('[ImageReviewCard] images from API:', images.length)
       } else {
         imagesError.value = 'image_gen 节点没有图片数据'
       }
@@ -190,13 +193,10 @@ async function submitReviewAction(action: 'pass' | 'reject') {
 
   submitting.value = true
   try {
-    console.log('[ImageReviewCard] calling workflowStore.submitReview:', action)
     await workflowStore.submitReview('image_review', action)
-    console.log('[ImageReviewCard] submitReview done:', action)
   } catch (e: any) {
     const errMsg = e?.response?.data?.message || e?.message || String(e)
-    console.error('[ImageReviewCard] submitReview error:', e)
-    alert('审核提交失败：' + errMsg)
+    alert('提交失败：' + errMsg)
   } finally {
     submitting.value = false
   }
@@ -207,7 +207,7 @@ const statusColor = computed(() => {
   return map[props.nodeStatus] || '#9CA3AF'
 })
 const statusLabel = computed(() => {
-  const map: Record<string, string> = { idle: '待执行', pending: '待执行', running: '执行中', awaiting_review: '待审核', passed: '已通过', rejected: '已打回', completed: '已完成', error: '失败' }
+  const map: Record<string, string> = { idle: '待执行', pending: '待执行', running: '执行中', awaiting_review: '请确认图片', passed: '已通过', rejected: '已调优', completed: '已完成', error: '失败' }
   return map[props.nodeStatus] || '待执行'
 })
 const statusBadgeStyle = computed(() => {
@@ -218,11 +218,16 @@ const statusBadgeStyle = computed(() => {
   if (props.nodeStatus === 'running') return { background: '#FEE2E2', color: '#DC2626' }
   return { background: '#F1F5F9', color: '#64748B' }
 })
+function imageDataUrl(b64: string): string {
+  if (b64.startsWith('data:')) return b64
+  const prefix = b64.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
+  return prefix + b64
+}
 const reviewStatus = computed(() => props.result?.review_status || props.nodeStatus)
 const reviewStatusLabel = computed(() => {
-  if (reviewStatus.value === 'passed') return '审核通过'
-  if (reviewStatus.value === 'rejected') return '审核打回'
-  return '审核中'
+  if (reviewStatus.value === 'passed') return '确认通过'
+  if (reviewStatus.value === 'rejected') return '调优重做'
+  return '确认中'
 })
 const reviewBgColor = computed(() => {
   if (reviewStatus.value === 'passed') return '#F0FDF4'
@@ -338,6 +343,6 @@ function templateLabel(template: string): string {
 
 .wf-review-reject:hover:not(:disabled) {
   background: #E5E7EB;
-  color: #374151;
+  color: #6B7280;
 }
 </style>

@@ -9,7 +9,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from fastapi import HTTPException
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -22,18 +23,22 @@ from app.db.models import (
     Workflow,
     WorkflowNode,
     WorkflowStatus,
+    XhsAccount,
 )
 from app.services.sse_bus import sse_bus
+
+MAX_CONCURRENT_WORKFLOWS = 10
 
 # LangGraph imports (optional - PostgresSaver 单独 try，避免 psycopg_binary 缺失阻塞 StateGraph)
 try:
     from langgraph.graph import END  # noqa: F401  仅探测 langgraph 是否可用
-    from app.agents.graph import build_workflow_graph, initial_state
+    from app.agents.graph import build_workflow_graph, initial_state, get_global_checkpointer
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     LANGGRAPH_AVAILABLE = False
     build_workflow_graph = None
     initial_state = None
+    get_global_checkpointer = None
 
 
 def _dlog(msg: str) -> None:
@@ -43,12 +48,6 @@ def _dlog(msg: str) -> None:
         _g_dlog(msg)
     except Exception:
         pass
-
-# PostgresSaver 仅在需要 PostgreSQL checkpointer 时使用，可选
-try:
-    from langgraph.checkpoint.postgres import PostgresSaver  # noqa: F401
-except ImportError:
-    PostgresSaver = None
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +76,118 @@ class WorkflowService:
         task.add_done_callback(self._background_tasks.discard)
         _dlog(f"[_create_background_task] task created: id={id(task)}, pending={not task.done()}, tasks_count={len(self._background_tasks)}")
 
+    async def _get_graph_for_workflow(
+        self,
+        workflow: Workflow,
+    ) -> tuple[Any, dict | None]:
+        """按 Workflow.definition_id 重建同一张 LangGraph 图。"""
+        graph_definition: dict | None = None
+        if workflow.definition_id:
+            from app.db.models import WorkflowDefinition
+
+            result = await self.db.execute(
+                select(WorkflowDefinition).where(
+                    WorkflowDefinition.id == workflow.definition_id
+                )
+            )
+            definition = result.scalar_one_or_none()
+            if definition and definition.graph_definition:
+                graph_definition = definition.graph_definition
+                from app.agents.graph import build_dynamic_workflow_graph
+
+                dynamic_graph = build_dynamic_workflow_graph(
+                    graph_definition,
+                    checkpointer=get_global_checkpointer(),
+                )
+                if dynamic_graph is not None:
+                    return dynamic_graph, graph_definition
+
+        graph = build_workflow_graph(checkpointer=None)
+        return graph, graph_definition
+
+    async def _check_concurrency_limit(self) -> None:
+        """P0: 检查当前并发工作流数量，超限则拒绝启动。
+
+        使用 Redis 计数器（降级到内存计数器）跟踪活跃工作流数。
+        防止大量并发工作流同时启动导致 LLM API 429 雪崩。
+        
+        每次检查时先校准 Redis 计数器：用 DB 中实际 running 状态的工作流数
+        替代可能因进程重启而漂移的 Redis 值。
+        """
+        from app.cache import redis_client
+        from app.db.models import Workflow
+        
+        # 校准：用 DB 中实际 running 的工作流数重置 Redis 计数器
+        actual_count = await self.db.scalar(
+            select(func.count()).select_from(Workflow).where(Workflow.status == "running")
+        )
+        actual_count = actual_count or 0
+        await redis_client.set("count:active_workflows", actual_count)
+        
+        if actual_count >= MAX_CONCURRENT_WORKFLOWS:
+            logger.warning(
+                f"[concurrency] workflow rejected: {actual_count} already running "
+                f"(limit={MAX_CONCURRENT_WORKFLOWS})"
+            )
+            raise HTTPException(
+                429,
+                f"当前有 {actual_count} 个工作流正在运行，请稍后再试",
+            )
+        logger.info(f"[concurrency] workflow count: {actual_count}/{MAX_CONCURRENT_WORKFLOWS}")
+
+    @staticmethod
+    async def _decrement_workflow_count() -> None:
+        """P0: 工作流结束后递减活跃计数器。"""
+        from app.cache import redis_client
+        current = await redis_client.incrby("count:active_workflows", -1)
+        logger.info(f"[concurrency] workflow ended, count: {max(0, current)}")
+
+    @staticmethod
+    async def _increment_workflow_count() -> None:
+        """工作流恢复运行时递增活跃计数器。"""
+        from app.cache import redis_client
+        current = await redis_client.incrby("count:active_workflows", 1)
+        logger.info(f"[concurrency] workflow resumed, count: {current}")
+
+    async def _pause_workflow(self, workflow_id: str) -> None:
+        """工作流进入 review_required 等待状态：DB 置 PAUSED + 递减计数器。
+
+        review_required 不是终态，但工作流不再占用并发名额。
+        resume 时由 _unpause_workflow 恢复。
+        """
+        from sqlalchemy import update as sa_update
+        await self.db.execute(
+            sa_update(Workflow)
+            .where(Workflow.id == workflow_id)
+            .values(status=WorkflowStatus.PAUSED)
+        )
+        await self.db.commit()
+        await self._decrement_workflow_count()
+        logger.info(f"[{workflow_id}] workflow paused (review_required), count decremented")
+
+    async def _unpause_workflow(self, workflow_id: str) -> None:
+        """工作流从 PAUSED 恢复运行：DB 置 RUNNING + 递增计数器。"""
+        from sqlalchemy import update as sa_update
+        from datetime import UTC, datetime as dt
+        await self.db.execute(
+            sa_update(Workflow)
+            .where(Workflow.id == workflow_id)
+            .values(status=WorkflowStatus.RUNNING)
+        )
+        await self.db.commit()
+        await self._increment_workflow_count()
+        logger.info(f"[{workflow_id}] workflow unpaused, count incremented")
+
     async def start_workflow(
         self,
         user_id: str,
         account_id: str,
         topic: str,
+        search_keyword: str | None = None,
+        creative_brief: str = "",
         model_settings: dict | None = None,
         reference: dict | None = None,
+        definition_id: str | None = None,
     ) -> Workflow:
         """启动新工作流。
 
@@ -96,44 +200,112 @@ class WorkflowService:
                                 writing_style, image_style。None 时使用系统默认。
             reference: 选题池参考素材（可选），包含 title/summary/url/platform 等，
                        注入 copywrite 节点的 LLM prompt 作为参考内容。
+            definition_id: 工作流定义ID（可选）。传入后，工作流将按定义中的
+                          graph_definition 动态执行，而非使用硬编码的9节点流程。
 
         Returns:
             Workflow 实例
         """
+        # P0: 工作流并发上限检查（防止 LLM API 雪崩）
+        await self._check_concurrency_limit()
+
+        # P0.5: 确保 user_id 在 users 表中存在（外键约束）
+        # 如果不存在，自动创建一条记录
+        from app.db.models import User
+        existing_user = await self.db.scalar(select(User).where(User.id == user_id))
+        if not existing_user:
+            logger.info(f"[start_workflow] user_id={user_id} not found, auto-creating")
+            new_user = User(
+                id=user_id,
+                email=f"{user_id}@platform.local",
+                nickname=user_id,
+            )
+            self.db.add(new_user)
+            await self.db.flush()
+
         # 加载用户级长期记忆（跨工作流），注入 state 供各节点读取
         # 失败时返回空 dict，不阻塞工作流启动
         from app.services import agent_memory
         user_memory = await agent_memory.load_for_workflow(user_id)
+
+        # 验证 account_id 是否在 xhs_accounts 表中存在
+        # 邮箱登录用户传 'email_user' 等占位值，不存在于 xhs_accounts 表
+        # 外键约束要求 account_id 必须引用真实记录或为 NULL
+        resolved_account_id: str | None = account_id
+        if not account_id or account_id == "":
+            resolved_account_id = None
+        else:
+            stmt = select(XhsAccount).where(XhsAccount.id == account_id)
+            existing_account = await self.db.scalar(stmt)
+            if not existing_account:
+                logger.info(
+                    f"[start_workflow] account_id={account_id} not found in xhs_accounts, "
+                    f"setting to None (email-only user)"
+                )
+                resolved_account_id = None
+
         # 创建 Workflow 记录
         workflow = Workflow(
             user_id=user_id,
-            account_id=account_id,
+            account_id=resolved_account_id,
             topic=topic,
             status="running",
+            definition_id=definition_id,
         )
         self.db.add(workflow)
         await self.db.flush()  # 获取 workflow_id
 
-        # 创建节点记录
-        node_types = [
-            NodeType.SEARCH,
-            NodeType.ANALYZE,
-            NodeType.COPYWRITE,
-            NodeType.IMAGE_PLAN,
-            NodeType.IMAGE_GEN,
-            NodeType.IMAGE_REVIEW,
-            NodeType.AUDIT,
-            NodeType.FINAL_REVIEW,
-            NodeType.PUBLISH,
-        ]
-        for node_type in node_types:
-            node = WorkflowNode(
-                workflow_id=workflow.id,
-                node_type=node_type,
-                node_key=node_type.value,
-                node_status=NodeStatus.PENDING,
+        # 创建节点记录（动态 or 硬编码）
+        graph_definition = None
+        if definition_id:
+            # 从 DB 加载 graph_definition
+            from app.db.models import WorkflowDefinition, WorkflowDefinitionStatus
+            defn_result = await self.db.execute(
+                select(WorkflowDefinition).where(WorkflowDefinition.id == definition_id)
             )
-            self.db.add(node)
+            defn = defn_result.scalar_one_or_none()
+            if defn and defn.graph_definition:
+                graph_definition = defn.graph_definition
+                logger.info(f"[start_workflow] Using dynamic graph from definition: {definition_id}")
+
+        if graph_definition and graph_definition.get("nodes"):
+            # 动态节点：从 graph_definition 创建节点记录
+            for node_def in graph_definition["nodes"]:
+                node_type_str = node_def.get("type", "search")
+                try:
+                    node_type_enum = NodeType(node_type_str)
+                except ValueError:
+                    logger.warning(f"[start_workflow] Unknown node type: {node_type_str}, skipping")
+                    continue
+                node = WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_type=node_type_enum,
+                    node_key=node_type_str,
+                    node_status=NodeStatus.PENDING,
+                    input_data=node_def.get("config", {}),
+                )
+                self.db.add(node)
+        else:
+            # 硬编码9节点（向后兼容）
+            node_types = [
+                NodeType.SEARCH,
+                NodeType.ANALYZE,
+                NodeType.COPYWRITE,
+                NodeType.IMAGE_PLAN,
+                NodeType.IMAGE_GEN,
+                NodeType.IMAGE_REVIEW,
+                NodeType.AUDIT,
+                NodeType.FINAL_REVIEW,
+                NodeType.PUBLISH,
+            ]
+            for node_type in node_types:
+                node = WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_type=node_type,
+                    node_key=node_type.value,
+                    node_status=NodeStatus.PENDING,
+                )
+                self.db.add(node)
 
         await self.db.commit()
         await self.db.refresh(workflow)
@@ -161,13 +333,17 @@ class WorkflowService:
                     user_id=user_id,
                     account_id=account_id,
                     topic=topic,
+                    search_keyword=search_keyword,
+                    creative_brief=creative_brief,
                     model_settings=model_settings,
                     reference=reference,
                     user_memory=user_memory,
+                    graph_definition=graph_definition,
                 )
             )
         else:
             logger.warning("LangGraph not available, workflow will not execute")
+            await self._decrement_workflow_count()
 
         return workflow
 
@@ -177,9 +353,12 @@ class WorkflowService:
         user_id: str,
         account_id: str,
         topic: str,
+        search_keyword: str | None = None,
+        creative_brief: str = "",
         model_settings: dict | None = None,
         reference: dict | None = None,
         user_memory: dict | None = None,
+        graph_definition: dict | None = None,
     ) -> None:
         """异步执行 graph，捕获所有异常防止 task 静默失败。
 
@@ -193,8 +372,10 @@ class WorkflowService:
             self.db = bg_db
             try:
                 await self.execute_graph(
-                    workflow_id, user_id, account_id, topic, model_settings,
+                    workflow_id, user_id, account_id, topic, search_keyword,
+                    creative_brief, model_settings,
                     reference, user_memory=user_memory,
+                    graph_definition=graph_definition,
                 )
             except Exception as e:
                 logger.exception(f"[{workflow_id}] graph execution failed: {e}")
@@ -207,6 +388,7 @@ class WorkflowService:
                         "fatal": True,
                     },
                 )
+                await self._decrement_workflow_count()
             finally:
                 self.db = original_db
 
@@ -216,9 +398,12 @@ class WorkflowService:
         user_id: str,
         account_id: str,
         topic: str,
+        search_keyword: str | None = None,
+        creative_brief: str = "",
         model_settings: dict | None = None,
         reference: dict | None = None,
         user_memory: dict | None = None,
+        graph_definition: dict | None = None,
     ) -> None:
         """执行 LangGraph，流式处理节点事件。
 
@@ -230,7 +415,7 @@ class WorkflowService:
         - 软语义 fail 时把 pending_suggestion 写 DB + 置 workflow=suspended
 
         interrupt/resume 机制：
-        - graph 编译时设置 interrupt_before=["image_review", "final_review"]
+        - graph 编译时设置 interrupt_before=["copywrite", "image_gen", "image_review", "final_review", "publish"]
         - astream 执行到审核节点前会自然退出循环（不执行节点函数）
         - 此时 workflow 状态保持 running，等待 POST /api/workflows/{id}/review
         - submit_review 调 graph.astream(None, config) resume 继续执行
@@ -240,18 +425,39 @@ class WorkflowService:
             return
 
         # 从 DB 加载账号 cookies 并注入到 MCP client（供 search 节点使用）
-        await self._load_account_cookies_for_mcp(workflow_id, account_id)
+        # 邮箱登录用户 account_id 为 None，跳过 cookie 加载
+        if account_id:
+            await self._load_account_cookies_for_mcp(workflow_id, account_id)
+        else:
+            logger.info(f"[{workflow_id}] no account_id, skipping cookie loading (email-only user)")
 
-        # 构建 graph（使用全局 SqliteSaver 单例，保证 submit_review 能 resume）
-        graph = build_workflow_graph(checkpointer=None)
+        # 构建 graph（动态 or 硬编码）
+        if graph_definition and graph_definition.get("nodes"):
+            from app.agents.graph import build_dynamic_workflow_graph
+            graph = build_dynamic_workflow_graph(graph_definition, checkpointer=None)
+            if graph is None:
+                logger.warning(f"[{workflow_id}] dynamic graph build failed, falling back to default")
+                graph = build_workflow_graph(checkpointer=None)
+            
+            # 动态节点类型列表
+            dynamic_node_types = [n.get("type", "search") for n in graph_definition.get("nodes", [])]
+            state = initial_state(
+                workflow_id, user_id, account_id, topic, search_keyword,
+                creative_brief, model_settings,
+                reference, user_memory=user_memory,
+                node_types=dynamic_node_types,
+            )
+        else:
+            graph = build_workflow_graph(checkpointer=None)
+            state = initial_state(
+                workflow_id, user_id, account_id, topic, search_keyword,
+                creative_brief, model_settings,
+                reference, user_memory=user_memory,
+            )
+
         if graph is None:
             logger.warning(f"[{workflow_id}] graph build failed")
             return
-
-        state = initial_state(
-            workflow_id, user_id, account_id, topic, model_settings,
-            reference, user_memory=user_memory,
-        )
 
         # thread_id 配置：checkpointer 通过 thread_id 关联 state
         # submit_review 时使用相同 thread_id 才能恢复执行
@@ -292,6 +498,33 @@ class WorkflowService:
                             },
                         )
 
+                    # 持久化节点状态和输出到 workflow_nodes 表
+                    # 保证后端重启后 get_workflow_nodes 二次兜底能从 DB 恢复数据
+                    for nid, nstatus in node_statuses.items():
+                        noutput = node_outputs.get(nid)
+                        nerror = delta.get("node_errors", {}).get(nid)
+                        await self._persist_node_output(
+                            workflow_id=workflow_id,
+                            node_id=nid,
+                            status=nstatus,
+                            output=noutput,
+                            error_message=nerror.get("error") if nerror else None,
+                            duration_ms=noutput.get("_duration_ms") if noutput else None,
+                            model_used=noutput.get("_model_used") if noutput else None,
+                            token_usage=noutput.get("_token_usage", {}).get("total") if noutput and isinstance(noutput.get("_token_usage"), dict) else None,
+                        )
+                    for nid, noutput in node_outputs.items():
+                        if nid not in node_statuses:
+                            await self._persist_node_output(
+                                workflow_id=workflow_id,
+                                node_id=nid,
+                                status="completed",
+                                output=noutput,
+                                duration_ms=noutput.get("_duration_ms"),
+                                model_used=noutput.get("_model_used"),
+                                token_usage=noutput.get("_token_usage", {}).get("total") if isinstance(noutput.get("_token_usage"), dict) else None,
+                            )
+
                     # 检测新 pending_suggestion（软语义 fail 时追加）
                     # MVP 阶段：suggestion 仅作为建议权，不挂起工作流。
                     # 用户在 final_review 审核时可参考 suggestion 决定是否通过。
@@ -309,45 +542,107 @@ class WorkflowService:
 
         # ===== 检测是否处于 interrupt 暂停状态 =====
         # 通过 await graph.aget_state(config) 检查 LangGraph 内部状态
-        # interrupt_before=["analyze", "image_gen", "image_review", "final_review"]
-        # - analyze 前 interrupt：等待用户点击"进入分析"（resume_workflow resume）
-        # - image_gen 前 interrupt：等待前端卡片编辑器注入图片（inject_card_images resume）
-        # - image_review/final_review 前 interrupt：等待人工审核（submit_review resume）
-        is_awaiting_review = False
-        awaiting_review_node = None
-        is_awaiting_card_inject = False
-        is_awaiting_manual_resume = False
+        # interrupt_before=["copywrite", "image_gen", "image_review", "final_review", "publish"]
+        # - copywrite 前 interrupt：analyze 完成后，用户选方向/调性（resume_workflow resume）
+        # - image_gen 前 interrupt：image_plan 完成后，前端卡片编辑器加载 card_draft，用户编辑出图后 inject
+        # - image_review 前 interrupt：image_gen 完成后，用户调图片（resume_workflow resume）
+        # - final_review 前 interrupt：audit 完成后，手机预览+终审确认
+        # - publish 前 interrupt：安全门，用户确认发布
+        is_awaiting_direction_choice = False
+        is_awaiting_card_editor = False
+        is_awaiting_image_review = False
+        is_awaiting_final_review = False
         is_awaiting_publish = False
         try:
             graph_state = await graph.aget_state(config)
             # graph_state.next 是 tuple，包含下一个待执行的节点
             next_nodes = getattr(graph_state, "next", None) or ()
             for n in next_nodes:
-                if n in ("image_review", "final_review"):
-                    is_awaiting_review = True
-                    awaiting_review_node = n
+                if n == "copywrite":
+                    is_awaiting_direction_choice = True
                     break
                 if n == "image_gen":
-                    is_awaiting_card_inject = True
+                    is_awaiting_card_editor = True
+                    break
+                if n == "image_review":
+                    is_awaiting_image_review = True
+                    break
+                if n == "final_review":
+                    is_awaiting_final_review = True
                     break
                 if n == "publish":
                     is_awaiting_publish = True
                     break
             logger.info(
                 f"[{workflow_id}] graph state after astream: next={next_nodes}, "
-                f"awaiting_review={is_awaiting_review}, "
-                f"awaiting_card_inject={is_awaiting_card_inject}, "
-                f"awaiting_manual_resume={is_awaiting_manual_resume}, "
+                f"awaiting_direction_choice={is_awaiting_direction_choice}, "
+                f"awaiting_card_editor={is_awaiting_card_editor}, "
+                f"awaiting_image_review={is_awaiting_image_review}, "
+                f"awaiting_final_review={is_awaiting_final_review}, "
                 f"awaiting_publish={is_awaiting_publish}"
             )
         except Exception as e:
             logger.warning(f"[{workflow_id}] get graph state failed: {e}")
 
-        if is_awaiting_review:
-            # 推送 review_required 事件，前端显示审核按钮
-            # 准备审核数据：从最新 state 中读取上游节点输出
-            await self._emit_review_required(workflow_id, awaiting_review_node, graph, config)
-            return  # 不进入终态判断，等待 submit_review resume
+        if is_awaiting_direction_choice:
+            # analyze 完成后暂停，等待用户选方向/调性
+            # 推送 SSE 事件告知前端 analyze 已完成，显示方向选择面板
+            await sse_bus.publish(
+                workflow_id,
+                "review_required",
+                {
+                    "review_node": "copywrite",
+                    "review_type": "direction_choice",
+                    "message": "分析完成，请选择创作方向",
+                },
+            )
+            logger.info(
+                f"[{workflow_id}] workflow paused at copywrite interrupt, "
+                f"waiting for user to choose direction"
+            )
+            await self._pause_workflow(workflow_id)
+            return
+
+        if is_awaiting_card_editor:
+            # image_plan 完成后暂停，等待用户在卡片编辑器中调整并生成图片
+            # 推送 SSE 事件告知前端 image_gen 节点等待用户操作
+            # review_node 必须是 "image_gen"，前端才能把 image_gen 节点设为 awaiting_review
+            await sse_bus.publish(
+                workflow_id,
+                "review_required",
+                {
+                    "review_node": "image_gen",
+                    "review_type": "card_editor",
+                    "message": "图片规划完成，请在卡片编辑器中调整并生成图片",
+                },
+            )
+            logger.info(
+                f"[{workflow_id}] workflow paused at image_gen interrupt, "
+                f"waiting for user to edit cards and generate images"
+            )
+            await self._pause_workflow(workflow_id)
+            return
+
+        if is_awaiting_image_review:
+            # image_gen 完成后暂停，等待用户调图片
+            # 推送 review_required 事件，前端显示图片编辑面板
+            await self._emit_review_required(workflow_id, "image_review", graph, config)
+            logger.info(
+                f"[{workflow_id}] workflow paused at image_review interrupt, "
+                f"waiting for user to review images"
+            )
+            await self._pause_workflow(workflow_id)
+            return
+
+        if is_awaiting_final_review:
+            # audit 完成后暂停，等待用户在手机预览中终审确认
+            await self._emit_review_required(workflow_id, "final_review", graph, config)
+            logger.info(
+                f"[{workflow_id}] workflow paused at final_review interrupt, "
+                f"waiting for user to review in phone preview"
+            )
+            await self._pause_workflow(workflow_id)
+            return
 
         if is_awaiting_publish:
             # publish 前 interrupt：按 auto_publish 开关决定自动 resume 还是等待手动
@@ -363,31 +658,8 @@ class WorkflowService:
             else:
                 logger.info(f"[{workflow_id}] publish interrupt + auto_publish=False, waiting for manual publish")
                 await self._emit_review_required(workflow_id, "publish", graph, config)
-            return  # 不进入终态判断
-
-        if is_awaiting_manual_resume:
-            # 工作流在 analyze 前 interrupt，等待用户点击"进入分析"按钮
-            # 不进入终态判断，保持 workflow 状态为 running，SSE/轮询保持活跃
-            logger.info(
-                f"[{workflow_id}] workflow paused at analyze interrupt, "
-                f"waiting for user to click 'enter analyze'"
-            )
-            return  # 不进入终态判断，等待 resume_workflow resume
-
-        if is_awaiting_card_inject:
-            # 工作流在 image_gen 前 interrupt，等待前端卡片编辑器注入图片
-            # 推送 SSE 事件告知前端 image_gen 处于待编辑状态
-            # 前端据此显示卡片编辑器（而非"等待图片规划"空提示）
-            await sse_bus.publish(
-                workflow_id,
-                "node_status_changed",
-                {"node_id": "image_gen", "status": "idle"},
-            )
-            logger.info(
-                f"[{workflow_id}] workflow paused at image_gen interrupt, "
-                f"waiting for card inject, pushed idle status"
-            )
-            return  # 不进入终态判断，等待 inject_card_images resume
+                await self._pause_workflow(workflow_id)
+            return
 
         # 根据 suspended 标记决定终态
         from sqlalchemy import update as sa_update
@@ -421,6 +693,7 @@ class WorkflowService:
                 },
             )
             logger.info(f"[{workflow_id}] workflow suspended (soft semantic fail)")
+            await self._decrement_workflow_count()
         elif has_node_error:
             # 关键节点 ERROR（search 空结果 / image_gen 欠费等）→ 标记 FAILED
             error_nodes = [
@@ -448,6 +721,7 @@ class WorkflowService:
             logger.info(
                 f"[{workflow_id}] workflow failed (node error: {error_nodes})"
             )
+            await self._decrement_workflow_count()
         else:
             # 标记 workflow 完成
             await self.db.execute(
@@ -493,6 +767,8 @@ class WorkflowService:
                 logger.warning(
                     f"[{workflow_id}] record_workflow_result failed: {mem_err}"
                 )
+
+            await self._decrement_workflow_count()
 
     async def _load_account_cookies_for_mcp(
         self, workflow_id: str, account_id: str
@@ -540,6 +816,61 @@ class WorkflowService:
             logger.warning(
                 f"[{workflow_id}] load account cookies failed: {e}"
             )
+
+    async def _persist_node_output(
+        self,
+        workflow_id: str,
+        node_id: str,
+        status: str,
+        output: dict | None = None,
+        error_message: str | None = None,
+        duration_ms: int | None = None,
+        model_used: str | None = None,
+        token_usage: int | None = None,
+    ) -> None:
+        """把节点状态和输出持久化到 workflow_nodes 表。
+
+        LangGraph checkpoint 是主要存储，但重启后可能丢失（MemorySaver）。
+        此方法作为数据库层面的持久化备份，保证 get_workflow_nodes 二次兜底
+        能从 DB 恢复节点输出数据，让前端卡片能展示已完成节点的结果。
+        """
+        try:
+            from sqlalchemy import update as sa_update
+            values: dict[str, Any] = {}
+            try:
+                values["node_status"] = NodeStatus(status)
+            except ValueError:
+                values["node_status"] = NodeStatus.PENDING
+            if output and isinstance(output, dict):
+                safe_output = {k: v for k, v in output.items() if k != "images_base64"}
+                if safe_output:
+                    values["output_data"] = safe_output
+            if error_message:
+                values["error_message"] = error_message
+            if duration_ms is not None:
+                values["duration_ms"] = duration_ms
+            if model_used:
+                values["model_used"] = model_used
+            if token_usage is not None:
+                values["token_usage"] = token_usage
+            if status in ("completed", "passed"):
+                values["completed_at"] = datetime.now(UTC)
+            elif status == "running" and not values.get("completed_at"):
+                values["started_at"] = datetime.now(UTC)
+            if not values:
+                return
+            result = await self.db.execute(
+                sa_update(WorkflowNode)
+                .where(
+                    WorkflowNode.workflow_id == workflow_id,
+                    WorkflowNode.node_key == node_id,
+                )
+                .values(**values)
+            )
+            if result.rowcount > 0:
+                await self.db.commit()
+        except Exception as e:
+            logger.warning(f"[{workflow_id}] _persist_node_output failed for {node_id}: {e}")
 
     async def _persist_pending_suggestion(
         self,
@@ -748,7 +1079,7 @@ class WorkflowService:
             if not LANGGRAPH_AVAILABLE:
                 return {"success": False, "message": "LangGraph unavailable"}
 
-            graph = build_workflow_graph(checkpointer=None)
+            graph, _ = await self._get_graph_for_workflow(workflow)
             if graph is None:
                 return {"success": False, "message": "Graph build failed"}
 
@@ -804,7 +1135,8 @@ class WorkflowService:
                 {"node_id": review_node, "status": NodeStatus.REJECTED.value},
             )
 
-            # 异步 resume（保存 task 引用防止 GC）
+            await self._unpause_workflow(workflow_id)
+
             self._create_background_task(
                 self._resume_graph_safely(workflow_id, graph, config)
             )
@@ -822,7 +1154,7 @@ class WorkflowService:
             return {"success": False, "message": "LangGraph unavailable"}
 
         # 使用全局 checkpointer 重新构建 graph（保证与 execute_graph 共享 state）
-        graph = build_workflow_graph(checkpointer=None)
+        graph, _ = await self._get_graph_for_workflow(workflow)
         if graph is None:
             return {"success": False, "message": "Graph build failed"}
 
@@ -897,7 +1229,8 @@ class WorkflowService:
             {"node_id": review_node, "status": NodeStatus.PASSED.value},
         )
 
-        # 异步 resume，不阻塞 HTTP 响应（保存 task 引用防止 GC）
+        await self._unpause_workflow(workflow_id)
+
         self._create_background_task(
             self._resume_graph_safely(workflow_id, graph, config)
         )
@@ -934,7 +1267,7 @@ class WorkflowService:
         if not LANGGRAPH_AVAILABLE:
             return {"success": False, "message": "LangGraph unavailable"}
 
-        graph = build_workflow_graph(checkpointer=None)
+        graph, _ = await self._get_graph_for_workflow(workflow)
         if graph is None:
             return {"success": False, "message": "Graph build failed"}
 
@@ -1033,6 +1366,7 @@ class WorkflowService:
 
         # 异步 resume
         _dlog(f"[{workflow_id}] inject_card_images: about to resume, is_reinject={is_reinject}")
+        await self._unpause_workflow(workflow_id)
         if is_reinject:
             # re-inject: 推送 image_gen completed + image_review awaiting_review
             await sse_bus.publish(
@@ -1096,6 +1430,7 @@ class WorkflowService:
                             "fatal": True,
                         },
                     )
+                    await self._decrement_workflow_count()
                 finally:
                     self.db = original_db
         except Exception as outer_e:
@@ -1153,6 +1488,32 @@ class WorkflowService:
                         },
                     )
 
+                # 持久化节点状态和输出到 workflow_nodes 表
+                for nid, nstatus in node_statuses.items():
+                    noutput = node_outputs.get(nid)
+                    nerror = delta.get("node_errors", {}).get(nid)
+                    await self._persist_node_output(
+                        workflow_id=workflow_id,
+                        node_id=nid,
+                        status=nstatus,
+                        output=noutput,
+                        error_message=nerror.get("error") if nerror else None,
+                        duration_ms=noutput.get("_duration_ms") if noutput else None,
+                        model_used=noutput.get("_model_used") if noutput else None,
+                        token_usage=noutput.get("_token_usage", {}).get("total") if noutput and isinstance(noutput.get("_token_usage"), dict) else None,
+                    )
+                for nid, noutput in node_outputs.items():
+                    if nid not in node_statuses:
+                        await self._persist_node_output(
+                            workflow_id=workflow_id,
+                            node_id=nid,
+                            status="completed",
+                            output=noutput,
+                            duration_ms=noutput.get("_duration_ms"),
+                            model_used=noutput.get("_model_used"),
+                            token_usage=noutput.get("_token_usage", {}).get("total") if isinstance(noutput.get("_token_usage"), dict) else None,
+                        )
+
                 current_suggestions = delta.get("pending_suggestions")
                 if current_suggestions and len(current_suggestions) > seen_suggestion_count:
                     new_ones = current_suggestions[seen_suggestion_count:]
@@ -1162,54 +1523,91 @@ class WorkflowService:
                     # MVP 阶段：suggestion 不挂起工作流，继续到 final_review 让用户审核
 
         # ===== 再次检测是否处于 interrupt =====
-        # 与 execute_graph 保持一致：检测 image_review/final_review（审核）、
-        # image_gen（卡片注入）、analyze（手动进入分析）三种 interrupt 点。
-        # 漏掉 image_gen 检测会导致 analyze resume 后到达 image_gen interrupt 时
-        # 误判为终态，把 workflow 标记为 completed，前端停掉 SSE/轮询，
-        # 后续 inject 注入图片后前端"没有任何反应"。
+        # 与 execute_graph 保持一致：检测 copywrite（方向选择）、image_gen（卡片编辑器）、
+        # image_review（图片审核）、final_review（手机预览终审）、publish（安全门）五种 interrupt 点。
         _dlog(f"[{workflow_id}] _resume_graph_stream: astream ended, total_chunks={chunk_count}, "
               f"all_node_statuses={all_node_statuses}")
-        is_awaiting_review = False
-        awaiting_review_node = None
-        is_awaiting_card_inject = False
-        is_awaiting_manual_resume = False
+        is_awaiting_direction_choice = False
+        is_awaiting_card_editor = False
+        is_awaiting_image_review = False
+        is_awaiting_final_review = False
         is_awaiting_publish = False
         try:
             graph_state = await graph.aget_state(config)
             next_nodes = getattr(graph_state, "next", None) or ()
             for n in next_nodes:
-                if n in ("image_review", "final_review"):
-                    is_awaiting_review = True
-                    awaiting_review_node = n
+                if n == "copywrite":
+                    is_awaiting_direction_choice = True
                     break
                 if n == "image_gen":
-                    is_awaiting_card_inject = True
+                    is_awaiting_card_editor = True
+                    break
+                if n == "image_review":
+                    is_awaiting_image_review = True
+                    break
+                if n == "final_review":
+                    is_awaiting_final_review = True
                     break
                 if n == "publish":
                     is_awaiting_publish = True
                     break
             logger.info(
                 f"[{workflow_id}] graph state after resume: next={next_nodes}, "
-                f"awaiting_review={is_awaiting_review}, "
-                f"awaiting_card_inject={is_awaiting_card_inject}, "
-                f"awaiting_manual_resume={is_awaiting_manual_resume}, "
+                f"awaiting_direction_choice={is_awaiting_direction_choice}, "
+                f"awaiting_card_editor={is_awaiting_card_editor}, "
+                f"awaiting_image_review={is_awaiting_image_review}, "
+                f"awaiting_final_review={is_awaiting_final_review}, "
                 f"awaiting_publish={is_awaiting_publish}"
             )
             _dlog(f"[{workflow_id}] _resume_graph_stream: post-astream next={next_nodes}, "
-                  f"awaiting_review={is_awaiting_review}, "
-                  f"awaiting_card_inject={is_awaiting_card_inject}, "
-                  f"awaiting_manual_resume={is_awaiting_manual_resume}, "
+                  f"awaiting_direction_choice={is_awaiting_direction_choice}, "
+                  f"awaiting_card_editor={is_awaiting_card_editor}, "
+                  f"awaiting_image_review={is_awaiting_image_review}, "
+                  f"awaiting_final_review={is_awaiting_final_review}, "
                   f"awaiting_publish={is_awaiting_publish}")
         except Exception as e:
             logger.warning(f"[{workflow_id}] get graph state after resume failed: {e}")
 
-        if is_awaiting_review:
-            await self._emit_review_required(workflow_id, awaiting_review_node, graph, config)
+        if is_awaiting_direction_choice:
+            await sse_bus.publish(
+                workflow_id,
+                "review_required",
+                {
+                    "review_node": "copywrite",
+                    "review_type": "direction_choice",
+                    "message": "分析完成，请选择创作方向",
+                },
+            )
+            logger.info(f"[{workflow_id}] workflow paused at copywrite interrupt after resume")
+            await self._pause_workflow(workflow_id)
+            return
+
+        if is_awaiting_card_editor:
+            await sse_bus.publish(
+                workflow_id,
+                "review_required",
+                {
+                    "review_node": "image_gen",
+                    "review_type": "card_editor",
+                    "message": "图片规划完成，请在卡片编辑器中调整并生成图片",
+                },
+            )
+            logger.info(f"[{workflow_id}] workflow paused at image_gen interrupt after resume")
+            await self._pause_workflow(workflow_id)
+            return
+
+        if is_awaiting_image_review:
+            await self._emit_review_required(workflow_id, "image_review", graph, config)
+            await self._pause_workflow(workflow_id)
+            return
+
+        if is_awaiting_final_review:
+            await self._emit_review_required(workflow_id, "final_review", graph, config)
+            logger.info(f"[{workflow_id}] workflow paused at final_review interrupt after resume")
+            await self._pause_workflow(workflow_id)
             return
 
         if is_awaiting_publish:
-            # resume 后到达 publish interrupt（final_review 通过后）
-            # 按 auto_publish 开关决定自动 resume 还是等待手动
             model_settings = (graph_state.values or {}).get("model_settings", {}) or {}
             auto_publish = model_settings.get("auto_publish", True)
             if auto_publish:
@@ -1220,31 +1618,7 @@ class WorkflowService:
             else:
                 logger.info(f"[{workflow_id}] publish interrupt + auto_publish=False, waiting for manual publish")
                 await self._emit_review_required(workflow_id, "publish", graph, config)
-            return
-
-        if is_awaiting_card_inject:
-            # resume 后到达 image_gen interrupt（等待卡片注入），不是终态
-            # 推送 SSE 事件告知前端 image_gen 回到待编辑状态
-            # 否则前端轮询 getNodes 会返回旧的 completed 状态，覆盖乐观更新
-            await sse_bus.publish(
-                workflow_id,
-                "node_status_changed",
-                {"node_id": "image_gen", "status": "idle"},
-            )
-            logger.info(
-                f"[{workflow_id}] workflow paused at image_gen interrupt after resume, "
-                f"waiting for card inject, pushed idle status"
-            )
-            _dlog(f"[{workflow_id}] _resume_graph_stream: paused at image_gen interrupt, pushed idle, not terminal")
-            return
-
-        if is_awaiting_manual_resume:
-            # resume 后到达 analyze interrupt（等待手动进入分析），不是终态
-            logger.info(
-                f"[{workflow_id}] workflow paused at analyze interrupt after resume, "
-                f"waiting for manual resume"
-            )
-            _dlog(f"[{workflow_id}] _resume_graph_stream: paused at analyze interrupt, not terminal")
+                await self._pause_workflow(workflow_id)
             return
 
         # 进入终态判断
@@ -1276,6 +1650,7 @@ class WorkflowService:
                     "suspended_until": suspended_until.isoformat(),
                 },
             )
+            await self._decrement_workflow_count()
         elif has_node_error:
             error_nodes = [n for n, s in all_node_statuses.items() if s == "error"]
             await self.db.execute(
@@ -1294,6 +1669,7 @@ class WorkflowService:
                     "completed_at": dt.now(UTC).isoformat(),
                 },
             )
+            await self._decrement_workflow_count()
         else:
             await self.db.execute(
                 sa_update(Workflow)
@@ -1334,12 +1710,14 @@ class WorkflowService:
                     f"[{workflow_id}] record_workflow_result (resume) failed: {mem_err}"
                 )
 
-    async def get_workflow(self, workflow_id: str, user_id: str) -> Workflow | None:
+            await self._decrement_workflow_count()
+
+    async def get_workflow(self, workflow_id: str, user_id: str | None = None) -> Workflow | None:
         """获取工作流详情。"""
-        stmt = select(Workflow).where(
-            Workflow.id == workflow_id,
-            Workflow.user_id == user_id,
-        )
+        conditions = [Workflow.id == workflow_id]
+        if user_id:
+            conditions.append(Workflow.user_id == user_id)
+        stmt = select(Workflow).where(*conditions)
         return await self.db.scalar(stmt)
 
     async def pause_workflow(self, workflow_id: str, user_id: str) -> dict[str, Any]:
@@ -1359,12 +1737,19 @@ class WorkflowService:
 
         return {"success": True, "message": "Workflow paused"}
 
-    async def resume_workflow(self, workflow_id: str, user_id: str) -> dict[str, Any]:
+    async def resume_workflow(
+        self,
+        workflow_id: str,
+        user_id: str,
+        selected_direction: int | None = None,
+        direction_note: str = "",
+    ) -> dict[str, Any]:
         """恢复工作流（从中断点继续执行 graph）。
 
         用于 analyze 等非审核节点的 interrupt_before 暂停后恢复。
         审核节点（image_review/final_review）用 submit_review 恢复（需要设置 PASSED）。
         本方法直接 astream(None) 让 graph 继续执行下一个节点。
+        selected_direction / direction_note 仅在 copywrite 前暂停点生效。
         """
         workflow = await self.get_workflow(workflow_id, user_id)
         if not workflow:
@@ -1373,7 +1758,7 @@ class WorkflowService:
         if not LANGGRAPH_AVAILABLE:
             return {"success": False, "message": "LangGraph unavailable"}
 
-        graph = build_workflow_graph(checkpointer=None)
+        graph, _ = await self._get_graph_for_workflow(workflow)
         if graph is None:
             return {"success": False, "message": "Graph build failed"}
 
@@ -1398,8 +1783,37 @@ class WorkflowService:
         except Exception as e:
             return {"success": False, "message": f"Get graph state failed: {e}"}
 
-        workflow.status = "running"
-        await self.db.commit()
+        # copywrite 前的暂停点：先把用户选择写入 analyze 输出，再 resume。
+        # node_outputs 使用 merge reducer，不会覆盖已有分析结果。
+        if next_nodes and next_nodes[0] == "copywrite":
+            recommendation_count = 0
+            analyze_values = (getattr(graph_state, "values", None) or {}).get("node_outputs", {})
+            recommendations = ((analyze_values.get("analyze") or {}).get("insights") or {}).get("recommendations")
+            if isinstance(recommendations, list):
+                recommendation_count = len(recommendations)
+            chosen_index = selected_direction if selected_direction is not None else 0
+            if recommendation_count and not 0 <= chosen_index < recommendation_count:
+                return {
+                    "success": False,
+                    "message": f"Invalid direction index: {chosen_index} (0-{recommendation_count - 1})",
+                }
+            try:
+                await graph.aupdate_state(
+                    config,
+                    {
+                        "node_outputs": {
+                            "analyze": {
+                                "selected_direction": chosen_index,
+                                "direction_note": (direction_note or "").strip(),
+                            }
+                        }
+                    },
+                )
+            except Exception as e:
+                logger.exception(f"[{workflow_id}] update direction choice failed: {e}")
+                return {"success": False, "message": f"Update direction choice failed: {e}"}
+
+        await self._unpause_workflow(workflow_id)
 
         await sse_bus.publish(
             workflow_id,
@@ -1407,7 +1821,6 @@ class WorkflowService:
             {"workflow_id": workflow_id},
         )
 
-        # 异步 resume graph 执行（保存 task 引用防止 GC）
         self._create_background_task(
             self._resume_graph_safely(workflow_id, graph, config)
         )
@@ -1427,6 +1840,8 @@ class WorkflowService:
         if not workflow:
             return {"success": False, "message": "Workflow not found"}
 
+        was_paused = workflow.status == WorkflowStatus.PAUSED
+
         workflow.status = WorkflowStatus.CANCELLED
         await self.db.commit()
 
@@ -1436,12 +1851,17 @@ class WorkflowService:
             {"workflow_id": workflow_id, "message": "Workflow cancelled by user"},
         )
 
+        if not was_paused:
+            await self._decrement_workflow_count()
+
         return {"success": True, "message": "Workflow cancelled"}
     async def terminate_workflow(self, workflow_id: str, user_id: str) -> dict[str, Any]:
         """终止工作流。"""
         workflow = await self.get_workflow(workflow_id, user_id)
         if not workflow:
             return {"success": False, "message": "Workflow not found"}
+
+        was_paused = workflow.status == WorkflowStatus.PAUSED
 
         workflow.status = "terminated"
         await self.db.commit()
@@ -1451,6 +1871,9 @@ class WorkflowService:
             "workflow_error",
             {"workflow_id": workflow_id, "message": "Workflow terminated by user"},
         )
+
+        if not was_paused:
+            await self._decrement_workflow_count()
 
         return {"success": True, "message": "Workflow terminated"}
 
@@ -1504,7 +1927,7 @@ class WorkflowService:
         if not LANGGRAPH_AVAILABLE:
             return {"success": False, "message": "LangGraph unavailable"}
 
-        graph = build_workflow_graph(checkpointer=None)
+        graph, _ = await self._get_graph_for_workflow(workflow)
         if graph is None:
             return {"success": False, "message": "Graph build failed"}
 

@@ -9,6 +9,7 @@
             图片规划
             <code class="wf-node-key">image_plan</code>
           </div>
+          <div class="wf-node-subtitle">规划卡片版式与配色</div>
         </div>
       </div>
       <span class="mint-badge wf-status-badge" :style="statusBadgeStyle">
@@ -17,9 +18,13 @@
       </span>
     </div>
 
+    <div class="wf-node-summary" v-if="nodeStatus === 'completed' && result">
+      规划 {{ pageCount }} 页卡片
+    </div>
+
     <div class="wf-node-body">
       <div v-if="nodeStatus === 'idle'" class="wf-plan-empty">
-        <i data-lucide="image" style="width:20px;height:20px;color:#D1D5DB;"></i>
+        <i data-lucide="image" style="width:20px;height:20px;color:#E5E7EB;"></i>
         <span>等待文案撰写完成后自动进入图片规划</span>
       </div>
 
@@ -66,11 +71,11 @@
             :key="i"
             class="wf-plan-page"
           >
-            <div class="wf-plan-page-index">{{ i + 1 }}</div>
+            <div class="wf-plan-page-index">{{ Number(i) + 1 }}</div>
             <div class="wf-plan-page-body">
               <div class="wf-plan-page-head">
                 <span class="wf-plan-page-type" :class="`wf-type-${page.type}`">{{ pageTypeLabel(page.type) }}</span>
-                <span class="wf-plan-page-title">{{ page.title || '第 ' + (i + 1) + ' 页' }}</span>
+                <span class="wf-plan-page-title">{{ page.title || '第 ' + (Number(i) + 1) + ' 页' }}</span>
               </div>
               <div v-if="page.subtitle" class="wf-plan-page-sub">{{ page.subtitle }}</div>
               <div v-if="page.content" class="wf-plan-page-desc">{{ truncateContent(page.content) }}</div>
@@ -87,6 +92,12 @@
           <i data-lucide="cpu" style="width:11px;height:11px;"></i>
           {{ result._model_used }}
         </div>
+      </div>
+
+      <!-- completed 状态但无数据（checkpoint 丢失时二次兜底） -->
+      <div v-else-if="nodeStatus === 'completed'" class="wf-empty-hint">
+        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        图片规划已完成（详细数据不可用）
       </div>
     </div>
 
@@ -189,6 +200,7 @@ function truncateContent(content: string): string {
 .wf-plan-empty {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 10px 12px;
   font-size: 14px;
@@ -264,7 +276,7 @@ function truncateContent(content: string): string {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  background: #FAFAFA;
+  background: #F5F5F7;
   border-radius: 10px;
   transition: background 0.15s;
 }

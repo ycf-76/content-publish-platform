@@ -1,16 +1,40 @@
-﻿<template>
-  <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'cards-transparent': cardsTransparent, 'dark-theme': darkTheme }">
+<template>
+  <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
+
+    <!-- ============ 右上角用户头像 ============ -->
+    <div v-if="authStore.user" class="tp-global-user" @click="userDropdownOpen = !userDropdownOpen">
+      <img
+        v-if="authStore.user.avatar_url"
+        :src="authStore.user.avatar_url"
+        alt="头像"
+        class="tp-avatar"
+      />
+      <img
+        v-else
+        src="/images/avatar/@man.svg"
+        alt="默认头像"
+        class="tp-avatar"
+      />
+      <transition name="tp-dropdown">
+        <div v-if="userDropdownOpen" class="tp-dropdown" @click.stop>
+          <div class="tp-dropdown-user">
+            <span class="tp-dropdown-name">{{ authStore.user.nickname || '未设置' }}</span>
+          </div>
+          <button class="tp-dropdown-btn tp-dropdown-logout" @click="handleLogout">
+            <LogOut :size="14" /> 退出登录
+          </button>
+        </div>
+      </transition>
+    </div>
 
     <!-- ============ LEFT COLUMN ============ -->
     <SidebarNav
       :current-page="'topic-pool'"
-      :cards-transparent="cardsTransparent"
-      :dark-theme="darkTheme"
+      :is-collapsed="isSidebarCollapsed"
       @nav-click="handleNavClick"
       @toggle-sidebar="toggleSidebar"
-      @toggle-cards-transparent="toggleCardsTransparent"
-      @toggle-theme="toggleTheme"
       @go-eco="goToEco"
+      @open-settings="openSettings"
     />
 
     <!-- 侧边栏拖拽条（Codex 风格）：拖动调整侧边栏宽度 -->
@@ -54,7 +78,13 @@
             :disabled="fetching"
           />
           <select class="tp-fetch-select" v-model="fetchForm.platform" :disabled="fetching">
-            <option value="xiaohongshu">小红书（需桥接在线）</option>
+            <option value="xiaohongshu_web">小红书</option>
+            <option value="zhihu">知乎</option>
+            <option value="weibo">微博</option>
+            <option value="bilibili">B站</option>
+            <option value="douyin">抖音</option>
+            <option value="pinterest">Pinterest</option>
+            <option value="instagram">Instagram</option>
             <option value="hackernews">HackerNews</option>
             <option value="reddit">Reddit</option>
             <option value="tavily">Tavily</option>
@@ -74,11 +104,8 @@
             <span>{{ fetching ? '抓取中...' : '抓取' }}</span>
           </button>
         </div>
-        <div class="tp-fetch-hint" v-if="fetchForm.platform === 'xiaohongshu'">
-          小红书抓取需桥接页面在线 + 登录态，受频率限制（30s间隔/每日30次），请耐心等待
-        </div>
-        <div class="tp-fetch-hint tp-fetch-hint-alt" v-else>
-          其他平台（{{ fetchForm.platform }}）无需桥接，可直接抓取
+        <div class="tp-fetch-hint tp-fetch-hint-alt">
+          通过搜索引擎安全获取热点数据，零风控
         </div>
         <div class="tp-fetch-msg" v-if="fetchMessage">{{ fetchMessage }}</div>
         <div class="tp-fetch-msg tp-fetch-msg-monitor" v-if="monitorMessage">{{ monitorMessage }}</div>
@@ -211,6 +238,7 @@
                 :src="safeImageUrl(item.cover_img!)"
                 :alt="item.title"
                 loading="lazy"
+                referrerpolicy="no-referrer"
                 @error="onCoverImgError($event, item)"
               />
               <!-- 平台标签（左上角悬浮） -->
@@ -340,6 +368,7 @@
       </div>
     </main>
 
+    <SettingsView v-if="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
@@ -351,10 +380,25 @@ import {
   ArrowLeft, Layers, Star, Globe, DownloadCloud, Download, Loader2,
   Search, RefreshCw, Inbox, User, Users, ThumbsUp, Bookmark,
   MessageSquare, Tag, Play, Trash2, ExternalLink, ChevronLeft, ChevronRight,
-  Radar, Flame, Zap, ArrowDownWideNarrow, Clock,
+  Radar, Flame, Zap, ArrowDownWideNarrow, Clock, LogOut,
 } from 'lucide-vue-next'
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
+import SettingsView from '@/views/SettingsView.vue'
+import { useAuthStore } from '@/stores/auth'
 import { topicPoolApi, type TopicPoolItem, type TopicPoolStats, type TopicPoolFetchResponse } from '@/api/topic_pool'
+
+const authStore = useAuthStore()
+
+const showSettings = ref(false)
+function openSettings() {
+  showSettings.value = true
+}
+const userDropdownOpen = ref(false)
+
+async function handleLogout() {
+  userDropdownOpen.value = false
+  await authStore.logout()
+}
 
 const emit = defineEmits<{
   'start-workflow': [reference: Record<string, unknown>]
@@ -365,52 +409,19 @@ const router = useRouter()
 // ===== 侧边栏状态 =====
 const SK_COLLAPSED = 'mint_sidebar_collapsed'
 const isSidebarCollapsed = ref(localStorage.getItem(SK_COLLAPSED) === '1')
-const SK_CARDS_TRANSPARENT = 'mint_cards_transparent'
-const cardsTransparent = ref(localStorage.getItem(SK_CARDS_TRANSPARENT) === '1')
-const SK_DARK_THEME = 'mint_dark_theme'
-const darkTheme = ref(localStorage.getItem(SK_DARK_THEME) === '1')
 
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
   localStorage.setItem(SK_COLLAPSED, isSidebarCollapsed.value ? '1' : '0')
-}
-function toggleCardsTransparent() {
-  cardsTransparent.value = !cardsTransparent.value
-  localStorage.setItem(SK_CARDS_TRANSPARENT, cardsTransparent.value ? '1' : '0')
-}
-function toggleTheme(event: MouseEvent) {
-  const x = event.clientX
-  const y = event.clientY
-  const endRadius = Math.hypot(
-    Math.max(x, window.innerWidth - x),
-    Math.max(y, window.innerHeight - y)
-  )
-  // @ts-ignore
-  if (!document.startViewTransition) {
-    darkTheme.value = !darkTheme.value
-    localStorage.setItem(SK_DARK_THEME, darkTheme.value ? '1' : '0')
-    return
+  if (isSidebarCollapsed.value) {
+    const sidebar = document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null
+    const wrapper = document.querySelector('.tp-shell .mint-sidebar-wrapper') as HTMLElement | null
+    if (sidebar) sidebar.style.width = ''
+    if (wrapper) wrapper.style.width = ''
+  } else {
+    const savedW = localStorage.getItem(SK_SIDEBAR_WIDTH)
+    if (savedW) applySidebarWidth(Number(savedW))
   }
-  // @ts-ignore
-  const transition = document.startViewTransition(() => {
-    darkTheme.value = !darkTheme.value
-    localStorage.setItem(SK_DARK_THEME, darkTheme.value ? '1' : '0')
-  })
-  transition.ready.then(() => {
-    document.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${endRadius}px at ${x}px ${y}px)`,
-        ],
-      },
-      {
-        duration: 500,
-        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-        pseudoElement: '::view-transition-new(root)',
-      }
-    )
-  })
 }
 function handleNavClick(pageName: string) {
   if (pageName === 'topic-pool') return
@@ -438,7 +449,13 @@ const total = ref(0)
 
 // 平台分类标签（用于分类切换栏）
 const platformTabs = [
-  { value: 'xiaohongshu', label: '小红书' },
+  { value: 'xiaohongshu_web', label: '小红书' },
+  { value: 'zhihu', label: '知乎' },
+  { value: 'weibo', label: '微博' },
+  { value: 'bilibili', label: 'B站' },
+  { value: 'douyin', label: '抖音' },
+  { value: 'pinterest', label: 'Pinterest' },
+  { value: 'instagram', label: 'Instagram' },
   { value: 'hackernews', label: 'HackerNews' },
   { value: 'reddit', label: 'Reddit' },
   { value: 'tavily', label: 'Tavily' },
@@ -449,7 +466,7 @@ const platformTabs = [
 const fetching = ref(false)
 const fetchForm = reactive({
   keyword: '',
-  platform: 'xiaohongshu',  // 默认小红书（用户核心需求）
+  platform: 'xiaohongshu_web',
 })
 const fetchMessage = ref('')  // 抓取结果提示
 
@@ -688,7 +705,13 @@ function formatNum(n: number): string {
 function platformStyle(platform: string) {
   const p = (platform || '').toLowerCase()
   let color = '#64748B'
-  if (p === 'xiaohongshu') color = '#FF2442'
+  if (p === 'xiaohongshu' || p === 'xiaohongshu_web') color = '#FF2442'
+  else if (p === 'zhihu') color = '#0066FF'
+  else if (p === 'weibo') color = '#E6162D'
+  else if (p === 'bilibili') color = '#00A1D6'
+  else if (p === 'douyin') color = '#000000'
+  else if (p === 'pinterest') color = '#E60023'
+  else if (p === 'instagram') color = '#E4405F'
   else if (p === 'hackernews') color = '#FF6600'
   else if (p === 'reddit') color = '#FF4500'
   else if (p === 'tavily') color = '#FF2442'
@@ -713,16 +736,37 @@ function safeImageUrl(url: string): string {
   if (!url) return ''
   const u = url.trim()
   if (u.startsWith('data:image')) return u
+  if (u.startsWith('/uploads/')) return u
   return u.replace(/^http:/, 'https:')
 }
 
-function onCoverImgError(_e: Event, item: TopicPoolItem) {
+function onCoverImgError(e: Event, item: TopicPoolItem) {
+  const img = e.target as HTMLImageElement
+  const currentSrc = img.src || ''
+
+  if (!currentSrc.includes('/api/proxy/image')) {
+    const originalUrl = item.cover_img || ''
+    if (originalUrl && (originalUrl.includes('xhscdn.com') ||
+        originalUrl.includes('xiaohongshu.com') ||
+        originalUrl.includes('picasso-static') ||
+        originalUrl.startsWith('http'))) {
+      img.src = '/api/proxy/image?url=' + encodeURIComponent(originalUrl)
+      return
+    }
+  }
+
   coverImgFailed.value[item.id] = true
 }
 
 function platformLabel(platform: string) {
   const p = (platform || '').toLowerCase()
-  if (p === 'xiaohongshu') return '小红书'
+  if (p === 'xiaohongshu' || p === 'xiaohongshu_web') return '小红书'
+  if (p === 'zhihu') return '知乎'
+  if (p === 'weibo') return '微博'
+  if (p === 'bilibili') return 'B站'
+  if (p === 'douyin') return '抖音'
+  if (p === 'pinterest') return 'Pinterest'
+  if (p === 'instagram') return 'Instagram'
   if (p === 'hackernews') return 'HackerNews'
   if (p === 'reddit') return 'Reddit'
   if (p === 'tavily') return 'Tavily'
@@ -735,8 +779,10 @@ function platformLabel(platform: string) {
 const SK_SIDEBAR_WIDTH = 'mint_sidebar_width'
 const sidebarResizing = ref(false)
 function applySidebarWidth(w: number) {
-  const el = document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null
-  if (el) el.style.width = w + 'px'
+  const sidebar = document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null
+  const wrapper = document.querySelector('.tp-shell .mint-sidebar-wrapper') as HTMLElement | null
+  if (sidebar) sidebar.style.width = w + 'px'
+  if (wrapper) wrapper.style.width = (w + 4) + 'px'
 }
 function startSidebarResize(e: MouseEvent) {
   e.preventDefault()
@@ -758,8 +804,36 @@ function startSidebarResize(e: MouseEvent) {
     if (shell) shell.classList.remove('tp-resizing')
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
-    const cur = (document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null)?.offsetWidth || 192
+    const cur = (document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null)?.offsetWidth || 212
     localStorage.setItem(SK_SIDEBAR_WIDTH, String(cur))
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+const contentResizing = ref(false)
+function startContentResize(e: MouseEvent) {
+  e.preventDefault()
+  contentResizing.value = true
+  const shell = document.querySelector('.tp-shell') as HTMLElement | null
+  if (shell) shell.classList.add('tp-resizing')
+  const startX = e.clientX
+  const contentEl = document.querySelector('.tp-content-card-wrapper') as HTMLElement | null
+  const startW = contentEl ? contentEl.offsetWidth : 600
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  const onMove = (ev: MouseEvent) => {
+    const delta = ev.clientX - startX
+    const newW = Math.min(1200, Math.max(300, startW + delta))
+    if (contentEl) contentEl.style.width = newW + 'px'
+  }
+  const onUp = () => {
+    contentResizing.value = false
+    if (shell) shell.classList.remove('tp-resizing')
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
   }
@@ -794,7 +868,7 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   height: 100%;
-  background: var(--ma-bg-subtle);
+  background: #F5F5F7;
   font-family: var(--ma-font-sans);
   color: var(--ma-text-primary);
   box-sizing: border-box;
@@ -1008,6 +1082,7 @@ min-width: 0;
 .tp-fetch-input:focus {
   border-color: var(--ma-border-default);
   box-shadow: none;
+  outline: none;
 }
 .tp-fetch-input::placeholder {
   color: #9CA3AF !important;
@@ -1031,8 +1106,9 @@ min-width: 0;
   flex-shrink: 0;
 }
 .tp-fetch-select:focus {
-  border-color: var(--ma-blue-500);
-  box-shadow: var(--ma-shadow-focus);
+  border-color: var(--ma-border-default);
+  box-shadow: none;
+  outline: none;
 }
 .tp-fetch-btn {
   display: inline-flex;
@@ -1186,8 +1262,9 @@ min-width: 0;
   -moz-appearance: none;
 }
 .tp-select:focus {
-  border-color: var(--ma-blue-500);
-  box-shadow: var(--ma-shadow-focus);
+  border-color: var(--ma-border-default);
+  box-shadow: none;
+  outline: none;
 }
 .tp-search-wrap {
   position: relative;
@@ -1195,7 +1272,7 @@ min-width: 0;
 }
 .tp-search-icon {
   position: absolute;
-  left: 10px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   width: 16px;
@@ -1206,20 +1283,22 @@ min-width: 0;
 .tp-input {
   width: 100%;
   height: 36px;
-  padding: 0 12px 0 34px;
-  border: 1px solid var(--ma-border-default);
-  border-radius: 12px;
-  background: #F5F6F7 !important;
+  padding: 0 18px 0 36px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background: var(--ma-secondary, #EEF0F4) !important;
   color: var(--ma-text-primary);
   font-size: var(--ma-font-sm);
   font-family: inherit;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.2s ease;
 }
 .tp-input:focus {
-  border-color: var(--ma-border-default);
+  border-color: #D1D5DB;
+  background: var(--ma-secondary, #EEF0F4) !important;
   box-shadow: none;
+  outline: none;
 }
 .tp-input::placeholder {
   color: #9CA3AF !important;
@@ -1939,7 +2018,7 @@ min-width: 0;
   width: 2px;
   height: 40px;
   border-radius: 2px;
-  background: #D1D5DB;
+  background: #E5E7EB;
   transition: background 0.15s ease, height 0.15s ease;
 }
 .tp-sidebar-resizer:hover {
@@ -1960,5 +2039,81 @@ min-width: 0;
 /* 拖拽中禁用过渡，跟随鼠标实时变化 */
 .tp-shell.tp-resizing .mint-sidebar {
   transition: none !important;
+}
+
+/* ===== 右上角用户头像 ===== */
+.tp-global-user {
+  position: fixed;
+  top: 12px;
+  right: 36px;
+  z-index: 9999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.tp-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.tp-avatar:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.tp-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  width: 180px;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+.tp-dropdown-user {
+  padding: 12px 14px;
+  border-bottom: 1px solid #F1F5F9;
+}
+.tp-dropdown-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+.tp-dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: #EF4444;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.tp-dropdown-btn:hover {
+  background: #FEF2F2;
+}
+.tp-dropdown-logout svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 下拉动画 */
+.tp-dropdown-enter-active,
+.tp-dropdown-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.tp-dropdown-enter-from,
+.tp-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 </style>

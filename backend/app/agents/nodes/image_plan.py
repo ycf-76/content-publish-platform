@@ -45,8 +45,15 @@ async def image_plan_node(state: WorkflowState) -> dict:
     analyze_recommendations = analyze_insights.get("recommendations") or []
     visual_suggestion = ""
     analyze_content_type = ""
-    if analyze_recommendations and isinstance(analyze_recommendations[0], dict):
-        brief = analyze_recommendations[0].get("execution_brief") or {}
+    selected_direction = analyze_output.get("selected_direction", 0)
+    try:
+        selected_direction = int(selected_direction)
+    except (TypeError, ValueError):
+        selected_direction = 0
+    if selected_direction < 0 or selected_direction >= len(analyze_recommendations):
+        selected_direction = 0
+    if analyze_recommendations and isinstance(analyze_recommendations[selected_direction], dict):
+        brief = analyze_recommendations[selected_direction].get("execution_brief") or {}
         if isinstance(brief, dict):
             visual_suggestion = str(brief.get("visual_suggestion", "")).strip()
             analyze_content_type = str(brief.get("content_type", "")).strip()
@@ -74,12 +81,25 @@ async def image_plan_node(state: WorkflowState) -> dict:
             # 知识清单型：直接构造卡片，每页 4-5 个词条，零 LLM 成本
             # 第 1 张固定封面，后续按每页 4 条切分 structured_items
             items_per_page = 4
-            pages_list: list[dict] = [{
-                "type": "cover",
-                "title": title[:40] if title else topic,
-                "subtitle": f"共 {len(structured_items)} 个知识点",
-                "footer": "@灵犀工坊",
-            }]
+            suggested = _recommend_template(topic, analyze_content_type)
+            is_esther = suggested.startswith("esther_")
+
+            if is_esther:
+                pages_list: list[dict] = [{
+                    "type": "cover",
+                    "title": title[:40] if title else topic,
+                    "subtitle": f"共 {len(structured_items)} 个知识点",
+                    "footer": "@灵犀工坊",
+                    "highlight": "",
+                    "tag": "知识清单",
+                }]
+            else:
+                pages_list: list[dict] = [{
+                    "type": "cover",
+                    "title": title[:40] if title else topic,
+                    "subtitle": f"共 {len(structured_items)} 个知识点",
+                    "footer": "@灵犀工坊",
+                }]
             for i in range(0, len(structured_items), items_per_page):
                 chunk = structured_items[i:i + items_per_page]
                 list_items = [
@@ -94,9 +114,18 @@ async def image_plan_node(state: WorkflowState) -> dict:
                         "listItems": list_items,
                         "footer": f"第 {len(pages_list)}/{((len(structured_items) - 1) // items_per_page) + 2} 页",
                     })
+            if is_esther:
+                pages_list.append({
+                    "type": "end_page",
+                    "title": "",
+                    "content": f"掌握 {len(structured_items)} 个知识点，让{topic}不再难。",
+                    "footer": "@灵犀工坊",
+                    "ctaText": "关注我，获取更多知识",
+                    "decoNumber": '"',
+                })
             card_draft = {
                 "pages": pages_list,
-                "suggested_template": _recommend_template(topic, analyze_content_type),
+                "suggested_template": suggested,
             }
             model_used = "structured_split (no LLM)"
             logger.info(
@@ -112,35 +141,72 @@ async def image_plan_node(state: WorkflowState) -> dict:
                 if visual_suggestion else ""
             )
             prompt = (
-                "你是小红书卡片文案规划师。根据以下文案内容，规划 4 张小红书卡片（1080×1440 竖图）的文案。\n\n"
-                "要求：\n"
-                "1. 第 1 张是封面（cover）：吸引眼球的标题 + 副标题 + 署名\n"
-                "2. 第 2 张是正文（content）：一个小标题 + 2-3 段正文（正文要完整，不要截断）\n"
-                "3. 第 3 张是金句（quote）：一句戳中读者的话 + 出处\n"
-                "4. 第 4 张是清单（list）：一个清单标题 + 3-5 个要点\n"
+                "你是小红书卡片文案编排师。你的核心任务是把下面的文案全文拆分编排到 4-6 张卡片中，\n"
+                "每张卡都要有实质内容，不能留空。读者看完所有卡片等于读完原文。\n\n"
+                "编排原则：\n"
+                "1. 第 1 张封面（cover）：原文标题 + 吸引眼球的副标题 + 署名\n"
+                "2. 中间页把原文正文按逻辑段落拆分，每页放 2-3 句或 1 个完整段落，选择最合适的页面类型：\n"
+                "   - content：正文页，一个小标题 + 2-3 段正文（每段 1-2 句，总字数 50-120 字）\n"
+                "   - quote：金句页，从原文中挑一句最戳人的话 + 出处\n"
+                "   - list：清单页，把原文要点提炼为 3-5 条清单（每条 10-30 字）\n"
+                "   - dark_panel：深色面板页，暗底亮字 + emoji + 3-5 条关键洞察（每条 10-30 字）\n"
+                "   - compare：对比页，左（问题/痛点）vs 右（解法/优势），各 2-4 条（每条 10-25 字）\n"
+                "   - icon_text：图标文字页，4 个 emoji+文字的能力/方法卡片（每条 5-15 字）\n"
+                "   - steps：步骤流程页，3-5 个步骤（每步标题 5-10 字 + 描述 15-40 字）\n"
+                "   - numbered_cards：编号卡片页，3-5 个编号要点（每项标题 5-10 字 + 描述 15-40 字）\n"
+                "   - newspaper：报纸多栏页，报头+2-3 栏新闻式内容（每栏标题 5-15 字 + 正文 30-60 字）\n"
+                "   - big_quote：大字金句页，超大字号展示一句话（15-40 字）\n"
+                "3. 最后 1 张尾页（end_page）：一句让人记住你的话 + CTA\n"
                 f"{visual_hint}\n"
-                "5. 模板选择：根据主题从以下 3 套中选最合适的一套：\n"
+                "4. 模板选择：根据主题从以下 6 套中选最合适的一套：\n"
+                "   【基础模板】\n"
                 "   - minimal_white：白底黑字红色点缀，适合知识干货、教育、科普\n"
                 "   - warm_card：米黄底深棕字，适合美食、旅行、生活方式、穿搭\n"
                 "   - dark_tech：深蓝底白字霓虹绿点缀，适合科技、AI、编程、数码\n"
-                "6. 强调色（custom_accent）：根据主题推荐一个十六进制颜色值，用于卡片标题/序号/分割线等强调元素\n"
-                "   - 知识干货可用 #FF2442（红）或 #065F46（绿）\n"
-                "   - 美食旅行可用 #D97706（橙）或 #B45309（棕）\n"
-                "   - 科技编程可用 #10B981（绿）或 #3B82F6（蓝）\n\n"
+                "   【Esther 设计系统】\n"
+                "   - esther_brand：品牌三色+奶白底+衬线标题，适合知识科普、干货分享、职场\n"
+                "   - esther_dark：深色墨底+金色强调+衬线标题，适合科技、AI、编程、深度思考\n"
+                "   - esther_warm：暖奶底+橙棕强调+圆润字体，适合生活方式、美食、旅行\n"
+                "5. 强调色（custom_accent）：根据主题推荐一个十六进制颜色值\n\n"
+                "【关键要求】\n"
+                "- 你必须把原文内容编排进每张卡的 content/listItems/steps 等字段中，不能只写标题不写正文\n"
+                "- 每张 content 页的 content 字段必须有 2-3 段实际文案，总字数 50-120 字\n"
+                "- 每张 list/dark_panel 页的 listItems 必须有 3-5 条实际要点，每条 10-30 字\n"
+                "- 内容要精炼，不要把整段原文照搬，要提炼要点、保留核心信息\n"
+                "- 读者看完所有卡 = 读完原文核心内容，不能遗漏重要内容\n\n"
                 "严格输出以下 JSON 格式（不要输出其他内容，不要 markdown 代码块）：\n"
                 '{\n'
                 '  "pages": [\n'
-                '    {"type": "cover", "title": "封面标题", "subtitle": "副标题", "footer": "@灵犀工坊"},\n'
-                '    {"type": "content", "title": "正文小标题", "content": "第一段正文\\n\\n第二段正文"},\n'
-                '    {"type": "quote", "content": "金句内容", "footer": "— 出处"},\n'
-                '    {"type": "list", "title": "清单标题", "listItems": ["要点1", "要点2", "要点3"]}\n'
+                '    {"type": "cover", "title": "封面标题", "subtitle": "副标题", "footer": "@灵犀工坊", "highlight": "标题中需高亮的关键词", "tag": "干货分享"},\n'
+                '    {"type": "content", "title": "小标题", "content": "2-3段正文，每段1-2句，用\\n换行"},\n'
+                '    {"type": "list", "title": "清单标题", "listItems": ["要点1", "要点2", "要点3"]},\n'
+                '    {"type": "quote", "content": "一句金句", "footer": "出处"},\n'
+                '    {"type": "dark_panel", "emoji": "🚀", "decoNumber": "01", "listItems": ["洞察1", "洞察2", "洞察3"]},\n'
+                '    {"type": "steps", "title": "操作步骤", "decoNumber": "01", "steps": [{"title": "第一步", "desc": "描述"}, {"title": "第二步", "desc": "描述"}]},\n'
+                '    {"type": "numbered_cards", "title": "核心要点", "decoNumber": "02", "numberedItems": [{"title": "要点1", "desc": "描述"}, {"title": "要点2", "desc": "描述"}]},\n'
+                '    {"type": "compare", "compareLeftTitle": "传统做法", "compareRightTitle": "更好方式", "compareLeftItems": ["痛点1", "痛点2"], "compareRightItems": ["优势1", "优势2"]},\n'
+                '    {"type": "icon_text", "iconTextPairs": [{"icon": "🎯", "text": "描述1"}, {"icon": "💡", "text": "描述2"}]},\n'
+                '    {"type": "newspaper", "masthead": "THE DAILY BRIEF", "newspaperCols": [{"headline": "栏目标题", "body": "栏目正文"}]},\n'
+                '    {"type": "big_quote", "content": "一句震撼的话", "footer": "@灵犀工坊", "decoNumber": "\\""},\n'
+                '    {"type": "end_page", "content": "一句让人记住你的话", "ctaText": "关注我，获取更多", "footer": "@灵犀工坊", "decoNumber": "\\""}\n'
                 '  ],\n'
-                '  "suggested_template": "minimal_white",\n'
-                '  "custom_accent": "#FF2442"\n'
+                '  "suggested_template": "esther_brand",\n'
+                '  "custom_accent": "#2B7FD8"\n'
                 '}\n\n'
+                "注意：pages 数组中只需包含实际需要的页面类型，不必每种都用。封面和尾页各 1 张，中间页根据内容灵活选择。\n"
+                "各页面类型特有字段说明：\n"
+                "- cover 页可加 highlight（标题高亮关键词）和 tag（分类标签如\"干货分享\"）\n"
+                "- dark_panel 页需提供 emoji、decoNumber（装饰数字如\"01\"）、listItems\n"
+                "- end_page 页需提供 ctaText（CTA引导语）、decoNumber（装饰引号如\"\\\"\"）\n"
+                "- compare 页需提供 compareLeftTitle/compareRightTitle/compareLeftItems/compareRightItems\n"
+                "- icon_text 页需提供 iconTextPairs: [{icon: \"🎯\", text: \"描述\"}]\n"
+                "- steps 页需提供 steps: [{title: \"步骤名\", desc: \"描述\"}]，可加 decoNumber\n"
+                "- numbered_cards 页需提供 numberedItems: [{title: \"要点\", desc: \"描述\"}]，可加 decoNumber\n"
+                "- newspaper 页需提供 masthead（报头）、newspaperCols: [{headline: \"栏目标题\", body: \"栏目正文\"}]\n"
+                "- big_quote 页用 content 字段放金句，decoNumber 放装饰引号\n\n"
                 f"主题：{topic}\n"
                 f"标题：{title}\n"
-                f"正文：{content[:800]}\n"
+                f"正文（必须全部编排进卡片，不能遗漏）：\n{content}\n"
                 f"标签：{', '.join(tags) if isinstance(tags, list) else tags}\n"
                 f"要点：{', '.join(key_points) if isinstance(key_points, list) and key_points else '无'}\n"
             )
@@ -178,6 +244,9 @@ async def image_plan_node(state: WorkflowState) -> dict:
         card_draft = _build_card_draft_fallback(topic, title, content, tags, key_points)
         model_used = "fallback (exception)"
 
+    # 后处理：封面 title 兜底 + 附加 copywrite 原文上下文
+    _postprocess_draft(card_draft, title, content, tags)
+
     # 根据推荐的模板和主题，推荐装饰层配置
     suggested_template_id = card_draft.get("suggested_template", "minimal_white")
     suggested_decoration = _recommend_decoration(
@@ -212,20 +281,20 @@ async def image_plan_node(state: WorkflowState) -> dict:
 def _recommend_template(topic: str, content_type: str = "") -> str:
     """根据内容类型推荐卡片模板，topic 关键词作兜底。
 
-    优先级：content_type 映射 > topic 关键词 > 默认 minimal_white
+    优先级：content_type 映射 > topic 关键词 > 默认 esther_brand
 
     映射表（对齐 analyze 节点 _VALID_CONTENT_TYPES）：
-    - 清单型 / 教程型 → minimal_white（白底清晰，重 readability）
-    - 观点型 → dark_tech（深色有态度）
-    - 对比型 / 叙事型 → warm_card（暖色亲和/温馨）
+    - 清单型 / 教程型 → esther_brand（品牌三色，清晰专业）
+    - 观点型 → esther_dark（深色有态度）
+    - 对比型 / 叙事型 → esther_warm（暖色亲和/温馨）
     """
     # 1. content_type 优先（analyze 节点已校验枚举，可信度高）
     _CONTENT_TYPE_MAP = {
-        "清单型": "minimal_white",
-        "教程型": "minimal_white",
-        "观点型": "dark_tech",
-        "对比型": "warm_card",
-        "叙事型": "warm_card",
+        "清单型": "esther_brand",
+        "教程型": "esther_brand",
+        "观点型": "esther_dark",
+        "对比型": "esther_warm",
+        "叙事型": "esther_warm",
     }
     if content_type in _CONTENT_TYPE_MAP:
         return _CONTENT_TYPE_MAP[content_type]
@@ -242,15 +311,22 @@ def _recommend_template(topic: str, content_type: str = "") -> str:
         "javascript", "技术", "开发", "软件", "工具", "效率", "电脑",
         "手机", "算法", "数据", "机器学习", "前端", "后端",
     ]
+    knowledge_keywords = [
+        "知识", "干货", "科普", "教育", "学习", "职场", "方法", "技巧",
+        "思维", "认知", "提升", "成长", "读书", "笔记",
+    ]
     for kw in warm_keywords:
         if kw in text:
-            return "warm_card"
+            return "esther_warm"
     for kw in tech_keywords:
         if kw in text:
-            return "dark_tech"
+            return "esther_dark"
+    for kw in knowledge_keywords:
+        if kw in text:
+            return "esther_brand"
 
-    # 3. 默认
-    return "minimal_white"
+    # 3. 默认：esther_brand（品牌三色，最通用）
+    return "esther_brand"
 
 
 def _recommend_decoration(
@@ -372,15 +448,54 @@ def _recommend_decoration(
             "param1": 0.5,
             "param2": 1,
         },
+        "esther_brand": {
+            "type": "gradient_orbs",
+            "color1": "#2B7FD8",
+            "color2": "#F4D758",
+            "opacity": 0.25,
+            "param1": 0.3,
+            "param2": 0.7,
+        },
+        "esther_dark": {
+            "type": "geometric",
+            "color1": "#F4D758",
+            "color2": "#2B7FD8",
+            "opacity": 0.12,
+            "param1": 0.7,
+            "param2": 30,
+        },
+        "esther_warm": {
+            "type": "gradient_orbs",
+            "color1": "#F4D758",
+            "color2": "#E84A5F",
+            "opacity": 0.2,
+            "param1": 0.25,
+            "param2": 0.6,
+        },
     }
-    return _TEMPLATE_DECO.get(template, {"type": "none", "color1": "#FDE68A", "color2": "#FCA5A5", "opacity": 0.3})
+    return _TEMPLATE_DECO.get(template, {"type": "none", "color1": "#2B7FD8", "color2": "#F4D758", "opacity": 0.2})
 
 
 def _build_card_draft_fallback(topic: str, title: str, content: str, tags, key_points) -> dict:
-    """LLM 不可用时的 card_draft 兜底：用 copywrite 内容拼 4 张卡。"""
-    # 把正文按换行分段，取前 2 段作为 content 卡
-    paragraphs = [p.strip() for p in (content or "").split("\n") if p.strip()][:2]
-    content_text = "\n\n".join(paragraphs) if paragraphs else "正文内容待补充"
+    """LLM 不可用时的 card_draft 兜底：把 copywrite 全文拆分到多张卡。"""
+    import re
+
+    # 按段落拆分正文
+    paragraphs = [p.strip() for p in (content or "").split("\n") if p.strip()]
+    if not paragraphs:
+        sentences = re.split(r'(?<=[。！？；])', content or "")
+        sentences = [s.strip() for s in sentences if s.strip()]
+        paragraphs = []
+        chunk = []
+        for s in sentences:
+            chunk.append(s)
+            if len(chunk) >= 2:
+                paragraphs.append("".join(chunk))
+                chunk = []
+        if chunk:
+            paragraphs.append("".join(chunk))
+    if not paragraphs:
+        paragraphs = [content] if content else ["正文内容待补充"]
 
     # key_points 作为 list 卡的来源
     if isinstance(key_points, list) and key_points:
@@ -388,29 +503,149 @@ def _build_card_draft_fallback(topic: str, title: str, content: str, tags, key_p
     else:
         list_items = ["要点一", "要点二", "要点三"]
 
+    suggested = _recommend_template(topic, "")
+    is_esther = suggested.startswith("esther_")
+
+    # 构建页面列表：封面 + 内容页（每页 2-3 段）+ 尾页
+    pages_list = []
+    if is_esther:
+        pages_list.append({
+            "type": "cover",
+            "title": title or topic or "点击编辑标题",
+            "subtitle": " · ".join(tags[:3]) if isinstance(tags, list) and tags else "",
+            "footer": "@灵犀工坊",
+            "highlight": "",
+            "tag": "干货分享",
+        })
+    else:
+        pages_list.append({
+            "type": "cover",
+            "title": title or topic or "点击编辑标题",
+            "subtitle": " · ".join(tags[:3]) if isinstance(tags, list) and tags else "",
+            "footer": "@灵犀工坊",
+        })
+
+    # 第 2 张用 dark_panel/list 展示要点（esther），或 list（基础）
+    if is_esther:
+        pages_list.append({
+            "type": "dark_panel",
+            "title": "核心要点",
+            "emoji": "💡",
+            "decoNumber": "01",
+            "listItems": list_items,
+            "content": "",
+        })
+    else:
+        pages_list.append({
+            "type": "list",
+            "title": "要点清单",
+            "listItems": list_items,
+        })
+
+    # 每页放 2-3 段正文
+    per_page = 2 if len(paragraphs) <= 4 else 3
+    for i in range(0, len(paragraphs), per_page):
+        chunk = paragraphs[i:i + per_page]
+        pages_list.append({
+            "type": "content",
+            "title": "",
+            "content": "\n".join(chunk),
+        })
+
+    if is_esther:
+        pages_list.append({
+            "type": "end_page",
+            "title": "",
+            "content": "一句让人记住你的话。",
+            "footer": "@灵犀工坊",
+            "ctaText": "关注我，获取更多",
+            "decoNumber": '"',
+        })
+
     return {
-        "pages": [
-            {
-                "type": "cover",
-                "title": title or "点击编辑标题",
-                "subtitle": "副标题（可选）",
-                "footer": "@灵犀工坊",
-            },
-            {
-                "type": "content",
-                "title": "核心观点",
-                "content": content_text,
-            },
-            {
-                "type": "quote",
-                "content": "一句戳中读者的话，放在这里作为金句。",
-                "footer": "— 灵犀工坊",
-            },
-            {
-                "type": "list",
-                "title": "要点清单",
-                "listItems": list_items,
-            },
-        ],
-        "suggested_template": _recommend_template(topic, ""),
+        "pages": pages_list,
+        "suggested_template": suggested,
+    }
+
+
+def _postprocess_draft(
+    card_draft: dict,
+    copywrite_title: str,
+    copywrite_content: str,
+    copywrite_tags: list,
+) -> None:
+    """后处理：封面兜底 + 空内容页面校验 + 附加 copywrite 原文上下文。
+
+    LLM 有时返回空 content/listItems 的页面，本函数做兜底：
+    1. 封面页 title 为空 → 用 copywrite title 填充
+    2. 封面页 subtitle 为空且有 tags → 用 tags 拼副标题
+    3. 内容页 content/listItems 都为空 → 用 copywrite 原文段落填充
+    4. 附加 copywrite_context 供前端"重新分配"按钮使用
+    """
+    import re
+
+    pages = card_draft.get("pages", [])
+    if not pages:
+        return
+
+    # 1. 封面页兜底
+    cover = next((p for p in pages if p.get("type") == "cover"), None)
+    if cover:
+        if not cover.get("title") and copywrite_title:
+            cover["title"] = copywrite_title[:40]
+        if not cover.get("subtitle") and copywrite_tags:
+            tag_str = " · ".join(copywrite_tags[:3]) if isinstance(copywrite_tags, list) else str(copywrite_tags)
+            cover["subtitle"] = tag_str
+
+    # 2. 校验内容页：找出所有空内容页面
+    content_types = {"content", "list", "dark_panel", "quote", "big_quote", "steps", "numbered_cards", "compare", "icon_text", "newspaper"}
+    empty_pages = []
+    for p in pages:
+        if p.get("type") not in content_types:
+            continue
+        has_content = bool(p.get("content"))
+        has_list = bool(p.get("listItems"))
+        has_steps = bool(p.get("steps"))
+        has_numbered = bool(p.get("numberedItems"))
+        has_compare = bool(p.get("compareLeftItems") or p.get("compareRightItems"))
+        has_icon = bool(p.get("iconTextPairs"))
+        has_cols = bool(p.get("newspaperCols"))
+        if not any([has_content, has_list, has_steps, has_numbered, has_compare, has_icon, has_cols]):
+            empty_pages.append(p)
+
+    # 3. 如果有空内容页面，把 copywrite 原文拆段填充
+    if empty_pages and copywrite_content:
+        paragraphs = [p.strip() for p in copywrite_content.split("\n") if p.strip()]
+        if not paragraphs:
+            sentences = re.split(r'(?<=[。！？；])', copywrite_content)
+            sentences = [s.strip() for s in sentences if s.strip()]
+            paragraphs = []
+            chunk = []
+            for s in sentences:
+                chunk.append(s)
+                if len(chunk) >= 2:
+                    paragraphs.append("".join(chunk))
+                    chunk = []
+            if chunk:
+                paragraphs.append("".join(chunk))
+        if not paragraphs:
+            paragraphs = [copywrite_content]
+
+        per_page = max(1, (len(paragraphs) + len(empty_pages) - 1) // len(empty_pages))
+        para_idx = 0
+        for page in empty_pages:
+            if para_idx >= len(paragraphs):
+                break
+            chunk = paragraphs[para_idx:para_idx + per_page]
+            para_idx += per_page
+            if page.get("type") in ("list", "dark_panel"):
+                page["listItems"] = chunk
+            else:
+                page["content"] = "\n".join(chunk)
+
+    # 4. 附加 copywrite_context
+    card_draft["copywrite_context"] = {
+        "title": copywrite_title,
+        "content": copywrite_content,
+        "tags": copywrite_tags if isinstance(copywrite_tags, list) else [],
     }

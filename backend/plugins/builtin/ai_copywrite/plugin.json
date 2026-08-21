@@ -1,0 +1,170 @@
+{
+  "id": "ai-copywrite-node",
+  "name": "AI文案生成器",
+  "version": "1.0.0",
+  "description": "基于LLM的小红书专业文案生成节点，支持多种写作风格（爆款标题、种草笔记、避雷测评等），自动融合分析洞察、图片描述和用户偏好，输出符合平台调性的高质量内容。支持成本控制、降级模板和多轮优化。",
+  "author": {
+    "name": "AI Agent Team",
+    "email": "agents@creator-platform.com"
+  },
+  "category": "workflow_node",
+  "entry_point": "ai_copywrite.py:AICopywriteNodePlugin",
+  "display_icon": "✍️",
+  "tags": [
+    "ai-writing",
+    "copywriting",
+    "content-generation",
+    "llm",
+    "workflow"
+  ],
+  "capabilities": [
+    "execute",
+    "validate_inputs",
+    "optimize_output"
+  ],
+  "permissions_required": [
+    "llm:use"
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "text_model": {
+        "type": "string",
+        "default": "deepseek-chat",
+        "description": "使用的文本模型"
+      },
+      "temperature": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 2,
+        "default": 0.7,
+        "description": "生成温度"
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 4000,
+        "default": 1500,
+        "description": "最大生成长度"
+      },
+      "writing_style": {
+        "type": "string",
+        "enum": [
+          "爆款标题党",
+          "种草安利风",
+          "避雷吐槽风",
+          "情感共鸣型",
+          "知识科普类"
+        ],
+        "default": "爆款标题党"
+      },
+      "content_length": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 2000,
+        "default": 500
+      },
+      "auto_emoji": {
+        "type": "boolean",
+        "default": true
+      },
+      "auto_tags": {
+        "type": "boolean",
+        "default": true
+      },
+      "enable_user_memory": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": []
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string",
+        "description": "选题/主题关键词"
+      },
+      "analyze_output": {
+        "type": "object",
+        "properties": {
+          "patterns": {
+            "type": "object"
+          },
+          "insights": {
+            "type": "object"
+          }
+        }
+      },
+      "image_gen_output": {
+        "type": "object",
+        "properties": {
+          "image_details": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "style": {
+            "type": "string"
+          }
+        }
+      },
+      "image_review_feedback": {
+        "type": "string"
+      },
+      "reference": {
+        "type": "object"
+      },
+      "user_memory": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "topic"
+    ]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "word_count": {
+        "type": "integer"
+      },
+      "style_applied": {
+        "type": "string"
+      },
+      "model_used": {
+        "type": "string"
+      },
+      "generation_time_ms": {
+        "type": "integer"
+      }
+    }
+  },
+  "pricing_model": "free",
+  "min_platform_version": "1.0.0",
+  "dependencies": [],
+  "events_subscribes": [
+    "workflow:node_completed:analyze",
+    "workflow:node_completed:image_gen",
+    "workflow:node_completed:image_review"
+  ],
+  "events_emits": [
+    "workflow:node_started:copywrite",
+    "workflow:node_completed:copywrite",
+    "content:generated"
+  ]
+}

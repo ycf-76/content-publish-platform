@@ -227,7 +227,10 @@ def classify_viral_type(notes: list[dict]) -> list[dict]:
 def compute_viral_score(notes: list[dict]) -> list[dict]:
     """综合爆点分排序，优先内容型爆款，粉丝型噪音下沉。
 
-    viral_score = 0.5*rate_percentile + 0.3*viral_percentile + 0.2*likes_percentile
+    viral_score = rate_weight*rate_percentile + viral_weight*viral_percentile + likes_weight*likes_percentile
+    默认权重：rate_weight=0.5, viral_weight=0.3, likes_weight=0.2
+    权重可由 performance_collector 的 T+7 校准自动调整。
+
     对粉丝型爆款施加 0.7 惩罚系数（让大V日常下沉）。
 
     多平台数据兼容：
@@ -236,6 +239,17 @@ def compute_viral_score(notes: list[dict]) -> list[dict]:
     """
     if not notes:
         return notes
+
+    # 从 performance_collector 获取当前权重（支持 T+7 校准后自动更新）
+    try:
+        from app.services.performance_collector import get_current_weights
+        weights = get_current_weights()
+    except ImportError:
+        weights = {"rate_weight": 0.5, "viral_weight": 0.3, "likes_weight": 0.2}
+
+    rate_w = weights.get("rate_weight", 0.5)
+    viral_w = weights.get("viral_weight", 0.3)
+    likes_w = weights.get("likes_weight", 0.2)
 
     rates = [n.get("interaction_rate", 0) or 0 for n in notes]
     virals = [n.get("viral_coefficient", 0) or 0 for n in notes]
@@ -253,8 +267,8 @@ def compute_viral_score(notes: list[dict]) -> list[dict]:
             # weak 信号：rate/viral 都是 0，分位数排名无意义，只用 likes 排序
             base_score = likes_p
         else:
-            # 加权：互动率权重最高（内容引爆信号）
-            base_score = rate_p * 0.5 + viral_p * 0.3 + likes_p * 0.2
+            # 加权：使用可校准的权重
+            base_score = rate_p * rate_w + viral_p * viral_w + likes_p * likes_w
 
         # 粉丝型惩罚：大V日常水文下沉（仅当能分类时才惩罚）
         if n.get("viral_type") == "粉丝型":

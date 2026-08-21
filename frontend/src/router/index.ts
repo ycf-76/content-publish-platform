@@ -15,10 +15,28 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false }
   },
   {
-    path: '/workbench',
+    path: '/workbench/:workflowId?',
     name: 'Workbench',
     component: () => import('@/views/WorkbenchView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/workflow-templates',
+    name: 'WorkflowTemplates',
+    component: () => import('@/views/WorkflowTemplatesView.vue'),
+    meta: { 
+      title: '工作流模板 - 动态编排',
+      requiresAuth: true 
+    }
+  },
+  {
+    path: '/workflow-editor',
+    name: 'WorkflowEditor',
+    component: () => import('@/views/WorkflowEditorView.vue'),
+    meta: { 
+      title: '可视化工作流编辑器',
+      requiresAuth: true 
+    }
   },
   {
     path: '/eco',
@@ -49,6 +67,30 @@ const routes: RouteRecordRaw[] = [
     name: 'CardEditor',
     component: () => import('@/views/CardEditorView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/esther-factory',
+    name: 'EstherFactory',
+    component: () => import('@/views/EstherFactoryView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('@/views/SettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: '设置'
+    }
+  },
+  {
+    path: '/wechat-bot-test',
+    name: 'WeChatBotTest',
+    component: () => import('@/pages/WeChatBotTest.vue'),
+    meta: {
+      requiresAuth: true,
+      title: '微信机器人测试 - Phase 2'
+    }
   }
 ]
 
@@ -62,6 +104,10 @@ router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   if (to.meta.requiresAuth && !token) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
+  } else if (to.name === 'Login' && token && !to.query.force) {
+    const redirect = (to.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workbench'
+    sessionStorage.removeItem('redirect_after_login')
+    next(redirect)
   } else {
     next()
   }

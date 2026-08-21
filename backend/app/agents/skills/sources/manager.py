@@ -124,19 +124,49 @@ async def init_sources() -> None:
     else:
         logger.info("[sources] Tavily disabled (TAVILY_API_KEY not set)")
 
-    # 1.1 知乎 / 微博（基于 Tavily site search，复用同一 API Key）
-    #     无需爬虫、无风控风险，与 TavilySource 共享 client
+    # 1.1 Tavily Site Search 平台群（复用同一 API Key，零风控）
+    #     通过 site:domain 限定搜索范围，走搜索引擎而非直接爬取
+    #     注意：小红书/抖音/Instagram 对搜索引擎做了反索引，site:domain 搜不到内容
+    #     因此用替代策略：搜全网 + 关键词限定，由 AI 改写为目标平台风格
     if tavily_instance is not None:
         try:
             from app.agents.skills.sources.tavily_site_source import TavilySiteSource
 
+            # --- 搜索引擎可索引的中文平台（效果可靠）---
             zhihu = TavilySiteSource("zhihu", "zhihu.com", tavily_instance)
             source_manager.register(zhihu)
 
             weibo = TavilySiteSource("weibo", "weibo.com", tavily_instance)
             source_manager.register(weibo)
+
+            bilibili = TavilySiteSource("bilibili", "bilibili.com", tavily_instance)
+            source_manager.register(bilibili)
+
+            # --- 小红书替代：搜全网穿搭/美妆内容，AI 改写为小红书风格 ---
+            #     xiaohongshu.com 对搜索引擎屏蔽，site: 搜不到笔记
+            #     改搜 163.com / sohu.com / sina.com.cn 等新闻门户的生活方式频道
+            #     这些站点有大量穿搭/美妆/家居内容，且搜索引擎索引完整
+            xhs_alt = TavilySiteSource("xiaohongshu_web", "163.com sohu.com sina.com.cn", tavily_instance)
+            source_manager.register(xhs_alt)
+
+            # --- 抖音替代：搜 36kr.com / ifanr.com 等科技媒体的短视频/热点报道 ---
+            douyin_alt = TavilySiteSource("douyin", "36kr.com ifanr.com jiemian.com", tavily_instance)
+            source_manager.register(douyin_alt)
+
+            # --- 海外生活方式平台 ---
+            pinterest = TavilySiteSource("pinterest", "pinterest.com", tavily_instance)
+            source_manager.register(pinterest)
+
+            # Instagram 对搜索引擎屏蔽，改搜海外时尚媒体
+            insta_alt = TavilySiteSource("instagram", "vogue.com elle.com cosmopolitan.com", tavily_instance)
+            source_manager.register(insta_alt)
+
+            logger.info(
+                f"[sources] Tavily site search platforms registered: "
+                f"zhihu, weibo, bilibili, xiaohongshu_web(alt), douyin(alt), pinterest, instagram(alt)"
+            )
         except Exception as e:
-            logger.error(f"[sources] init TavilySiteSource (zhihu/weibo) failed: {e}")
+            logger.error(f"[sources] init TavilySiteSource platforms failed: {e}")
 
     # 2. Reddit（需 client_id + client_secret）
     if settings.reddit_client_id and settings.reddit_client_secret:

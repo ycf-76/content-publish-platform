@@ -1,8 +1,49 @@
-/* ===== 全局基础样式（Landing/Login 页面使用） ===== */
-/* workbench.css 是完整的灵犀工坊样式系统，包含所有 .mint-* 定义 */
-/* 本文件仅保留 Landing/Login 依赖的视觉类，避免与 workbench.css 布局冲突 */
+/* ===== Pulse Studio 全局设计规范 v1.0 ===== */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* ===== 字体 ===== */
+  --font-sans: 'Inter', -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  --font-display: 'LXGW WenKai', cursive;
+
+  /* ===== 文本色 ===== */
+  --text-primary: #1A1A1A;
+  --text-secondary: #4B4B4B;
+  --text-muted: #9A9A9A;
+
+  /* ===== 背景色（苹果风格高级灰白） ===== */
+  --bg-page: #F5F5F7;
+  --bg-card: #FFFFFF;
+
+  /* ===== 边框 ===== */
+  --border-color: #EDEDED;
+
+  /* ===== 品牌色 ===== */
+  --color-accent: #FF2442;
+  --color-accent-hover: #E01D3A;
+
+  /* ===== 语义色 ===== */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B6CF6;
+
+  /* ===== 字号 ===== */
+  --text-h1: 22px;
+  --text-h2: 18px;
+  --text-h3: 16px;
+  --text-body: 14px;
+  --text-sm: 13px;
+  --text-xs: 12px;
+
+  /* ===== 字重 ===== */
+  --weight-bold: 700;
+  --weight-semibold: 600;
+  --weight-medium: 500;
+  --weight-regular: 400;
+}
 
 * {
   margin: 0;
@@ -11,16 +52,50 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #F7F8FA;
-  color: #111827;
+  font-family: var(--font-sans);
+  background: var(--bg-page);
+  color: var(--text-primary);
   line-height: 1.5;
+  font-size: var(--text-body);
   min-height: 100vh;
 }
 
+/* ===== 胶囊圆角：输入框和按钮 ===== */
+/* 注意：textarea/select 不能进此规则——多行控件被 9999px 全圆角强制裁剪，
+   会导致正文文字四角被圆弧切掉（文案撰写卡片正文不可读的根因） */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+input[type="url"],
+input[type="tel"],
+button,
+.btn,
+[class*="btn-"] {
+  border-radius: 9999px !important;
+}
+
+/* 输入框统一灰色背景（不覆盖 padding，带图标的输入框自行设定） */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+textarea,
+select {
+  background-color: var(--ma-secondary, #EEF0F4);
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #D1D5DB;
+  background-color: var(--ma-secondary, #EEF0F4);
+  box-shadow: none;
+}
+
 .font-cal {
-  font-family: 'LXGW WenKai', 'PingFang SC', cursive;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: var(--weight-bold);
 }
 
 /* 滚动条样式：使用浏览器默认颜色 */

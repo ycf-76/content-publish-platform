@@ -105,14 +105,14 @@ class _MockLLM:
             return dict(resp)
         return {**resp, "reasoning_content": None}
 
-    async def chat(
+    async def _chat_impl(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._pick_response(messages)
 
-    async def stream_chat(
+    async def _stream_chat_impl(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
@@ -161,28 +161,14 @@ def get_deepseek_llm(
         logger.info(f"[mock-mode] LLM 使用 _MockLLM (model={model_val})，不消耗 token")
         return adapter
 
-    try:
-        from app.config import get_settings
-        from app.agents.adapters.deepseek import DeepSeekAdapter
+    # 收敛：具体 adapter 由 ModelRouter 解析（含 api_key 校验与降级）
+    normalized = _normalize_deepseek_model(model_val) if model_val else None
+    from app.core.sandbox.model_router import get_model_router
 
-        s = get_settings()
-        if not s.deepseek_api_key:
-            logger.warning("deepseek_api_key 未配置，LLM 不可用")
-            return None
-        # 兼容前端传入的中文模型名 → DeepSeek 实际 model id
-        model_name = model_val or s.deepseek_model_v3
-        model_name = _normalize_deepseek_model(model_name)
-        adapter = DeepSeekAdapter(
-            api_key=s.deepseek_api_key,
-            base_url=s.deepseek_base_url,
-            model=model_name,
-            temperature=temp_val,
-        )
-        _llm_cache[cache_key] = adapter
-        return adapter
-    except Exception as e:
-        logger.warning(f"DeepSeek adapter init failed: {e}")
-        return None
+    llm = get_model_router().resolve_llm(model=normalized, temperature=temp_val)
+    if llm is not None:
+        _llm_cache[cache_key] = llm
+    return llm
 
 
 def _normalize_deepseek_model(name: str) -> str:

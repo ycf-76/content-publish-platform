@@ -267,7 +267,8 @@ class LoopExecutor(ExecutorBase):
 
         await harness.observer.emit_tool_call_start(context.node_id, tool_name, arguments)
         try:
-            result = await skill.execute(arguments)
+            # 注入 harness.llm，让需要 LLM 的 skill（如 copywrite）能使用；其余 skill 忽略该字段
+            result = await skill.execute({**arguments, "llm": harness.llm})
             summary = _truncate(str(result), 200)
             await harness.observer.emit_tool_call_end(
                 context.node_id, tool_name, True, summary

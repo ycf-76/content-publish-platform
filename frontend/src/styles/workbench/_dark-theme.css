@@ -1,4 +1,4 @@
-﻿﻿/* ===== 鏆楄壊鏄熺┖涓婚 ===== */
+/* ===== 鏆楄壊鏄熺┖涓婚 ===== */
 .mint-shell.dark-theme {
   background: #000000;
   transition: background 0.5s ease;
@@ -16,13 +16,11 @@
   color: #E2E8F0;
 }
 .mint-shell.dark-theme .mint-hero-title,
-.mint-shell.dark-theme .mint-wf-title,
-.mint-shell.dark-theme .mint-logo-title {
+.mint-shell.dark-theme .mint-wf-title {
   color: #A5B4FC;
 }
 .mint-shell.dark-theme .mint-hero-sub,
 .mint-shell.dark-theme .mint-wf-desc,
-.mint-shell.dark-theme .mint-logo-sub,
 .mint-shell.dark-theme .mint-stat-label {
   color: #94A3B8;
 }

@@ -360,6 +360,69 @@ async def _fetch_other_platforms_to_pool(keyword: str, workflow_id: str) -> None
         logger.warning(f"[{workflow_id}] _fetch_other_platforms_to_pool failed: {e}")
 
 
+class _EmptySearchError(Exception):
+    """搜索结果为空（触发 recovery 重试/拓宽关键词）。"""
+
+
+async def _execute_search_with_recovery(
+    workflow_id: str,
+    node_id: str,
+    skill,
+    search_input: dict,
+    timeout: float,
+) -> dict:
+    """执行搜索，并在空结果/异常时走 recovery：原样重试 → 拓宽关键词重试。
+
+    复用 RecoveryLoop（RetryStrategy + BroadenKeywordStrategy），
+    通过 _make_observer 把 recovery_* / circuit_open 事件桥接到 SSE。
+    """
+    from app.agents.core.harness.recovery import (
+        BackoffPolicy,
+        BroadenKeywordStrategy,
+        RecoveryLoop,
+        RetryStrategy,
+    )
+    from app.agents.core.schemas import RecoveryExhaustedError, WorkflowContext
+    from app.agents.harnesses.factory import _make_observer
+
+    observer = _make_observer(workflow_id)
+    recovery = RecoveryLoop(
+        max_attempts=2,
+        strategies=[RetryStrategy(), BroadenKeywordStrategy()],
+        backoff=BackoffPolicy(base_delay=1.0, max_delay=10.0),
+        observer=observer,
+    )
+    context = WorkflowContext(
+        workflow_id=workflow_id,
+        node_id=node_id,
+        user_id="",
+        account_id="",
+    )
+
+    class _AgentStub:
+        agent_id = node_id
+
+    async def _execute(inp: dict, ctx: WorkflowContext) -> dict:
+        result = await asyncio.wait_for(skill.execute(inp), timeout=timeout)
+        if result.get("count", 0) == 0:
+            raise _EmptySearchError(f"搜索 '{inp.get('keyword')}' 无结果")
+        return result
+
+    try:
+        return await recovery.execute_with_recovery(
+            _AgentStub(), search_input, context, _execute
+        )
+    except RecoveryExhaustedError:
+        return {
+            "results": [],
+            "count": 0,
+            "summary": "搜索无结果（已重试并拓宽关键词）",
+            "platform": search_input.get("platform", ""),
+            "_error": "搜索无结果",
+            "_error_type": "no_results",
+        }
+
+
 async def search_node(state: WorkflowState) -> dict:
     """Search node: 直接调 TrendingSearchSkill（不走 LLM Loop，避免依赖 LLM 余额）。
 
@@ -379,6 +442,7 @@ async def search_node(state: WorkflowState) -> dict:
     logger.info(f"[{workflow_id}] {node_id} started (direct skill call, no LLM)")
 
     topic = state.get("topic", "")
+    search_keyword = (state.get("search_keyword") or topic).strip()
     account_id = state.get("account_id", "")
 
     # 用户可在前端配置搜索结果数量（默认 10，避免返回过多浪费资源）
@@ -397,55 +461,26 @@ async def search_node(state: WorkflowState) -> dict:
         skill = TrendingSearchSkill()
 
         # 按用户选择的平台搜索：空=全网并发，非空=指定平台
-        # 整体超时 60s：防止小红书 Playwright 卡死导致搜索无限挂起
-        # 超时后给用户明确反馈，终止工作流
+        # 空结果/超时走 RecoveryLoop：原样重试 → 拓宽关键词重试
         SEARCH_TIMEOUT = 60.0
-        try:
-            output = await asyncio.wait_for(
-                skill.execute({
-                    "keyword": topic,
-                    "limit": search_limit,
-                    "min_interactions": 5,
-                    "time_range": "week",
-                    "platform": search_platform,
-                    "disable_fallback": False,  # 允许热门榜兜底，避免空结果中断流程
-                }),
-                timeout=SEARCH_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            logger.error(
-                f"[{workflow_id}] {node_id} search timeout after {SEARCH_TIMEOUT}s"
-            )
-            output = {
-                "results": [],
-                "count": 0,
-                "summary": f"搜索超时（{int(SEARCH_TIMEOUT)}秒），请稍后重试",
-                "platform": search_platform or "all",
-                "_error": f"搜索超时，已自动终止（{int(SEARCH_TIMEOUT)}秒）",
-                "_error_type": "search_timeout",
-            }
-            await sse_bus.publish(workflow_id, "workflow_error", {
-                "workflow_id": workflow_id,
-                "node_id": node_id,
-                "error_type": "search_timeout",
-                "message": f"搜索超时，已自动终止（{int(SEARCH_TIMEOUT)}秒），请稍后重试",
-                "suggestion": "小红书接口可能较慢或网络不畅，请稍后重试或更换关键词",
-            })
-            await emit_node_event(workflow_id, node_id, "node_status_changed",
-                                   {"status": "error"})
-            await emit_node_event(workflow_id, node_id, "node_completed", output)
-            return {
-                "current_node": node_id,
-                "node_statuses": {node_id: NodeStatus.ERROR.value},
-                "node_outputs": {node_id: output},
-            }
+        search_input = {
+            "keyword": search_keyword,
+            "limit": search_limit,
+            "min_interactions": 5,
+            "time_range": "week",
+            "platform": search_platform,
+            "disable_fallback": False,  # 允许热门榜兜底，避免空结果中断流程
+        }
+        output = await _execute_search_with_recovery(
+            workflow_id, node_id, skill, search_input, SEARCH_TIMEOUT
+        )
 
         searched_platforms = output.get("filter_stats", {}).get("searched_platforms", [])
 
         # 后台 fire-and-forget：仅"全网搜索"时抓取其他平台内容存入选题池
         # 用户指定了具体平台时，尊重指定，不抓其他平台（贯彻"按指定来搜"）
         if not search_platform:
-            asyncio.create_task(_fetch_other_platforms_to_pool(topic, workflow_id))
+            asyncio.create_task(_fetch_other_platforms_to_pool(search_keyword, workflow_id))
 
         output["_model_used"] = "none (xiaohongshu only)"
         output["_duration_ms"] = 0
@@ -462,7 +497,7 @@ async def search_node(state: WorkflowState) -> dict:
         # 空结果：标记 ERROR 终止工作流
         if final_count == 0:
             output["_error"] = (
-                f"小红书搜索关键词 '{topic}' 无结果"
+                f"小红书搜索关键词 '{search_keyword}' 无结果"
                 "，请更换为更通用的小红书常用词后重试"
             )
             output["_error_type"] = "no_results"
@@ -515,7 +550,7 @@ async def search_node(state: WorkflowState) -> dict:
     search_results = output.get("results", []) or []
     if search_results:
         asyncio.create_task(
-            _save_search_results_to_pool(search_results, topic, workflow_id)
+            _save_search_results_to_pool(search_results, search_keyword, workflow_id)
         )
 
     return {

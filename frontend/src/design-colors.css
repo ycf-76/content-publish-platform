@@ -1,0 +1,82 @@
+/*
+ * ===================================
+ *   登录页配色方案 — 蜜桃珊瑚暖色系
+ *   适用于: LoginView.vue
+ * ===================================
+ *
+ * 设计理念：温暖、吸睛、淡而不寡
+ * 从暖白过渡到蜜桃再到柔珊瑚，
+ * 搭配活力橙强调色，整体温暖有活力。
+ *
+ * 色板来源：Tailwind CSS Orange / Amber / Rose 色系
+ */
+
+:root {
+  /* ── 背景渐变 ── */
+  --login-bg-start: #fff7ed;     /* 暖白 (orange-50) */
+  --login-bg-mid: #ffedd5;       /* 蜜桃 (orange-100) */
+  --login-bg-end: #fecdd3;       /* 柔珊瑚 (rose-200) */
+
+  /* ── 主强调色 ── */
+  --login-accent: #f97316;       /* 活力橙 (orange-500) */
+  --login-accent-hover: #ea580c; /* 深橙 (orange-600) */
+  --login-accent-light: #fb923c; /* 浅橙 (orange-400) */
+  --login-accent-soft: #fdba74;  /* 柔橙 (orange-300) */
+
+  /* ── Logo 渐变 ── */
+  --login-logo-start: #fb923c;   /* 浅橙 (orange-400) */
+  --login-logo-end: #f97316;     /* 活力橙 (orange-500) */
+
+  /* ── 焦点光晕 ── */
+  --login-focus-ring: rgba(249, 115, 22, 0.15);
+
+  /* ── 边框 hover ── */
+  --login-border-hover: #fdba74; /* 柔橙 (orange-300) */
+  --login-border-hover-bg: rgba(253, 186, 116, 0.06);
+
+  /* ── 二维码边框 ── */
+  --login-qr-border: rgba(253, 186, 116, 0.3);
+
+  /* ── 中性色（沿用全局） ── */
+  --login-text-primary: #1e293b;
+  --login-text-secondary: #64748b;
+  --login-text-muted: #94a3b8;
+  --login-border-neutral: rgba(148, 163, 184, 0.2);
+  --login-border-neutral-strong: rgba(148, 163, 184, 0.3);
+}
+
+/*
+ * CSS 用法速查（LoginView.vue 中直接复制）:
+ *
+ * 背景:
+ *   background: linear-gradient(160deg, #fff7ed 0%, #ffedd5 35%, #fecdd3 100%);
+ *
+ * Logo:
+ *   background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+ *
+ * 按钮:
+ *   background: #f97316;
+ *   hover: #ea580c;
+ *
+ * 链接/文字:
+ *   color: #f97316;
+ *
+ * 边框 hover:
+ *   border-color: #fdba74;
+ *   background: rgba(253, 186, 116, 0.06);
+ *
+ * 焦点:
+ *   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+ *
+ * 复选框:
+ *   accent-color: #f97316;
+ *
+ * 光标:
+ *   caret-color: #f97316;
+ *
+ * 二维码边框:
+ *   border: 1px solid rgba(253, 186, 116, 0.3);
+ *
+ * 加载动画:
+ *   color: #fdba74;
+ */

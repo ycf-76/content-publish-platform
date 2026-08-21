@@ -7,6 +7,14 @@ class StartWorkflowRequest(BaseModel):
     """Request to start a new workflow."""
 
     topic: str = Field(..., description="Workflow topic")
+    search_keyword: str | None = Field(
+        default=None,
+        description="搜索用关键词；未传时兼容使用 topic",
+    )
+    creative_brief: str = Field(
+        default="",
+        description="用户创作要求；优先级高于热点分析和推荐方向",
+    )
     account_id: str = Field(..., description="XHS account ID")
     # 用户在右侧工作区选择的模型/温度/风格配置（可选，缺省时使用系统默认）
     # 字段说明：
@@ -41,6 +49,18 @@ class WorkflowResponse(BaseModel):
     created_at: str
 
 
+class WorkflowListItem(BaseModel):
+    """Workflow list item (lighter than full response)."""
+
+    workflow_id: str
+    topic: str
+    status: str
+    current_node: str
+    account_id: str
+    created_at: str
+    updated_at: str | None = None
+
+
 class RollbackRequest(BaseModel):
     """Request to rollback to a previous checkpoint."""
 
@@ -51,6 +71,21 @@ class PauseRequest(BaseModel):
     """Request to pause workflow."""
 
     reason: str = Field(default="", description="Pause reason")
+
+
+class ResumeWorkflowRequest(BaseModel):
+    """Request to resume a workflow and optionally choose a direction."""
+
+    selected_direction: int | None = Field(
+        default=None,
+        ge=0,
+        description="analyze 推荐方向索引，从 0 开始",
+    )
+    direction_note: str = Field(
+        default="",
+        max_length=2000,
+        description="用户对所选方向的补充要求",
+    )
 
 
 class UpdateNodeOutputRequest(BaseModel):

@@ -2,10 +2,13 @@ import apiClient from './client'
 
 /** 搜索平台信息（对齐后端 /api/search/platforms） */
 export interface SearchPlatform {
-  name: string         // 平台标识：builtin / hackernews / reddit / xiaohongshu
-  label: string        // 显示名：热门话题 / HackerNews / ...
-  desc: string         // 描述
-  is_default: boolean  // 是否默认平台
+  name: string
+  label: string
+  desc: string
+  is_default: boolean
+  requires_auth: boolean
+  auth_met: boolean
+  locked?: boolean
 }
 
 /** 搜索结果条目 */

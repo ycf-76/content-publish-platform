@@ -1,7 +1,8 @@
-﻿"""SQLAlchemy ORM models (Phase 1 + Phase 1 补漏)."""
+"""SQLAlchemy ORM models (Phase 1 + Phase 1 补漏)."""
 import enum
 import secrets
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, Boolean, func
 from sqlalchemy import JSON
@@ -17,8 +18,13 @@ else:
 
 
 def generate_ulid() -> str:
-    """Generate ULID string (26 chars, time-sortable)."""
-    return secrets.token_urlsafe(16)
+    """Generate real ULID string (26 chars, time-sortable, K-sortable).
+
+    P2-10: 使用 ulid-py 库生成真正的 ULID，保证时间有序。
+    格式：10 字符时间戳 + 16 字符随机部分 = 26 字符 Crockford Base32。
+    """
+    import ulid
+    return str(ulid.new())
 
 
 # ===== Enums =====
@@ -28,6 +34,7 @@ class LoginMethod(enum.StrEnum):
     PLUGIN = "plugin"
     SESSION_REFRESH = "session_refresh"
     QRCODE = "qrcode"
+    EMAIL = "email"
 
 
 class AccountStatus(enum.StrEnum):
@@ -69,6 +76,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nickname: Mapped[str] = mapped_column(String(128), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -117,20 +127,35 @@ class XhsAccount(Base):
 
 
 class Workflow(Base):
-    """Workflow run."""
+    """Workflow run.
+
+    Phase 1: 固定9节点流水线（向后兼容）
+    Phase 2: 支持动态DAG执行（通过definition_id关联工作流定义）
+    """
     __tablename__ = "workflows"
     __table_args__ = (
         Index("ix_workflows_user_id", "user_id"),
         Index("ix_workflows_account_id", "account_id"),
+        Index("ix_workflows_definition_id", "definition_id"),
     )
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
     user_id: Mapped[str] = mapped_column(
         String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    account_id: Mapped[str] = mapped_column(
-        String(26), ForeignKey("xhs_accounts.id", ondelete="CASCADE"), nullable=False
+    account_id: Mapped[str | None] = mapped_column(
+        String(26), ForeignKey("xhs_accounts.id", ondelete="SET NULL"), nullable=True
     )
+    
+    # Phase 2 新增：关联的工作流定义（可选）
+    # 为NULL时表示使用默认的固定流程
+    definition_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("workflow_definitions.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="使用的工作流定义ID（NULL=使用默认流程）"
+    )
+    
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[WorkflowStatus] = mapped_column(
         Enum(WorkflowStatus, native_enum=True, name="workflow_status",
@@ -139,9 +164,18 @@ class Workflow(Base):
         nullable=False,
     )
     current_node_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    
     # D15 30分钟挂起用
     suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # 执行模式
+    execution_mode: Mapped[str] = mapped_column(
+        String(20),
+        default="sequential",
+        comment="执行模式：sequential（顺序）/ dynamic（动态DAG）"
+    )
+    
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -149,6 +183,13 @@ class Workflow(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # 关联关系
+    definition: Mapped[Optional["WorkflowDefinition"]] = relationship(
+        "WorkflowDefinition",
+        back_populates="workflows",
+        foreign_keys=[definition_id],
+    )
 
 # ===== Additional Enums =====
 
@@ -416,6 +457,8 @@ class TopicPoolItem(Base):
         Index("ix_topic_pool_source_keyword", "source_keyword"),
         Index("ix_topic_pool_is_favorited", "is_favorited"),
         Index("ix_topic_pool_created_at", "created_at"),
+        Index("ix_topic_pool_auto_source", "auto_source"),
+        Index("ix_topic_pool_heat_score", "heat_score"),
     )
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
@@ -518,3 +561,350 @@ class AgentMemory(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+
+# ===== Esther Factory 品牌配置 =====
+
+class EstherBrandConfig(Base):
+    """Esther Factory 品牌配置（每用户一行，头像存 base64）。"""
+    __tablename__ = "esther_brand_configs"
+    __table_args__ = (
+        Index("ix_esther_brand_configs_user_id", "user_id", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    brand_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    gender: Mapped[str] = mapped_column(String(10), default="man", nullable=False)
+    primary: Mapped[str] = mapped_column(String(7), default="#2B7FD8", nullable=False)
+    accent: Mapped[str] = mapped_column(String(7), default="#F4D758", nullable=False)
+    spot: Mapped[str] = mapped_column(String(7), default="#E84A5F", nullable=False)
+    avatar_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_content_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EstherTemplate(Base):
+    """Esther Factory 模板（每用户每模板一行）。"""
+    __tablename__ = "esther_templates"
+    __table_args__ = (
+        Index("ix_esther_templates_user_id", "user_id"),
+        Index("ix_esther_templates_user_tplid", "user_id", "template_id", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    template_html: Mapped[str] = mapped_column(Text, nullable=False)
+    meta_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    scene: Mapped[str] = mapped_column(String(32), default="cards", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PublishedContentPerformance(Base):
+    """发布内容的表现记录（T+7 回采）。
+
+    分析智能体优化方案 阶段4：反馈闭环。
+    记录每次发布内容采用了哪个分析模式/选题方向，
+    7天后回采实际表现数据，用于校准 viral_score 权重。
+    """
+    __tablename__ = "published_content_performance"
+    __table_args__ = (
+        Index("ix_pcp_workflow_id", "workflow_id"),
+        Index("ix_pcp_published_at", "published_at"),
+        Index("ix_pcp_collected", "collected_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(String(26), nullable=False)
+    published_note_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    topic: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    selected_pattern: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    selected_direction: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    collected_likes: Mapped[int] = mapped_column(Integer, default=0)
+    collected_collects: Mapped[int] = mapped_column(Integer, default=0)
+    collected_comments: Mapped[int] = mapped_column(Integer, default=0)
+    collected_shares: Mapped[int] = mapped_column(Integer, default=0)
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    performance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_replicated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AnalysisWeightHistory(Base):
+    """分析权重的历史记录（用于追踪权重演变）。
+
+    每次权重校准后记录旧值→新值，可追溯 viral_score 权重的演变过程。
+    """
+    __tablename__ = "analysis_weight_history"
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    weight_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    old_value: Mapped[float] = mapped_column(Float, nullable=False)
+    new_value: Mapped[float] = mapped_column(Float, nullable=False)
+    adjustment_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# ===== Phase 2: 动态工作流编排支持 =====
+
+class WorkflowDefinitionStatus(enum.StrEnum):
+    """工作流定义状态."""
+    DRAFT = "draft"                # 草稿
+    ACTIVE = "active"              # 启用
+    ARCHIVED = "archived"          # 归档
+    DEPRECATED = "deprecated"      # 已废弃
+
+
+class WorkflowDefinition(Base):
+    """工作流定义模板（用户编排的可复用流程）.
+
+    存储用户通过可视化编辑器创建的工作流DAG图定义，
+    支持保存为模板、分享给团队、多次使用。
+
+    与现有 Workflow 的关系：
+    - WorkflowDefinition 是"模板/配方"
+    - Workflow 是"实例/执行记录"
+    - 一个 Definition 可以生成多个 Workflow 实例
+    """
+    __tablename__ = "workflow_definitions"
+    __table_args__ = (
+        Index("ix_workflow_definitions_user_id", "user_id"),
+        Index("ix_workflow_definitions_category", "category"),
+        Index("ix_workflow_definitions_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(__import__('uuid').uuid4()))
+
+    # 基本信息
+    name: Mapped[str] = mapped_column(String(100), nullable=False, comment="工作流名称")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")
+    icon: Mapped[str] = mapped_column(String(10), default="⚙️", comment="图标emoji")
+    category: Mapped[str] = mapped_column(String(50), default="custom", comment="分类")
+    version: Mapped[int] = mapped_column(Integer, default=1, comment="版本号")
+
+    # 所属用户
+    user_id: Mapped[str] = mapped_column(String(50), nullable=False, comment="创建者ID")
+
+    # DAG图定义（核心字段）
+    graph_definition: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="""
+        工作流图定义（JSON格式），包含：
+        
+        {
+            "nodes": [
+                {
+                    "id": "node_1",
+                    "type": "ai_copywrite",
+                    "config": {"model": "deepseek-chat"},
+                    "position": {"x": 100, "y": 200}
+                }
+            ],
+            "edges": [
+                {
+                    "id": "edge_1",
+                    "source": "node_1",
+                    "target": "node_2",
+                    "sourceHandle": "output-1",
+                    "targetHandle": "input-1",
+                    "condition": null,
+                    "label": ""
+                }
+            ]
+        }
+        """
+    )
+
+    # 状态和可见性
+    status: Mapped[WorkflowDefinitionStatus] = mapped_column(
+        Enum(WorkflowDefinitionStatus, native_enum=True, name="wf_def_status"),
+        default=WorkflowDefinitionStatus.DRAFT,
+        nullable=False,
+        comment="状态：草稿/启用/归档/废弃"
+    )
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否为系统内置模板")
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否公开分享")
+
+    # 统计信息
+    usage_count: Mapped[int] = mapped_column(Integer, default=0, comment="使用次数")
+    success_count: Mapped[int] = mapped_column(Integer, default=0, comment="成功执行次数")
+    avg_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="平均执行时长(ms)")
+
+    # 元数据
+    tags: Mapped[list | None] = mapped_column(JSONB, nullable=True, comment="标签列表")
+    author_name: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="作者显示名")
+    thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="缩略图URL")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # 关联关系
+    workflows: Mapped[list["Workflow"]] = relationship(
+        "Workflow",
+        back_populates="definition",
+        foreign_keys="Workflow.definition_id",
+        lazy="dynamic",
+    )
+
+
+class WorkflowEdge(Base):
+    """工作流边关系表（用于动态DAG执行）.
+
+    记录节点之间的连接关系，支持：
+    - 条件分支（condition表达式）
+    - 多输入多输出
+    - 数据映射
+
+    此表主要用于运行时快速查询节点的上下游关系，
+    图的完整定义仍存储在 WorkflowDefinition.graph_definition 中。
+    """
+    __tablename__ = "workflow_edges"
+    __table_args__ = (
+        Index("ix_workflow_edges_workflow_id", "workflow_id"),
+        Index("ix_workflow_edges_source", "source_node_id"),
+        Index("ix_workflow_edges_target", "target_node_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(__import__('uuid').uuid4()))
+    workflow_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workflows.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="所属工作流实例ID"
+    )
+
+    source_node_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workflow_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="源节点ID"
+    )
+    target_node_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workflow_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="目标节点ID"
+    )
+
+    source_handle: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="源节点的输出端口标识"
+    )
+    target_handle: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="目标节点的输入端口标识"
+    )
+
+    condition: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="""
+        条件表达式（可选）。
+        
+        为空表示无条件执行；
+        有值时只有表达式结果为true才执行目标节点。
+        
+        示例：
+        - "${score} > 80"  (上游输出score>80才继续)
+        - "${status} == 'approved'"  (审核通过才发布)
+        
+        表达式语法：简单的JavaScript-like表达式，
+        变量引用上游节点的输出数据。
+        """
+    )
+
+    label: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="边的标签（显示在连线上）"
+    )
+    
+    data_mapping: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="""
+        数据映射规则（可选）。
+        
+        用于将源节点的输出字段映射到目标节点的输入字段。
+        
+        示例：
+        {
+            "title": "${source.title}",
+            "content": "${source.content}",
+            "custom_field": "${source.output.keywords[0]}"
+        }
+        """
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ===== Chat 驱动 Agent：会话与消息 =====
+
+class ChatSession(Base):
+    """Chat 会话（Chat 驱动 Agent 的多轮对话容器）。
+
+    一个 Session 可触发多个 Workflow；关系通过 ChatMessage.agent_meta.workflow_id
+    间接建立，不在这里加 workflow 外键。
+    """
+    __tablename__ = "chat_sessions"
+    __table_args__ = (
+        Index("ix_chat_sessions_user_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), default="新会话", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ChatMessage(Base):
+    """Chat 消息（一条消息可选关联一个 workflow）。"""
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("ix_chat_messages_session_id", "session_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    session_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # user / assistant / system
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # agent_meta 存 workflow_id / intent / workflow_status / steps 等，与 PRD v2 的
+    # ChatMessage.agentMeta 对齐，工作流关系通过 agent_meta.workflow_id 间接建立。
+    agent_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

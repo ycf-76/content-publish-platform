@@ -12,7 +12,7 @@
         <span>返回工作台</span>
       </button>
       <div class="eco-title-block">
-        <h1 class="eco-title">灵犀生态</h1>
+        <h1 class="eco-title">Pulse Studio</h1>
         <p class="eco-subtitle">覆盖主流社媒与浏览器 · 一站式内容分发网络</p>
       </div>
       <div class="eco-header-actions">
@@ -43,21 +43,6 @@
       <span>移动鼠标控制旋转方向 · 球体自动公转</span>
     </footer>
 
-    <!-- 右下角小红书风格 CTA 卡片 -->
-    <div class="eco-cta-card">
-      <div class="eco-cta-header">
-        <span class="eco-cta-tag">小红书同步</span>
-        <span class="eco-cta-live">实时</span>
-      </div>
-      <div class="eco-cta-title">一键分发到全平台</div>
-      <div class="eco-cta-desc">小红书 · 抖音 · 微博 · B站 · 知乎</div>
-      <button class="eco-cta-btn" @click="goWorkbench">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-        </svg>
-        <span>立即创作</span>
-      </button>
-    </div>
   </main>
 </template>
 
@@ -85,17 +70,6 @@ function goWorkbench() {
   router.push('/workbench')
 }
 
-/* ============ 小红书风格点赞按钮 ============ */
-const SK_LIKE = 'eco_liked'
-const SK_LIKE_COUNT = 'eco_like_count'
-const liked = ref(localStorage.getItem(SK_LIKE) === '1')
-const likeCount = ref(parseInt(localStorage.getItem(SK_LIKE_COUNT) || '2847', 10))
-function toggleLike() {
-  liked.value = !liked.value
-  localStorage.setItem(SK_LIKE, liked.value ? '1' : '0')
-  likeCount.value += liked.value ? 1 : -1
-  localStorage.setItem(SK_LIKE_COUNT, String(likeCount.value))
-}
 
 /* ============ 粒子背景 ============ */
 const particlesCanvas = ref<HTMLCanvasElement | null>(null)
@@ -294,7 +268,7 @@ onBeforeUnmount(() => {
   border: 1px solid #E5E7EB;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.8);
-  color: #374151;
+  color: #6B7280;
   font-size: 13px;
   cursor: pointer;
   backdrop-filter: blur(8px);
@@ -339,7 +313,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   border: 1px solid #E5E7EB;
   background: rgba(255, 255, 255, 0.8);
-  color: #374151;
+  color: #6B7280;
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition: all 0.2s ease;

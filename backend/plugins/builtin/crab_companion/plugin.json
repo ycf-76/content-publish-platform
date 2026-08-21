@@ -1,0 +1,34 @@
+{
+  "id": "crab-companion",
+  "name": "螃蟹伴侣",
+  "version": "1.0.1",
+  "description": "一只躲在输入框后面的小螃蟹，眼睛会跟随鼠标移动，点击可以互动。给聊天页面增添趣味。",
+  "category": "ui_theme",
+  "author": {
+    "name": "Platform Team",
+    "email": "team@example.com"
+  },
+  "entry_point": "crab_companion.py",
+  "display_icon": "🦀",
+  "display_color": "#E8655A",
+  "pricing_model": "free",
+  "capabilities": ["ui_overlay", "mouse_tracking", "user_interaction"],
+  "permissions_required": [],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "crab_size": {
+        "type": "number",
+        "default": 48,
+        "description": "螃蟹大小（像素）"
+      },
+      "speech_enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用气泡对话"
+      }
+    }
+  },
+  "is_builtin": true,
+  "is_enabled_by_default": false
+}

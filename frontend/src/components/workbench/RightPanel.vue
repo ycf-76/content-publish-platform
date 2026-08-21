@@ -19,8 +19,11 @@
       <!-- 卡片头部：标题 + 收起按钮 -->
       <div class="mint-config-card-header">
         <div class="mint-config-card-title">
-          <i data-lucide="sliders-horizontal" style="width:16px; height:16px; color:#FF2442;"></i>
-          配置中心
+          <span class="mint-config-icon"><i data-lucide="sliders-horizontal" style="width:16px; height:16px;"></i></span>
+          <div class="mint-config-card-title-text">
+            <div class="mint-config-card-title-name">配置中心</div>
+            <div class="mint-config-card-title-sub">模型、风格与发布参数</div>
+          </div>
         </div>
         <button class="mint-config-collapse-btn" @click="toggleRightPanel" title="收起右侧面板" aria-label="收起右侧面板">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -32,20 +35,16 @@
       <!-- Section 1: 模型选择 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <i data-lucide="cpu" style="width:15px; height:15px; color:#FF2442;"></i>
+          <span class="mint-config-section-icon mint-config-section-icon-model"><i data-lucide="cpu" style="width:14px; height:14px;"></i></span>
           模型选择
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">文本生成模型</label>
-          <select class="mint-select" v-model="selectedTextModel">
-            <option v-for="m in TEXT_MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
-          </select>
+          <MintSelect v-model="selectedTextModel" :options="textModelOptions" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">图片生成模型</label>
-          <select class="mint-select" v-model="selectedImageModel">
-            <option v-for="m in IMAGE_MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
-          </select>
+          <MintSelect v-model="selectedImageModel" :options="imageModelOptions" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">温度参数</label>
@@ -56,16 +55,14 @@
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">搜索结果数量</label>
-          <select class="mint-select" v-model.number="selectedSearchLimit">
-            <option v-for="n in SEARCH_LIMIT_OPTIONS" :key="n" :value="n">{{ n }} 条</option>
-          </select>
+          <MintSelect v-model="selectedSearchLimit" :options="searchLimitOptions" />
         </div>
       </section>
 
       <!-- Section 2: 风格参数 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <i data-lucide="palette" style="width:15px; height:15px; color:#7C3AED;"></i>
+          <span class="mint-config-section-icon mint-config-section-icon-style"><i data-lucide="palette" style="width:14px; height:14px;"></i></span>
           风格参数
           <span style="margin-left:auto; font-size: 15px; color:#6B7280; cursor:pointer;" @click="refreshSkills" title="刷新 Skill 列表（用于加载新装入的第三方插件）">
             <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i>
@@ -73,27 +70,19 @@
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">分析 Skill</label>
-          <select class="mint-select" v-model="selectedAnalyzeSkill" :disabled="skillsLoading">
-            <option v-for="s in analyzeSkills" :key="s.name" :value="s.name" :title="s.description">{{ s.display_name }}</option>
-          </select>
+          <MintSelect v-model="selectedAnalyzeSkill" :options="analyzeSkillOptions" :disabled="skillsLoading" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">图片 Skill</label>
-          <select class="mint-select" v-model="selectedImageGenSkill" :disabled="skillsLoading">
-            <option v-for="s in imageGenSkills" :key="s.name" :value="s.name" :title="s.description">{{ s.display_name }}</option>
-          </select>
+          <MintSelect v-model="selectedImageGenSkill" :options="imageGenSkillOptions" :disabled="skillsLoading" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">文案 Skill</label>
-          <select class="mint-select" v-model="selectedCopywriteSkill" :disabled="skillsLoading">
-            <option v-for="s in copywriteSkills" :key="s.name" :value="s.name" :title="s.description">{{ s.display_name }}</option>
-          </select>
+          <MintSelect v-model="selectedCopywriteSkill" :options="copywriteSkillOptions" :disabled="skillsLoading" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">审核 Skill</label>
-          <select class="mint-select" v-model="selectedAuditSkill" :disabled="skillsLoading">
-            <option v-for="s in auditSkills" :key="s.name" :value="s.name" :title="s.description">{{ s.display_name }}</option>
-          </select>
+          <MintSelect v-model="selectedAuditSkill" :options="auditSkillOptions" :disabled="skillsLoading" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">文案长度</label>
@@ -119,16 +108,12 @@
       <!-- Section 3: 发布设置 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <i data-lucide="rocket" style="width:15px; height:15px; color:#D97706;"></i>
+          <span class="mint-config-section-icon mint-config-section-icon-publish"><i data-lucide="rocket" style="width:14px; height:14px;"></i></span>
           发布设置
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">发布账号</label>
-          <select class="mint-select">
-            <option>@夏日穿搭日记</option>
-            <option>@生活美学研究所</option>
-            <option>@好物分享家</option>
-          </select>
+          <MintSelect v-model="selectedAccount" :options="accountOptions" />
         </div>
         <div class="mint-config-row">
           <label class="mint-config-label">定时发布</label>
@@ -145,25 +130,25 @@
       <!-- Section 4: 本周数据 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <i data-lucide="trending-up" style="width:15px; height:15px; color:#2563EB;"></i>
+          <span class="mint-config-section-icon mint-config-section-icon-stats"><i data-lucide="trending-up" style="width:14px; height:14px;"></i></span>
           本周数据
         </div>
         <div class="mint-config-stats">
           <div class="mint-config-stat-row">
             <span class="mint-config-stat-label">发布篇数</span>
-            <span class="mint-config-stat-val">12</span>
+            <span class="mint-config-stat-val">{{ weeklyStats.published_count }}</span>
           </div>
           <div class="mint-config-stat-row">
-            <span class="mint-config-stat-label">总曝光量</span>
-            <span class="mint-config-stat-val">23.4w</span>
+            <span class="mint-config-stat-label">创建工作流</span>
+            <span class="mint-config-stat-val">{{ weeklyStats.total_workflows }}</span>
           </div>
           <div class="mint-config-stat-row">
-            <span class="mint-config-stat-label">平均互动率</span>
-            <span class="mint-config-stat-val">8.7%</span>
+            <span class="mint-config-stat-label">完成率</span>
+            <span class="mint-config-stat-val">{{ weeklyStats.completed_rate }}%</span>
           </div>
           <div class="mint-config-stat-row">
-            <span class="mint-config-stat-label">新增粉丝</span>
-            <span class="mint-config-stat-val">+347</span>
+            <span class="mint-config-stat-label">进行中</span>
+            <span class="mint-config-stat-val">{{ weeklyStats.active_count }}</span>
           </div>
         </div>
       </section>
@@ -174,6 +159,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { workflowApi, type SkillMeta } from '@/api/workflow'
+import MintSelect from './MintSelect.vue'
 
 const props = defineProps<{
   isSidebarCollapsed: boolean
@@ -249,20 +235,33 @@ function stopResize() {
 const TEXT_MODEL_OPTIONS = [
   { label: 'DeepSeek Chat（deepseek-chat）', value: 'deepseek-chat' },
   { label: 'DeepSeek R1（deepseek-reasoner）', value: 'deepseek-reasoner' },
-  { label: '测试模式 · 不消耗 token（mock-chat）', value: 'mock-chat' },
-  { label: '测试模式 · R1（mock-reasoner）', value: 'mock-reasoner' },
 ] as const
 const IMAGE_MODEL_OPTIONS = [
   { label: '通义万相 wanx-v1', value: 'wanx-v1' },
-  { label: '测试模式 · 不消耗 token（mock-image）', value: 'mock-image' },
 ] as const
 const SEARCH_LIMIT_OPTIONS = [5, 10, 15, 20] as const
+
+const textModelOptions = computed(() => TEXT_MODEL_OPTIONS.map(m => ({ label: m.label, value: m.value })))
+const imageModelOptions = computed(() => IMAGE_MODEL_OPTIONS.map(m => ({ label: m.label, value: m.value })))
+const searchLimitOptions = computed(() => SEARCH_LIMIT_OPTIONS.map(n => ({ label: `${n} 条`, value: n })))
+
+const selectedAccount = ref('@夏日穿搭日记')
+const accountOptions = [
+  { label: '@夏日穿搭日记', value: '@夏日穿搭日记' },
+  { label: '@生活美学研究所', value: '@生活美学研究所' },
+  { label: '@好物分享家', value: '@好物分享家' },
+]
 
 const copywriteSkills = ref<SkillMeta[]>([])
 const imageGenSkills = ref<SkillMeta[]>([])
 const analyzeSkills = ref<SkillMeta[]>([])
 const auditSkills = ref<SkillMeta[]>([])
 const skillsLoading = ref(false)
+
+const copywriteSkillOptions = computed(() => copywriteSkills.value.map(s => ({ label: s.display_name, value: s.name, title: s.description })))
+const imageGenSkillOptions = computed(() => imageGenSkills.value.map(s => ({ label: s.display_name, value: s.name, title: s.description })))
+const analyzeSkillOptions = computed(() => analyzeSkills.value.map(s => ({ label: s.display_name, value: s.name, title: s.description })))
+const auditSkillOptions = computed(() => auditSkills.value.map(s => ({ label: s.display_name, value: s.name, title: s.description })))
 
 const selectedTextModel = ref<string>('deepseek-chat')
 const selectedImageModel = ref<string>('wanx-v1')
@@ -277,6 +276,13 @@ const contentLength = ref<number>(300)
 const autoEmoji = ref<boolean>(true)
 const autoTags = ref<boolean>(true)
 const autoPublish = ref<boolean>(true)
+
+const weeklyStats = ref({
+  published_count: 0,
+  total_workflows: 0,
+  completed_rate: 0,
+  active_count: 0,
+})
 
 const temperatureDisplay = computed(() => (temperature.value / 100).toFixed(2))
 
@@ -375,5 +381,99 @@ function toggleSwitchClass(e: Event) {
 
 onMounted(() => {
   loadSkills()
+  loadWeeklyStats()
 })
+
+async function loadWeeklyStats() {
+  try {
+    const data = await workflowApi.getWeeklyStats()
+    weeklyStats.value = {
+      published_count: data.published_count ?? 0,
+      total_workflows: data.total_workflows ?? 0,
+      completed_rate: Math.round((data.completed_rate ?? 0) * 100),
+      active_count: data.active_count ?? 0,
+    }
+  } catch (e: any) {
+    console.error('[RightPanel] load weekly stats failed:', e)
+  }
+}
 </script>
+
+<style scoped>
+.mint-config-card {
+  position: relative;
+  border-radius: 12px;
+}
+
+/* 顶部品牌色带，和主工作流卡片外壳一致 */
+.mint-config-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #FF2442, #FF6B81, #FF2442);
+  border-radius: 12px 12px 0 0;
+  z-index: 1;
+}
+
+.mint-config-card-title {
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0;
+}
+
+.mint-config-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #FEF2F2;
+  color: #FF2442;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mint-config-card-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mint-config-card-title-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.3;
+}
+
+.mint-config-card-title-sub {
+  font-size: 12px;
+  color: #94A3B8;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+/* Section 标题图标容器，与工作流节点图标同语言 */
+.mint-config-section-title {
+  gap: 8px;
+}
+
+.mint-config-section-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mint-config-section-icon-model { background: #EFF6FF; color: #3B82F6; }
+.mint-config-section-icon-style { background: #F5F3FF; color: #7C3AED; }
+.mint-config-section-icon-publish { background: #FFF7ED; color: #D97706; }
+.mint-config-section-icon-stats { background: #ECFDF5; color: #10B981; }
+</style>

@@ -1,4 +1,4 @@
-﻿"""Workflow lifecycle event helpers.
+"""Workflow lifecycle event helpers.
 
 Emits workflow-level SSE events following protocol Ch.5.
 """

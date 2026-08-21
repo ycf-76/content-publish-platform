@@ -216,8 +216,11 @@ class MonitorAgent:
             await session.commit()
             return {"fetched": 0, "new": 0, "updated": 0, "skipped": 0, "failed": 0}
 
-        # 2. 预加载池中所有指纹（MVP：池容量 ≤200，内存比对可接受）
+        # 2. 预加载池中近 7 天的指纹（减少内存占用）
         existing_fps = await self._load_existing_fingerprints(session)
+
+        # 2.5 LLM 分类缓存：同一批次中相似内容共享分类结果，避免重复调 LLM
+        classify_cache: list[tuple[str, dict]] = []  # [(fingerprint, dims)]
 
         # 3. 逐条处理
         for tc in raw_items:
@@ -241,8 +244,15 @@ class MonitorAgent:
                     update_count += 1
                     continue
 
-                # LLM 三维分类
-                dims = await _classify_with_llm(f"{tc.title} {tc.summary or tc.content}")
+                # LLM 三维分类（先查批次内缓存，命中则跳过 LLM 调用）
+                dims: dict | None = None
+                for cached_fp, cached_dims in classify_cache:
+                    if hamming_distance(fp, cached_fp) <= settings.simhash_hamming_threshold:
+                        dims = cached_dims
+                        break
+                if dims is None:
+                    dims = await _classify_with_llm(f"{tc.title} {tc.summary or tc.content}")
+                    classify_cache.append((fp, dims))
 
                 # 评分（TrendingContent 无 collects 字段，置 0；platform 用于动态基准）
                 raw_metrics = {
@@ -254,6 +264,14 @@ class MonitorAgent:
                 score = self.scorer.compute_heat_score(raw_metrics, published, platform=tc.platform)
 
                 if self.scorer.should_pool(score):
+                    local_cover = tc.cover_img or None
+                    if local_cover:
+                        try:
+                            from app.services.image_store import cache_cover_image
+                            local_cover = await cache_cover_image(tc.content_id, local_cover)
+                        except Exception as img_err:
+                            logger.warning(f"MonitorAgent 封面图下载失败: {img_err}")
+
                     obj = TopicPoolItem(
                         platform=tc.platform,
                         title=tc.title[:500],
@@ -264,7 +282,7 @@ class MonitorAgent:
                         collects=0,
                         comments=tc.comments,
                         shares=tc.shares,
-                        cover_img=tc.cover_img or None,
+                        cover_img=local_cover,
                         source_keyword="[monitor]",
                         auto_source="monitor",
                         simhash_fingerprint=fp,
@@ -293,6 +311,25 @@ class MonitorAgent:
             f"MonitorAgent 完成: fetched={fetched} new={new_count} "
             f"updated={update_count} skipped={skip_count} failed={fail_count}"
         )
+
+        # 推送全局通知（有新内容时才推送，避免空通知打扰用户）
+        if new_count > 0:
+            try:
+                from app.services.notification_bus import notification_bus
+                await notification_bus.publish(
+                    "topic_pool_monitor",
+                    {
+                        "fetched": fetched,
+                        "new": new_count,
+                        "updated": update_count,
+                        "skipped": skip_count,
+                        "failed": fail_count,
+                        "message": f"选题池监控完成，发现 {new_count} 条新内容",
+                    },
+                )
+            except Exception as notify_err:
+                logger.warning(f"MonitorAgent 通知推送失败: {notify_err}")
+
         return {
             "fetched": fetched,
             "new": new_count,
@@ -318,9 +355,15 @@ class MonitorAgent:
 
     @staticmethod
     async def _load_existing_fingerprints(session: AsyncSession) -> list[tuple[str, str]]:
-        """预加载池中所有 (id, simhash_fingerprint)。"""
+        """预加载池中近 7 天的 (id, simhash_fingerprint)，减少内存占用。"""
+        from datetime import timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         result = await session.execute(
-            select(TopicPoolItem.id, TopicPoolItem.simhash_fingerprint)
+            select(TopicPoolItem.id, TopicPoolItem.simhash_fingerprint).where(
+                TopicPoolItem.simhash_fingerprint.is_not(None),
+                TopicPoolItem.created_at >= cutoff,
+            )
         )
         return [(row[0], row[1] or "") for row in result.all()]
 
@@ -337,8 +380,8 @@ class MonitorAgent:
                 return cid
         return None
 
-    @staticmethod
     async def _update_metrics(
+        self,
         session: AsyncSession,
         item_id: str,
         tc: TrendingContent,
@@ -358,5 +401,5 @@ class MonitorAgent:
             "comments": tc.comments,
             "shares": tc.shares,
         }
-        obj.heat_score = ScoringAgent().compute_heat_score(raw_metrics, published_at, platform=obj.platform)
-        obj.heat_status = ScoringAgent().decide_heat_status(obj.heat_score, published_at)
+        obj.heat_score = self.scorer.compute_heat_score(raw_metrics, published_at, platform=obj.platform)
+        obj.heat_status = self.scorer.decide_heat_status(obj.heat_score, published_at)

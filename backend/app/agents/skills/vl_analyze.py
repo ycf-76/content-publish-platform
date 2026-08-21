@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from app.agents.skills.base import Skill
+from app.agents.skills.registry import register
 
 if TYPE_CHECKING:
     from app.agents.adapters.llm_base import LLMProtocol
@@ -34,6 +35,7 @@ class VLAnalyzeOutput(BaseModel):
     color_palette: list[str] = Field(default_factory=list, description="Detected colors")
 
 
+@register
 class VLAnalyzeSkill(Skill):
     """VL analyze skill using Qwen-VL.
 
@@ -41,6 +43,7 @@ class VLAnalyzeSkill(Skill):
     Analyzes and discards after use.
     """
 
+    node_type = "analyze"
     name = "vl_analyze"
     description = "Analyze image with Qwen-VL"
     input_schema = VLAnalyzeInput

@@ -22,9 +22,18 @@ async def publish_node(state: WorkflowState) -> dict:
     copywrite = state.get("node_outputs", {}).get("copywrite", {})
     image_gen = state.get("node_outputs", {}).get("image_gen", {})
     image_review = state.get("node_outputs", {}).get("image_review", {})
+    topic = state.get("topic", "")
     harness_input = {
-        "title": final_review.get("title") or copywrite.get("title", ""),
-        "content": final_review.get("content") or copywrite.get("content", ""),
+        "title": (
+            final_review.get("title")
+            or copywrite.get("title")
+            or (topic if topic else "")
+        ),
+        "content": (
+            final_review.get("content")
+            or copywrite.get("content")
+            or ""
+        ),
         # 候选模式下 image_gen.images_base64 为空，完整套装在 image_review.images_base64
         "images_base64": (
             final_review.get("images_base64")

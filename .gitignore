@@ -63,3 +63,6 @@ pw-browsers/
 # Temp files
 *.tmp
 *.bak
+
+# Scratch scripts (backend root)
+backend/_*.py

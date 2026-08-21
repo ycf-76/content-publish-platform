@@ -6,6 +6,7 @@ Implements:
 - Last-Event-ID continuation
 - 15s heartbeat
 - DB persistence for replay
+- P0: 终态事件后延迟清理，防止内存泄漏 OOM
 """
 
 from __future__ import annotations
@@ -22,6 +23,18 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+_TERMINAL_TYPES = frozenset({
+    'workflow_completed', 'workflow_error', 'workflow_terminated',
+    'workflow_failed', 'workflow_suspended', 'workflow_cancelled',
+})
+
+_CLEANUP_DELAY_SECONDS = 300
+
+# Chat 驱动 Agent 适配层新增事件类型（PRD v2 3.3）。SSE 总线本身按字符串接受
+# 任意事件类型，这里只做显式声明，便于引用与文档对齐。
+EVENT_INTENT_PARSED = 'intent_parsed'
+EVENT_AGENT_CHAT_ERROR = 'agent_chat_error'
+
 
 class SSEEvent(BaseModel):
     """SSE event structure."""
@@ -36,6 +49,10 @@ class SSEEventBus:
     """SSE event bus for workflow event streaming.
 
     Singleton pattern: one instance per workflow_id.
+
+    P0: 终态事件发布后，延迟 CLEANUP_DELAY_SECONDS 秒清理该 workflow 的
+    事件历史和订阅者，防止长期运行导致内存无限增长（OOM）。
+    延迟清理给断线重连留出时间窗口。
     """
 
     _instance: SSEEventBus | None = None
@@ -86,7 +103,48 @@ class SSEEventBus:
             await queue.put(event)
 
         logger.debug(f"[{workflow_id}] Published {event_type}: {event_id}")
+
+        # P0: 终态事件 → 延迟清理，防止内存泄漏
+        if event_type in _TERMINAL_TYPES:
+            self._schedule_cleanup(workflow_id)
+
         return event_id
+
+    def _schedule_cleanup(self, workflow_id: str) -> None:
+        """终态事件后延迟清理事件历史和订阅者。
+
+        延迟 CLEANUP_DELAY_SECONDS 秒（默认5分钟），给断线重连留时间。
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            loop.call_later(
+                _CLEANUP_DELAY_SECONDS,
+                self._cleanup_workflow,
+                workflow_id,
+            )
+            logger.info(
+                f"[{workflow_id}] cleanup scheduled in {_CLEANUP_DELAY_SECONDS}s "
+                f"after terminal event"
+            )
+        except RuntimeError:
+            logger.warning(f"[{workflow_id}] no event loop, cleanup will not be scheduled")
+
+    def _cleanup_workflow(self, workflow_id: str) -> None:
+        """清理指定 workflow 的事件历史和订阅者。"""
+        history_count = len(self._event_history.get(workflow_id, []))
+        sub_count = len(self._subscribers.get(workflow_id, set()))
+
+        self._event_history.pop(workflow_id, None)
+        self._subscribers.pop(workflow_id, None)
+
+        logger.info(
+            f"[{workflow_id}] SSE cleanup: removed {history_count} history events, "
+            f"{sub_count} subscriber queues"
+        )
+
+    def cleanup_workflow(self, workflow_id: str) -> None:
+        """公开接口：手动清理指定 workflow 的 SSE 数据。"""
+        self._cleanup_workflow(workflow_id)
 
     async def subscribe(
         self,
@@ -105,9 +163,6 @@ class SSEEventBus:
         queue: asyncio.Queue = asyncio.Queue()
         self._subscribers[workflow_id].add(queue)
 
-        # 终态事件类型：收到后主动结束订阅，让前端流自然 done，避免前端 abort 触发 ERR_ABORTED
-        terminal_types = {'workflow_completed', 'workflow_error', 'workflow_terminated'}
-
         try:
             # Replay missed events.
             # - 带 last_event_id：从该 id 之后 replay（断线重连场景）
@@ -123,7 +178,7 @@ class SSEEventBus:
                 replay_list = list(history)
             for event in replay_list:
                 yield self._format_sse(event)
-                if event.event_type in terminal_types:
+                if event.event_type in _TERMINAL_TYPES:
                     logger.debug(
                         f"[{workflow_id}] Stream ended after replaying terminal event {event.event_type}"
                     )
@@ -138,7 +193,7 @@ class SSEEventBus:
                     heartbeat_counter = 0
                     yield self._format_sse(event)
                     # 终态事件：结束订阅，关闭 SSE 流
-                    if event.event_type in terminal_types:
+                    if event.event_type in _TERMINAL_TYPES:
                         logger.debug(f"[{workflow_id}] Stream ended after terminal event {event.event_type}")
                         return
                 except TimeoutError:

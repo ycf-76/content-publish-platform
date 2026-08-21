@@ -1,0 +1,415 @@
+/* ===== Workflow Redesign: Timeline + Card Shell ===== */
+
+/* ---- Timeline container ---- */
+.wf-nodes-container {
+  position: relative;
+  padding-left: 36px;
+}
+
+.wf-nodes-container::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 24px;
+  bottom: 24px;
+  width: 2px;
+  background: #E2E8F0;
+  border-radius: 1px;
+  z-index: 0;
+}
+
+/* ---- Timeline step wrapper ---- */
+.wf-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wf-step-rail {
+  position: absolute;
+  left: -36px;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wf-step-dot {
+  position: absolute;
+  top: 20px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #CBD5E1;
+  background: #FFFFFF;
+  z-index: 1;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Step dot states */
+.wf-step-idle .wf-step-dot,
+.wf-step-pending .wf-step-dot {
+  border-color: #CBD5E1;
+  background: #F8FAFC;
+}
+
+.wf-step-running .wf-step-dot {
+  border-color: #FF2442;
+  background: #FF2442;
+  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.15);
+  animation: wfDotPulse 2s ease-in-out infinite;
+}
+
+.wf-step-completed .wf-step-dot {
+  border-color: #10B981;
+  background: #10B981;
+}
+
+.wf-step-error .wf-step-dot {
+  border-color: #EF4444;
+  background: #EF4444;
+}
+
+.wf-step-awaiting_review .wf-step-dot {
+  border-color: #F59E0B;
+  background: #F59E0B;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+  animation: wfDotPulseAmber 1.5s ease-in-out infinite;
+}
+
+.wf-step-suspended .wf-step-dot {
+  border-color: #94A3B8;
+  background: #94A3B8;
+}
+
+@keyframes wfDotPulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.15); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 36, 66, 0.05); }
+}
+
+@keyframes wfDotPulseAmber {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15); }
+  50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.05); }
+}
+
+/* ---- Card shell redesign ---- */
+.wf-step .mint-wf-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 8px 24px rgba(15, 23, 42, 0.04);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+/* Status color band on top */
+.wf-step .mint-wf-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #E5E7EB;
+  border-radius: 12px 12px 0 0;
+  transition: background 0.3s ease;
+  z-index: 1;
+}
+
+.wf-step-idle .mint-wf-card::before,
+.wf-step-pending .mint-wf-card::before {
+  background: #E5E7EB;
+}
+
+.wf-step-running .mint-wf-card::before {
+  background: linear-gradient(90deg, #FF2442, #FF6B81, #FF2442);
+  background-size: 200% 100%;
+  animation: wfBandFlow 2s linear infinite;
+}
+
+.wf-step-completed .mint-wf-card::before {
+  background: #10B981;
+}
+
+.wf-step-error .mint-wf-card::before {
+  background: #EF4444;
+}
+
+.wf-step-awaiting_review .mint-wf-card::before {
+  background: #F59E0B;
+  animation: wfBandBreathe 2s ease-in-out infinite;
+}
+
+@keyframes wfBandFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes wfBandBreathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Card hover */
+.wf-step .mint-wf-card:hover {
+  border-color: #D1D5DB;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04), 0 12px 32px rgba(15, 23, 42, 0.06);
+}
+
+/* ---- Collapsed states ---- */
+.wf-step-idle .wf-node-body,
+.wf-step-pending .wf-node-body {
+  display: none !important;
+}
+
+/* idle/pending 也可点开预览：展开时恢复 body */
+.wf-step-idle.wf-step-expanded .wf-node-body,
+.wf-step-pending.wf-step-expanded .wf-node-body {
+  display: flex !important;
+}
+
+/* Search 是工作流入口：idle/pending 时仍保留输入框和完整卡片 */
+.wf-step[data-node="search"].wf-step-idle .wf-node-body,
+.wf-step[data-node="search"].wf-step-pending .wf-node-body {
+  display: flex !important;
+}
+
+.wf-step[data-node="search"].wf-step-idle .mint-wf-card,
+.wf-step[data-node="search"].wf-step-pending .mint-wf-card {
+  opacity: 1;
+}
+
+.wf-step-idle .mint-wf-header,
+.wf-step-pending .mint-wf-header {
+  padding-bottom: 12px;
+}
+
+.wf-step-idle .mint-wf-card,
+.wf-step-pending .mint-wf-card {
+  min-height: auto;
+  opacity: 0.65;
+}
+
+.wf-step-idle .mint-wf-card:hover,
+.wf-step-pending .mint-wf-card:hover {
+  opacity: 0.85;
+}
+
+/* 未开始卡折叠态只保留一行：隐藏副标题 */
+.wf-step:not([data-node="search"]).wf-step-idle:not(.wf-step-expanded) .wf-node-subtitle,
+.wf-step:not([data-node="search"]).wf-step-pending:not(.wf-step-expanded) .wf-node-subtitle {
+  display: none;
+}
+
+.wf-step-idle.wf-step-expanded .mint-wf-card,
+.wf-step-pending.wf-step-expanded .mint-wf-card {
+  opacity: 1;
+}
+
+.wf-step-idle.wf-step-expanded .mint-wf-header,
+.wf-step-pending.wf-step-expanded .mint-wf-header {
+  border-bottom: 1px solid #F3F4F6;
+  padding-bottom: 14px;
+}
+
+/* Completed: collapsed by default, expandable via .wf-step-expanded */
+.wf-step-completed:not(.wf-step-expanded) .wf-node-body,
+.wf-step-completed:not(.wf-step-expanded) .wf-node-meta,
+.wf-step-completed:not(.wf-step-expanded) .mint-wf-footer,
+.wf-step-completed:not(.wf-step-expanded) .wf-node-bottom-row {
+  display: none !important;
+}
+
+.wf-step-completed:not(.wf-step-expanded) .mint-wf-card {
+  min-height: auto;
+  opacity: 0.85;
+}
+
+.wf-step-completed:not(.wf-step-expanded) .mint-wf-header {
+  padding-bottom: 10px;
+}
+
+/* 完成卡折叠态只保留标题，隐藏副标题 */
+.wf-step-completed:not(.wf-step-expanded) .wf-node-subtitle {
+  display: none;
+}
+
+/* Expand toggle hint：completed 与 idle/pending（非 search 入口）都支持点开 */
+.wf-step-completed .mint-wf-header,
+.wf-step:not([data-node="search"]).wf-step-idle .mint-wf-header,
+.wf-step:not([data-node="search"]).wf-step-pending .mint-wf-header {
+  cursor: pointer;
+}
+
+/* Expand/collapse hint via pseudo-element */
+.wf-step-completed .mint-wf-header::after,
+.wf-step:not([data-node="search"]).wf-step-idle .mint-wf-header::after,
+.wf-step:not([data-node="search"]).wf-step-pending .mint-wf-header::after {
+  content: '展开';
+  font-size: 12px;
+  color: #94A3B8;
+  font-weight: 400;
+  margin-left: 8px;
+  transition: color 0.2s;
+  white-space: nowrap;
+}
+
+.wf-step-completed.wf-step-expanded .mint-wf-header::after,
+.wf-step-idle.wf-step-expanded .mint-wf-header::after,
+.wf-step-pending.wf-step-expanded .mint-wf-header::after {
+  content: '收起';
+}
+
+.wf-step-completed .mint-wf-header:hover::after,
+.wf-step:not([data-node="search"]).wf-step-idle .mint-wf-header:hover::after,
+.wf-step:not([data-node="search"]).wf-step-pending .mint-wf-header:hover::after {
+  color: #64748B;
+}
+
+/* 摘要行：completed 折叠时显示，展开时隐藏 */
+.wf-node-summary {
+  display: none;
+  padding: 0 16px 12px;
+  margin-top: -4px;
+  font-size: 13px;
+  color: #64748B;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.wf-step-completed:not(.wf-step-expanded) .wf-node-summary {
+  display: block;
+}
+
+/* ---- Header redesign ---- */
+.wf-step .mint-wf-header {
+  padding: 14px 16px;
+}
+
+.wf-step:not(.wf-step-idle):not(.wf-step-pending):not(.wf-step-completed) .mint-wf-header,
+.wf-step.wf-step-expanded .mint-wf-header {
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.wf-step-idle .mint-wf-header,
+.wf-step-pending .mint-wf-header,
+.wf-step-completed:not(.wf-step-expanded) .mint-wf-header {
+  border-bottom: none;
+}
+
+/* Icon box: style the existing .wf-node-icon as a tinted rounded container */
+.wf-step .wf-node-icon {
+  width: 32px !important;
+  height: 32px !important;
+  padding: 8px;
+  border-radius: 8px;
+  margin-right: 4px;
+  vertical-align: middle;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #FF2442;
+}
+
+/* Per-node icon colors */
+.wf-step[data-node="search"] .wf-node-icon { background: #EFF6FF; color: #3B82F6; }
+.wf-step[data-node="analyze"] .wf-node-icon { background: #EEF2FF; color: #6366F1; }
+.wf-step[data-node="copywrite"] .wf-node-icon { background: #FFF7ED; color: #F97316; }
+.wf-step[data-node="image_plan"] .wf-node-icon { background: #FDF4FF; color: #A855F7; }
+.wf-step[data-node="image_gen"] .wf-node-icon { background: #FEF3C7; color: #D97706; }
+.wf-step[data-node="image_review"] .wf-node-icon { background: #F0FDF4; color: #22C55E; }
+.wf-step[data-node="final_review"] .wf-node-icon { background: #FEF2F2; color: #EF4444; }
+
+/* Hide the old step number badge inside cards */
+.wf-step .mint-wf-step {
+  display: none !important;
+}
+
+/* Hide the code key tag */
+.wf-step .wf-node-key {
+  display: none !important;
+}
+
+/* Title typography */
+.wf-step .mint-wf-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.3;
+}
+
+/* Subtitle under title */
+.wf-step .wf-node-subtitle {
+  font-size: 12px;
+  color: #94A3B8;
+  font-weight: 400;
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+/* Status badge refinement */
+.wf-step .wf-status-badge {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* ---- Body spacing ---- */
+.wf-step .wf-node-body {
+  padding: 12px 16px 16px;
+  gap: 12px;
+}
+
+/* ---- Dark theme ---- */
+.mint-shell.dark-theme .wf-nodes-container::before {
+  background: rgba(80, 80, 80, 0.4);
+}
+
+.mint-shell.dark-theme .wf-step-dot {
+  background: rgba(30, 30, 30, 0.95);
+}
+
+.mint-shell.dark-theme .wf-step .mint-wf-card {
+  background: rgba(30, 30, 30, 0.92) !important;
+  border-color: rgba(80, 80, 80, 0.3) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.mint-shell.dark-theme .wf-step .mint-wf-header {
+  border-bottom-color: rgba(80, 80, 80, 0.25);
+}
+
+/* ---- Search card input refinement ---- */
+.wf-step[data-node="search"] .wf-search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.wf-step[data-node="search"] .wf-search-input-row .mint-input {
+  flex: 1;
+  height: 42px;
+  border-radius: 10px 0 0 10px;
+  font-size: 15px;
+}
+
+.wf-step[data-node="search"] .wf-search-input-row .mint-btn {
+  height: 42px;
+  border-radius: 0 10px 10px 0;
+  padding: 0 20px;
+  flex-shrink: 0;
+}

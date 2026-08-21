@@ -1,0 +1,42 @@
+{
+  "id": "cat-companion",
+  "name": "小猫伴侣",
+  "version": "1.0.0",
+  "description": "一只慵懒的小猫咪趴在输入框上方，眼睛跟随鼠标转动，会打哈欠、伸懒腰、发出呼噜声。拖拽到任意位置，靠近输入框自动吸回。点击触发猫咪互动反应。",
+  "category": "ui_theme",
+  "author": {
+    "name": "AI Generated",
+    "email": "ai@creator-platform.com"
+  },
+  "entry_point": "cat_companion.py:CatCompanionPlugin",
+  "display_icon": "🐱",
+  "display_color": "#F59E0B",
+  "pricing_model": "free",
+  "capabilities": ["ui_overlay", "mouse_tracking", "user_interaction"],
+  "permissions_required": [],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "cat_size": {
+        "type": "number",
+        "default": 48,
+        "description": "猫咪大小（像素）"
+      },
+      "purr_enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用呼噜声气泡"
+      },
+      "laziness": {
+        "type": "number",
+        "default": 0.7,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "慵懒程度（0=活泼 1=很懒）"
+      }
+    }
+  },
+  "is_builtin": false,
+  "is_enabled_by_default": false,
+  "screenshots": []
+}

@@ -1,19 +1,42 @@
 """Workflow routers."""
 
+import logging
+import traceback
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.api.schemas.common import StandardResponse
+
+_bearer_scheme_optional = HTTPBearer(auto_error=False)
+
+
+async def _optional_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme_optional),
+) -> str | None:
+    if credentials is None:
+        return None
+    from app.security import decode_user_id
+    try:
+        return decode_user_id(credentials.credentials)
+    except Exception:
+        return None
 from app.api.schemas.workflow import (
     PauseRequest,
     RollbackRequest,
     StartWorkflowRequest,
+    ResumeWorkflowRequest,
     UpdateNodeOutputRequest,
+    WorkflowListItem,
     WorkflowResponse,
 )
+from app.db.models import Workflow
 from app.db.session import get_db
 from app.services.workflow import get_workflow_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workflows", tags=["workflow"])
 
@@ -25,21 +48,28 @@ async def start_workflow(
     db: AsyncSession = Depends(get_db),
 ) -> StandardResponse[WorkflowResponse]:
     """Start a new workflow."""
-    service = get_workflow_service(db)
+    logger.info(f"[start_workflow] user_id={user_id}, account_id={request.account_id}, topic={request.topic}")
+    try:
+        service = get_workflow_service(db)
 
-    workflow = await service.start_workflow(
-        user_id=user_id,
-        account_id=request.account_id,
-        topic=request.topic,
-        model_settings=request.model_settings,
-        reference=request.reference,
-    )
+        workflow = await service.start_workflow(
+            user_id=user_id,
+            account_id=request.account_id,
+            topic=request.topic,
+            search_keyword=request.search_keyword,
+            creative_brief=request.creative_brief,
+            model_settings=request.model_settings,
+            reference=request.reference,
+        )
+    except Exception as e:
+        logger.error(f"[start_workflow] FAILED: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"启动工作流失败: {e}")
 
     return StandardResponse(
         data=WorkflowResponse(
             workflow_id=workflow.id,
             user_id=workflow.user_id,
-            account_id=workflow.account_id,
+            account_id=workflow.account_id or "",
             topic=workflow.topic,
             status=workflow.status,
             current_node=workflow.current_node_id or "search",
@@ -48,9 +78,62 @@ async def start_workflow(
     )
 
 
+@router.get("")
+async def list_workflows(
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> StandardResponse[list[WorkflowListItem]]:
+    """List current user's workflows, newest first.
+
+    Query params:
+        status: filter by status (optional)
+        limit: max items (default 50, max 200)
+        offset: pagination offset
+    """
+    from sqlalchemy import select, func
+
+    limit = min(limit, 200)
+    stmt = (
+        select(Workflow)
+        .where(Workflow.user_id == user_id)
+        .order_by(Workflow.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    if status:
+        stmt = stmt.where(Workflow.status == status)
+
+    result = await db.execute(stmt)
+    workflows = result.scalars().all()
+
+    count_stmt = select(func.count()).select_from(Workflow).where(Workflow.user_id == user_id)
+    if status:
+        count_stmt = count_stmt.where(Workflow.status == status)
+    total = (await db.scalar(count_stmt)) or 0
+
+    items = [
+        WorkflowListItem(
+            workflow_id=w.id,
+            topic=w.topic,
+            status=w.status,
+            current_node=w.current_node_id or "",
+            account_id=w.account_id or "",
+            created_at=w.created_at.isoformat() if w.created_at else "",
+            updated_at=w.updated_at.isoformat() if w.updated_at else None,
+        )
+        for w in workflows
+    ]
+    return StandardResponse(data=items, message=f"total={total}")
+
+
 @router.get("/{workflow_id}/nodes")
 async def get_workflow_nodes(
     workflow_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str | None = Depends(_optional_user_id),
 ) -> StandardResponse[dict]:
     """Get workflow node states + outputs (轮询兜底接口).
 
@@ -99,6 +182,55 @@ async def get_workflow_nodes(
         elif etype == "workflow_suspended":
             workflow_status = "suspended"
 
+    # ===== 补全：事件历史只包含部分节点时，从数据库补全缺失节点 =====
+    # 事件历史可能只有 review_required 等少量事件，导致 nodes 不完整。
+    # 从 workflow_nodes 表 + 事件历史推断的位置补全所有标准节点。
+    _STANDARD_NODE_ORDER = [
+        "search", "analyze", "copywrite", "image_plan", "image_gen",
+        "image_review", "audit", "final_review", "publish",
+    ]
+    if nodes and len(nodes) < len(_STANDARD_NODE_ORDER):
+        try:
+            from sqlalchemy import select as sa_select
+            from app.db.models import WorkflowNode
+            wf_row = await db.scalar(sa_select(Workflow).where(Workflow.id == workflow_id))
+            if wf_row:
+                # 用事件历史中已出现的节点推断进度位置
+                # 优先用 awaiting_review/running 节点，其次用 DB 的 current_node_id
+                event_max_idx = -1
+                for nid in nodes:
+                    if nid in _STANDARD_NODE_ORDER:
+                        idx = _STANDARD_NODE_ORDER.index(nid)
+                        if idx > event_max_idx:
+                            event_max_idx = idx
+                wf_current_node = wf_row.current_node_id or ""
+                db_idx = _STANDARD_NODE_ORDER.index(wf_current_node) if wf_current_node in _STANDARD_NODE_ORDER else -1
+                # 取较大值作为当前进度位置
+                current_idx = max(event_max_idx, db_idx)
+
+                wf_nodes_rows = await db.scalars(sa_select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
+                wf_nodes_map = {wn.node_key: wn for wn in wf_nodes_rows}
+                for i, nid in enumerate(_STANDARD_NODE_ORDER):
+                    if nid in nodes:
+                        continue
+                    if current_idx >= 0 and i < current_idx:
+                        status = "completed"
+                    elif i == current_idx:
+                        status = "running"
+                    else:
+                        status = "pending"
+                    entry: dict = {"node_id": nid, "status": status}
+                    wn = wf_nodes_map.get(nid)
+                    if wn and wn.output_data and isinstance(wn.output_data, dict):
+                        safe_output = {k: v for k, v in wn.output_data.items() if k != "images_base64"}
+                        entry.update(safe_output)
+                        entry["has_output"] = True
+                    nodes[nid] = entry
+                if not workflow_status or workflow_status == "running":
+                    workflow_status = wf_row.status or "running"
+        except Exception:
+            pass
+
     # ===== 兜底：事件历史为空时，从 LangGraph checkpoint 重建节点状态 =====
     # 后端重启后 sse_bus._event_history 清空（in-memory），轮询会返回空。
     # 从 AsyncSqliteSaver checkpoint 读取 node_statuses + next，重建节点列表。
@@ -116,25 +248,14 @@ async def get_workflow_nodes(
 
                 # 节点顺序（与 graph.py initial_state 一致）
                 node_order = [
-                    "search", "analyze", "image_plan", "image_gen",
-                    "image_review", "copywrite", "audit", "final_review", "publish",
+                    "search", "analyze", "copywrite", "image_plan", "image_gen",
+                    "image_review", "audit", "final_review", "publish",
                 ]
                 for nid in node_order:
                     status = node_statuses.get(nid, "pending")
-                    # next_nodes 中的节点表示即将执行（interrupt 暂停在此前）
-                    # 对于审核节点（image_review/final_review），应标记为 awaiting_review
-                    # publish 节点也加入 interrupt_before，auto_publish=False 时标记 awaiting_review
-                    if nid in next_nodes and nid in ("image_review", "final_review", "publish"):
+                    if nid in next_nodes and nid in ("copywrite", "image_plan", "image_review", "publish"):
                         status = "awaiting_review"
-                    # image_gen 在 next_nodes 中表示 interrupt 暂停等待卡片注入
-                    # 应标记为 idle 让前端显示卡片编辑器
-                    if nid in next_nodes and nid == "image_gen":
-                        status = "idle"
                     node_entry: dict = {"node_id": nid, "status": status}
-                    # 附带 output（排除大体积字段 images_base64，避免 HTTP 响应过大）
-                    # 前端需要完整 output 才能渲染卡片编辑器（card_draft）、
-                    # 终审预览（title/content/tags）、分析结果等
-                    # images_base64 通过专门的 GET /nodes/{node_id}/images 接口获取
                     output = node_outputs.get(nid)
                     if output and isinstance(output, dict):
                         safe_output = {k: v for k, v in output.items() if k != "images_base64"}
@@ -145,9 +266,91 @@ async def get_workflow_nodes(
 
                 # 从 next_nodes 推断 workflow_status
                 if not next_nodes:
-                    # 无后续节点：检查是否全部 completed
                     all_done = all(s == "completed" for s in node_statuses.values())
                     workflow_status = "completed" if all_done else "running"
+        except Exception:
+            pass
+
+    # ===== 二次兜底：checkpoint 也丢失（MemorySaver 重启后清空）时，从数据库推断 =====
+    # 当 MemorySaver 重启后丢失所有 checkpoint，上面的兜底会返回全 pending 节点。
+    # 此时根据 Workflow 的 status 字段推断节点状态：
+    #   - completed → 所有节点 completed
+    #   - failed/error → current_node 之前的节点 completed，current_node 标记 error
+    #   - running → current_node 之前的节点 completed，current_node 标记 running
+    # 同时从 workflow_nodes 表读取 output_data 和元数据（duration_ms/model_used/token_usage），
+    # 让前端卡片能展示已完成节点的结果。
+    if not nodes or all(n.get("status") == "pending" for n in nodes.values()):
+        try:
+            from sqlalchemy import select as sa_select
+            from app.db.models import WorkflowNode, NodeType, NodeStatus as DBNodeStatus
+            wf_row = await db.scalar(sa_select(Workflow).where(Workflow.id == workflow_id))
+            if wf_row:
+                wf_db_status = wf_row.status
+                wf_current_node = wf_row.current_node_id or ""
+                node_order = [
+                    "search", "analyze", "image_plan", "image_gen",
+                    "image_review", "copywrite", "audit", "final_review", "publish",
+                ]
+                current_idx = node_order.index(wf_current_node) if wf_current_node in node_order else -1
+
+                # 从 workflow_nodes 表读取所有节点的 output_data 和元数据
+                wf_nodes_rows = await db.scalars(
+                    sa_select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id)
+                )
+                wf_nodes_map: dict[str, WorkflowNode] = {}
+                for wn in wf_nodes_rows:
+                    wf_nodes_map[wn.node_key] = wn
+
+                def _build_node_entry(nid: str, status: str) -> dict:
+                    entry: dict = {"node_id": nid, "status": status}
+                    wn = wf_nodes_map.get(nid)
+                    if wn:
+                        if wn.output_data and isinstance(wn.output_data, dict):
+                            safe_output = {k: v for k, v in wn.output_data.items() if k != "images_base64"}
+                            entry.update(safe_output)
+                            entry["output"] = safe_output
+                            entry["has_output"] = True
+                        if wn.duration_ms:
+                            entry["_duration_ms"] = wn.duration_ms
+                        if wn.model_used:
+                            entry["_model_used"] = wn.model_used
+                        if wn.token_usage:
+                            entry["_token_usage"] = {"total": wn.token_usage}
+                        if wn.error_message:
+                            entry["_error"] = wn.error_message
+                            entry["error"] = wn.error_message
+                    return entry
+
+                if wf_db_status in ("completed",):
+                    for nid in node_order:
+                        nodes[nid] = _build_node_entry(nid, "completed")
+                    workflow_status = "completed"
+                elif wf_db_status in ("failed", "error"):
+                    for i, nid in enumerate(node_order):
+                        if current_idx >= 0 and i < current_idx:
+                            nodes[nid] = _build_node_entry(nid, "completed")
+                        elif i == current_idx:
+                            nodes[nid] = _build_node_entry(nid, "error")
+                        else:
+                            nodes[nid] = {"node_id": nid, "status": "pending"}
+                    workflow_status = str(wf_db_status)
+                elif wf_db_status in ("running", "suspended"):
+                    for i, nid in enumerate(node_order):
+                        if current_idx >= 0 and i < current_idx:
+                            nodes[nid] = _build_node_entry(nid, "completed")
+                        elif i == current_idx:
+                            if wf_db_status == "suspended" and nid in ("image_review", "final_review", "publish"):
+                                nodes[nid] = _build_node_entry(nid, "awaiting_review")
+                            else:
+                                nodes[nid] = _build_node_entry(nid, "running")
+                        else:
+                            nodes[nid] = {"node_id": nid, "status": "pending"}
+                    workflow_status = str(wf_db_status)
+                else:
+                    for nid in node_order:
+                        if nid not in nodes:
+                            nodes[nid] = {"node_id": nid, "status": "pending"}
+                    workflow_status = str(wf_db_status)
         except Exception:
             pass
 
@@ -195,8 +398,8 @@ async def get_node_images(
 @router.get("/{workflow_id}")
 async def get_workflow(
     workflow_id: str,
-    user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    user_id: str | None = Depends(_optional_user_id),
 ) -> StandardResponse[WorkflowResponse]:
     """Get workflow status."""
     service = get_workflow_service(db)
@@ -209,7 +412,7 @@ async def get_workflow(
         data=WorkflowResponse(
             workflow_id=workflow.id,
             user_id=workflow.user_id,
-            account_id=workflow.account_id,
+            account_id=workflow.account_id or "",
             topic=workflow.topic,
             status=workflow.status,
             current_node=workflow.current_node_id or "search",
@@ -234,12 +437,19 @@ async def pause_workflow(
 @router.post("/{workflow_id}/resume")
 async def resume_workflow(
     workflow_id: str,
+    request: ResumeWorkflowRequest | None = None,
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StandardResponse[dict]:
     """Resume workflow."""
     service = get_workflow_service(db)
-    result = await service.resume_workflow(workflow_id, user_id)
+    payload = request or ResumeWorkflowRequest()
+    result = await service.resume_workflow(
+        workflow_id,
+        user_id,
+        selected_direction=payload.selected_direction,
+        direction_note=payload.direction_note,
+    )
     return StandardResponse(data=result, message=result.get("message", ""))
 
 
@@ -399,10 +609,79 @@ async def render_template_image(
         raise HTTPException(status_code=400, detail="data is required")
 
     try:
-        b64 = await render_template_to_base64(template_type, data, style, size)
+        if style.startswith("esther_"):
+            from app.services.esther_card_renderer import render_esther_template_to_base64
+            b64 = await render_esther_template_to_base64(template_type, data, style, size)
+        else:
+            b64 = await render_template_to_base64(template_type, data, style, size)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Render failed: {e}")
 
     return StandardResponse(data={"base64": b64, "size": size})
+
+
+@router.delete("/{workflow_id}")
+async def delete_workflow(
+    workflow_id: str,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StandardResponse[dict]:
+    """删除工作流实例及其所有状态数据。"""
+    from sqlalchemy import delete as sa_delete
+
+    stmt = sa_delete(Workflow).where(
+        Workflow.id == workflow_id,
+        Workflow.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return StandardResponse(data={"deleted": True}, message="工作流已删除")
+
+
+@router.get("/stats/weekly")
+async def get_weekly_stats(
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StandardResponse[dict]:
+    """Get current user's weekly workflow statistics.
+
+    Returns:
+        published_count: 本周已完成（completed）的工作流数量
+        total_workflows: 本周创建的工作流总数
+        completed_rate: 完成率 (published_count / total_workflows)
+        active_count: 当前运行中的工作流数量
+    """
+    from sqlalchemy import select, func, and_
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=now.weekday(), hours=now.hour, minutes=now.minute, seconds=now.second, microseconds=now.microsecond)
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    total_stmt = select(func.count()).select_from(Workflow).where(
+        and_(Workflow.user_id == user_id, Workflow.created_at >= week_start)
+    )
+    total_workflows = (await db.scalar(total_stmt)) or 0
+
+    published_stmt = select(func.count()).select_from(Workflow).where(
+        and_(Workflow.user_id == user_id, Workflow.created_at >= week_start, Workflow.status == "completed")
+    )
+    published_count = (await db.scalar(published_stmt)) or 0
+
+    running_stmt = select(func.count()).select_from(Workflow).where(
+        and_(Workflow.user_id == user_id, Workflow.status.in_(["running", "pending"]))
+    )
+    active_count = (await db.scalar(running_stmt)) or 0
+
+    completed_rate = round(published_count / total_workflows, 2) if total_workflows > 0 else 0.0
+
+    return StandardResponse(data={
+        "published_count": published_count,
+        "total_workflows": total_workflows,
+        "completed_rate": completed_rate,
+        "active_count": active_count,
+    })
