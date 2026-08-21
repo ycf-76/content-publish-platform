@@ -23,8 +23,8 @@
             <li>用 <code>@register</code> 装饰器注册</li>
           </ol>
           <div class="sk-code-example">
-            <pre><code>from app.agents.skills.base import Skill
-from app.agents.skills.registry import register
+            <pre><code>from app.tools.base import Skill
+from app.tools.registry import register
 
 @register
 class MySkill(Skill):

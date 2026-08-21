@@ -1,4 +1,4 @@
-"""Workflow routers."""
+﻿"""Workflow routers."""
 
 import logging
 import traceback
@@ -530,7 +530,7 @@ async def check_publish_result(
       - session_invalid: 会话过期
       - not_applicable: 非半自动模式（无需轮询）
     """
-    from app.agents.skills.mcp.xhs_client import mcp_manager
+    from app.tools.mcp.xhs_client import mcp_manager
     from app.services.sse_bus import sse_bus
     from app.db.models import NodeType, NodeStatus, WorkflowNode
     from sqlalchemy import select

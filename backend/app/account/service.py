@@ -1,4 +1,4 @@
-"""账号服务（D1 分层登录）。
+﻿"""账号服务（D1 分层登录）。
 
 管理小红书账号绑定、登录态分层、Token 加密存储。
 
@@ -213,12 +213,12 @@ class AccountService:
             return {"success": False, "message": "会话数据为空，账号已标记为过期"}
 
         # Sync cookies to MCP client and verify by fetching real user info
-        from app.agents.skills.mcp.xhs_client import sync_cookies_to_local_client
+        from app.tools.mcp.xhs_client import sync_cookies_to_local_client
 
         sync_cookies_to_local_client(cookies)
 
         try:
-            from app.agents.skills.mcp.xhs_client import mcp_manager
+            from app.tools.mcp.xhs_client import mcp_manager
             real_info = await mcp_manager.get_current_user_info()
             account.xhs_user_id = real_info["xhs_user_id"]
             account.xhs_nickname = real_info["nickname"]

@@ -1,4 +1,4 @@
-"""SSE integration helpers.
+﻿"""SSE integration helpers.
 
 Provides factory functions to create Observer with SSE callback.
 Architecture: Layer A (LangGraph) imports this, injects into Layer B (Harness).
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.agents.core.harness.observer.observer import Observer
+from app.engine.harness.observer.observer import Observer
 from app.services.sse_bus import sse_bus
 
 if TYPE_CHECKING:

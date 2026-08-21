@@ -1,4 +1,4 @@
-"""选题池服务（v6 合并：手动抓取 + 监控数据统一管理）。
+﻿"""选题池服务（v6 合并：手动抓取 + 监控数据统一管理）。
 
 管理工作流搜索时后台抓取的其他平台内容 + 监控模块自动抓取评分的热点内容。
 两者都写入 topic_pool_items 表，通过 auto_source 字段区分：
@@ -246,7 +246,7 @@ class TopicPoolService:
             }
 
         # 获取 LLM 实例（延迟 import 避免循环依赖）
-        from app.agents.harnesses.factory import get_deepseek_llm
+        from app.engine.factory import get_deepseek_llm
 
         llm = get_deepseek_llm(temperature=0.3)
         if llm is None:
@@ -419,7 +419,7 @@ class TopicPoolService:
         Returns:
             {saved_count, skipped_duplicate, fetched_count, platform, items}
         """
-        from app.agents.skills.trending_search import TrendingSearchSkill
+        from app.tools.trending_search import TrendingSearchSkill
 
         skill = TrendingSearchSkill()
         try:

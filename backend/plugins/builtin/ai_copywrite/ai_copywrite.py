@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI Copywrite Node Plugin - AI文案生成工作流节点插件
 将现有 copywrite_node 逻辑包装为标准 WorkflowNode Plugin
 """
@@ -152,7 +152,7 @@ class AICopywriteNodePlugin(BaseWorkflowNodePlugin):
             self._enable_memory = config.get("enable_user_memory", True)
             
             # 初始化LLM适配器
-            from app.agents.adapters.deepseek import DeepSeekAdapter
+            from app.adapters.deepseek import DeepSeekAdapter
             
             self._llm_adapter = DeepSeekAdapter(
                 model=self._model,

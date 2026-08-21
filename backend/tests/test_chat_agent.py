@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from unittest.mock import AsyncMock, patch
 
 from app.agents.chat_agent import ChatAgent
@@ -63,11 +63,11 @@ def test_chat_agent_analyze_only_runs_search_then_layers():
     )
 
     with (
-        patch("app.agents.skills.trending_search.TrendingSearchSkill") as MockSearch,
-        patch("app.agents.skills.viral_analyzer.analyze_viral") as mock_viral,
-        patch("app.agents.skills.analyze_layer.run_layer2", new_callable=AsyncMock) as mock_l2,
-        patch("app.agents.skills.analyze_layer.run_layer3", new_callable=AsyncMock) as mock_l3,
-        patch("app.agents.harnesses.factory.get_deepseek_llm", return_value=llm),
+        patch("app.tools.trending_search.TrendingSearchSkill") as MockSearch,
+        patch("app.tools.viral_analyzer.analyze_viral") as mock_viral,
+        patch("app.tools.analyze_layer.run_layer2", new_callable=AsyncMock) as mock_l2,
+        patch("app.tools.analyze_layer.run_layer3", new_callable=AsyncMock) as mock_l3,
+        patch("app.engine.factory.get_deepseek_llm", return_value=llm),
     ):
         mock_search_inst = AsyncMock()
         mock_search_inst.execute.return_value = {
@@ -98,7 +98,7 @@ def test_chat_agent_analyze_only_runs_search_then_layers():
 def test_chat_agent_analyze_only_no_results():
     """ANALYZE_ONLY 搜索无结果时返回友好提示。"""
     with (
-        patch("app.agents.skills.trending_search.TrendingSearchSkill") as MockSearch,
+        patch("app.tools.trending_search.TrendingSearchSkill") as MockSearch,
     ):
         mock_search_inst = AsyncMock()
         mock_search_inst.execute.return_value = {

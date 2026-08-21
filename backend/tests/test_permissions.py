@@ -1,4 +1,4 @@
-from app.agents.skills.permissions import resolve_execution_policy
+﻿from app.tools.permissions import resolve_execution_policy
 
 
 def test_resolve_execution_policy_direct_is_trusted():

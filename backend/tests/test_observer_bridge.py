@@ -1,6 +1,6 @@
-import asyncio
+﻿import asyncio
 
-from app.agents.harnesses.factory import _make_observer
+from app.engine.factory import _make_observer
 from app.services.sse_bus import sse_bus
 
 

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Monitor Agent Plugin - 热点监控智能体插件
 将现有 MonitorAgent 包装为标准 Datasource Plugin
 """
@@ -55,7 +55,7 @@ class MonitorAgentPlugin(BaseDatasourcePlugin):
         
         try:
             # 延迟导入避免循环依赖
-            from app.agents.skills.sources.manager import source_manager
+            from app.tools.sources.manager import source_manager
             from app.pool_monitor.scoring_agent import ScoringAgent
             from app.pool_monitor.simhash_utils import simhash
             

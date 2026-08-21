@@ -1,4 +1,4 @@
-"""Chat 输入守卫规则（守卫层）。
+﻿"""Chat 输入守卫规则（守卫层）。
 
 对 Chat 输入做 prompt injection 过滤、长度限制、敏感词校验。
 红线：这是「守卫」，不是「理解」。意图解析由 `IntentParser` 负责。
@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.agents.core.schemas import HardRule, WorkflowContext
+from app.engine.schemas import HardRule, WorkflowContext
 
 MAX_INPUT_LENGTH = 10000
 

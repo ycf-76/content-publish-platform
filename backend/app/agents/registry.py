@@ -1,4 +1,4 @@
-"""Agent 注册表：用 Python 定义内置 Agent，替代损坏的 configs/*.yaml。
+﻿"""Agent 注册表：用 Python 定义内置 Agent，替代损坏的 configs/*.yaml。
 
 设计：
 - `AgentDef` 用 Pydantic 定义（类型安全、IDE 可跳转）。
@@ -14,12 +14,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.agents.core.harness.executor.loop import LoopExecutor
-from app.agents.core.harness.executor.single_shot import SingleShotExecutor
-from app.agents.core.harness.memory.memory import AgentMemory
-from app.agents.core.harness.observer.observer import Observer
-from app.agents.core.harness.runtime import AgentHarness
-from app.agents.skills.registry import get_skill_class_by_name
+from app.engine.harness.executor.loop import LoopExecutor
+from app.engine.harness.executor.single_shot import SingleShotExecutor
+from app.engine.harness.memory.memory import AgentMemory
+from app.engine.harness.observer.observer import Observer
+from app.engine.harness.runtime import AgentHarness
+from app.tools.registry import get_skill_class_by_name
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +198,7 @@ class AgentRegistry:
         llm = None
         if agent_def.llm_model:
             # 延迟导入避免与 factory.py 的循环依赖
-            from app.agents.harnesses.factory import get_deepseek_llm
+            from app.engine.factory import get_deepseek_llm
 
             llm = get_deepseek_llm(model=agent_def.llm_model)
 
@@ -211,7 +211,7 @@ class AgentRegistry:
         # Observer→SSE 桥接：有 workflow_id 时复用 _make_observer，事件走 sse_bus
         observer = Observer()
         if workflow_id:
-            from app.agents.harnesses.factory import _make_observer
+            from app.engine.factory import _make_observer
 
             observer = _make_observer(workflow_id)
 

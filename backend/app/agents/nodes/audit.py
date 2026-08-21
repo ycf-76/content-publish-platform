@@ -1,4 +1,4 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
+﻿from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
 
 
 async def audit_node(state: WorkflowState) -> dict:
@@ -33,10 +33,10 @@ async def audit_node(state: WorkflowState) -> dict:
     audit_skill_name = model_settings.get("audit_skill") or "standard"
 
     # 通过 registry 加载 audit Skill（支持第三方插件）
-    from app.agents.skills.registry import get_skill_class
+    from app.tools.registry import get_skill_class
     # 触发内置 Skill 注册（import 即注册）
-    import app.agents.skills.audit_skill  # noqa: F401
-    from app.agents.skills.audit_skill import StandardAuditSkill
+    import app.tools.audit_skill  # noqa: F401
+    from app.tools.audit_skill import StandardAuditSkill
 
     audit_skill_cls = get_skill_class("audit", audit_skill_name)
     if audit_skill_cls is None:
@@ -52,7 +52,7 @@ async def audit_node(state: WorkflowState) -> dict:
     )
 
     # audit 节点使用默认温度（审核需要稳定输出，不强行使用用户配置）
-    from app.agents.harnesses.factory import get_deepseek_llm
+    from app.engine.factory import get_deepseek_llm
     llm = get_deepseek_llm()
 
     await emit_node_event(workflow_id, node_id, "tool_call_start", {

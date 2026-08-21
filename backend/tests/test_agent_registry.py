@@ -1,4 +1,4 @@
-from app.agents.adapters.llm_base import BaseLLM
+﻿from app.adapters.llm_base import BaseLLM
 from app.agents.registry import AgentRegistry
 
 

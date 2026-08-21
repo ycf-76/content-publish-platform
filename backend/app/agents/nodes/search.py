@@ -1,4 +1,4 @@
-"""Search node: 直接调 TrendingSearchSkill（不走 LLM Loop）。
+﻿"""Search node: 直接调 TrendingSearchSkill（不走 LLM Loop）。
 
 搜索是确定性动作（调 API 拿数据），不需要 LLM 推理。
 LLM 只在 analyze/copywrite 等需要推理的节点使用。
@@ -35,7 +35,7 @@ async def _translate_keyword_for_en_platform(
     红线：search 主流程不走 LLM，只在空结果 fallback 时调用此函数。
     LLM 不可用或调用失败时返回 None，调用方降级为原关键词。
     """
-    from app.agents.harnesses.factory import get_deepseek_llm
+    from app.engine.factory import get_deepseek_llm
 
     llm = get_deepseek_llm()
     if llm is None:
@@ -216,8 +216,8 @@ async def _fetch_other_platforms_to_pool(keyword: str, workflow_id: str) -> None
     3. 每平台独立 session，失败互不影响
     """
     try:
-        from app.agents.skills.sources.manager import source_manager
-        from app.agents.skills.trending_search import TrendingSearchSkill
+        from app.tools.sources.manager import source_manager
+        from app.tools.trending_search import TrendingSearchSkill
         from app.db.session import AsyncSessionLocal
         from app.db.models import TopicPoolItem
         from sqlalchemy import select
@@ -376,14 +376,14 @@ async def _execute_search_with_recovery(
     复用 RecoveryLoop（RetryStrategy + BroadenKeywordStrategy），
     通过 _make_observer 把 recovery_* / circuit_open 事件桥接到 SSE。
     """
-    from app.agents.core.harness.recovery import (
+    from app.engine.harness.recovery import (
         BackoffPolicy,
         BroadenKeywordStrategy,
         RecoveryLoop,
         RetryStrategy,
     )
-    from app.agents.core.schemas import RecoveryExhaustedError, WorkflowContext
-    from app.agents.harnesses.factory import _make_observer
+    from app.engine.schemas import RecoveryExhaustedError, WorkflowContext
+    from app.engine.factory import _make_observer
 
     observer = _make_observer(workflow_id)
     recovery = RecoveryLoop(
@@ -456,7 +456,7 @@ async def search_node(state: WorkflowState) -> dict:
         search_platform = ""  # 空字符串触发全网并发搜索
 
     try:
-        from app.agents.skills.trending_search import TrendingSearchSkill
+        from app.tools.trending_search import TrendingSearchSkill
 
         skill = TrendingSearchSkill()
 

@@ -1,6 +1,6 @@
-import asyncio
+﻿import asyncio
 
-from app.agents.core.schemas import WorkflowContext
+from app.engine.schemas import WorkflowContext
 from app.agents.input_rules import MAX_INPUT_LENGTH, ChatInputRule
 
 

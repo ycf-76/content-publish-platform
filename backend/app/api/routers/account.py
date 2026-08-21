@@ -1,11 +1,11 @@
-import logging
+﻿import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.account.service import get_account_service
 from app.account.login_service import _active_sessions, get_login_service
-from app.agents.skills.mcp.xhs_client import mcp_manager, update_mcp_cookies_from_session
+from app.tools.mcp.xhs_client import mcp_manager, update_mcp_cookies_from_session
 from app.api.deps import get_current_user
 from app.api.schemas.account import AccountResponse
 from app.api.schemas.common import StandardResponse

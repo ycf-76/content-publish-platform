@@ -1,4 +1,4 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, _dlog, emit_node_event, logger
+﻿from app.agents.nodes._base import NodeStatus, WorkflowState, _dlog, emit_node_event, logger
 
 
 async def publish_node(state: WorkflowState) -> dict:
@@ -70,7 +70,7 @@ async def publish_node(state: WorkflowState) -> dict:
         # 直接调用 XhsPublishSkill，不走 LLM Loop
         # 红线：发布是确定性动作（调 MCP → Worker Playwright），不需要 LLM 推理
         # LLM Loop 会导致 LLM 误判参数为占位符，拒绝调用工具
-        from app.agents.skills.xhs_publish import XhsPublishSkill
+        from app.tools.xhs_publish import XhsPublishSkill
 
         skill = XhsPublishSkill()
         _dlog(f"[{workflow_id}] publish_node calling XhsPublishSkill.execute()...")

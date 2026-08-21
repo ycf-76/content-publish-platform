@@ -1,4 +1,4 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
+﻿from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
 
 
 async def analyze_node(state: WorkflowState) -> dict:
@@ -14,11 +14,11 @@ async def analyze_node(state: WorkflowState) -> dict:
     LLM 不可用时降级为只返回 Layer 1 结果。
     """
     import time
-    from app.agents.skills.viral_analyzer import analyze_viral
-    from app.agents.harnesses.factory import get_deepseek_llm
-    from app.agents.skills.registry import get_skill_class
+    from app.tools.viral_analyzer import analyze_viral
+    from app.engine.factory import get_deepseek_llm
+    from app.tools.registry import get_skill_class
     # 触发内置 Skill 注册（import 即注册）
-    import app.agents.skills.analyze_skill  # noqa: F401
+    import app.tools.analyze_skill  # noqa: F401
 
     workflow_id = state["workflow_id"]
     node_id = "analyze"
@@ -59,7 +59,7 @@ async def analyze_node(state: WorkflowState) -> dict:
             f"[{workflow_id}] analyze skill '{analyze_skill_name}' not found, "
             f"falling back to StandardAnalyzeSkill"
         )
-        from app.agents.skills.analyze_skill import StandardAnalyzeSkill
+        from app.tools.analyze_skill import StandardAnalyzeSkill
         analyze_skill_cls = StandardAnalyzeSkill
     analyze_skill = analyze_skill_cls()
     logger.info(

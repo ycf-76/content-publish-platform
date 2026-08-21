@@ -1,8 +1,8 @@
 """Agent orchestration layer.
 
 Layer A: LangGraph orchestration (app/agents/graph.py)
-Layer B: Harness runtime (app/agents/core/harness/)
-Layer C: Skills + MCP (app/agents/skills/)
+Layer B: Harness runtime (app/engine/harness/)
+Layer C: Tools + MCP (app/tools/)
 """
 
 from app.agents.graph import (

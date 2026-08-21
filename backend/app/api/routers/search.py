@@ -1,4 +1,4 @@
-"""Search router — 独立的全网搜接口（不走工作流）。
+﻿"""Search router — 独立的全网搜接口（不走工作流）。
 
 用途：
 - 用户在工作台搜索卡片选择平台后，先预览搜索结果，再决定是否启动工作流
@@ -81,7 +81,7 @@ async def search(
     _logger = logging.getLogger(__name__)
 
     try:
-        from app.agents.skills.trending_search import TrendingSearchSkill
+        from app.tools.trending_search import TrendingSearchSkill
 
         skill = TrendingSearchSkill()
         output = await skill.execute({
@@ -127,7 +127,7 @@ async def list_platforms(
     - 小红书扫码登录用户：额外看到小红书平台
     - 小红书平台始终列出但标记 requires_auth=true，前端据此显示锁定状态
     """
-    from app.agents.skills.sources.manager import source_manager
+    from app.tools.sources.manager import source_manager
 
     has_xhs = await _has_xhs_auth(user_id, db)
 

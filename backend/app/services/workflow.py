@@ -1,4 +1,4 @@
-"""工作流服务：封装 LangGraph 编排、启动、状态机。
+﻿"""工作流服务：封装 LangGraph 编排、启动、状态机。
 
 对应 PRD 5.2 / 技术架构文档第3章 Layer A。
 """
@@ -781,7 +781,7 @@ class WorkflowService:
             from sqlalchemy import select
             from app.db.models import XhsAccount
             from app.crypto.token_crypto import TokenCrypto
-            from app.agents.skills.mcp.xhs_client import sync_cookies_to_local_client
+            from app.tools.mcp.xhs_client import sync_cookies_to_local_client
 
             stmt = select(XhsAccount).where(XhsAccount.id == account_id)
             account = await self.db.scalar(stmt)

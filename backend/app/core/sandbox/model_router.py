@@ -1,4 +1,4 @@
-"""
+﻿"""
 Model Router - 智能模型路由与动态切换系统
 ==========================================
 
@@ -393,7 +393,7 @@ class ModelRouter:
         返回的是具体 adapter（如 DeepSeekAdapter），不是 ModelRouter 自身。
         """
         from app.config import get_settings
-        from app.agents.adapters.deepseek import DeepSeekAdapter
+        from app.adapters.deepseek import DeepSeekAdapter
 
         s = get_settings()
         if not s.deepseek_api_key:
@@ -843,14 +843,14 @@ class ModelRouter:
             
         elif provider == ModelProvider.ALIBABA:
             if "vl" in str(self._models):  # 简单判断是否VL模型
-                from app.agents.adapters.qwen_vl import QwenVLAdapter
+                from app.adapters.qwen_vl import QwenVLAdapter
                 adapter = QwenVLAdapter
             else:
                 from langchain_community.chat_models import ChatTongyi
                 adapter = ChatTongyi
         
         elif provider == ModelProvider.POLLINATIONS:
-            from app.agents.adapters.image_gen import PollinationsAdapter
+            from app.adapters.image_gen import PollinationsAdapter
             adapter = PollinationsAdapter
         
         if adapter:

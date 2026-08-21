@@ -1,4 +1,4 @@
-"""Agent Chat 适配层端点（端到端闭环）。
+﻿"""Agent Chat 适配层端点（端到端闭环）。
 
 流程：获取/创建 Session → 写用户消息 → 守卫 → 意图解析 → 触发工作流 →
 写 assistant 消息（带 workflow_id）→ 发 intent_parsed → 返回 workflow_id。
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.chat_agent import ChatAgent
-from app.agents.core.schemas import WorkflowContext
+from app.engine.schemas import WorkflowContext
 from app.agents.input_rules import ChatInputRule
 from app.agents.intent_parser import ActionType, ParsedIntent, RuleBasedIntentParser
 from app.api.deps import get_current_user

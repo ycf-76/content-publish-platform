@@ -1,4 +1,4 @@
-import json
+﻿import json
 from pathlib import Path
 
 from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
@@ -41,7 +41,7 @@ async def _run_soft_semantic_check(
     Returns:
         {"quality_pass": bool, "reason": str, "suggestions": list[str], "severity": str}
     """
-    from app.agents.harnesses.factory import get_deepseek_llm
+    from app.engine.factory import get_deepseek_llm
 
     node_id = f"quality_check_{check_type}"
     await emit_node_event(workflow_id, node_id, "node_started")

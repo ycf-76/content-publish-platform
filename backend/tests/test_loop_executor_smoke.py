@@ -1,10 +1,10 @@
-import asyncio
+﻿import asyncio
 
-from app.agents.core.harness.executor.loop import LoopExecutor
-from app.agents.core.harness.runtime import AgentHarness
-from app.agents.core.schemas import WorkflowContext
-from app.agents.skills.base import Skill
-from app.agents.core.schemas import Permission
+from app.engine.harness.executor.loop import LoopExecutor
+from app.engine.harness.runtime import AgentHarness
+from app.engine.schemas import WorkflowContext
+from app.tools.base import Skill
+from app.engine.schemas import Permission
 
 
 class _ScriptedLLM:

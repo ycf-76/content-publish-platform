@@ -1,5 +1,5 @@
-from app.agents.skills.base import Skill
-from app.agents.core.schemas import Permission
+﻿from app.tools.base import Skill
+from app.engine.schemas import Permission
 
 
 def test_skill_default_execution_policy_is_direct():

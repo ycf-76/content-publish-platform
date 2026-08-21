@@ -1,4 +1,4 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
+﻿from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
 
 
 async def image_plan_node(state: WorkflowState) -> dict:
@@ -63,7 +63,7 @@ async def image_plan_node(state: WorkflowState) -> dict:
     user_temperature = model_settings.get("temperature")
     user_text_model = model_settings.get("text_model")
 
-    from app.agents.harnesses.factory import get_deepseek_llm
+    from app.engine.factory import get_deepseek_llm
 
     await emit_node_event(workflow_id, node_id, "progress_update", {
         "progress": 30,

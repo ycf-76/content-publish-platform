@@ -1,4 +1,4 @@
-"""FastAPI 应用入口。
+﻿"""FastAPI 应用入口。
 仅搭建骨架：CORS 中间件 + 路由注册 + lifespan。
 具体业务逻辑在后续 Phase 实现。
 """
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 初始化 MCP clients（注册 PluginMCPClient 到 mcp_manager）
     logger.info("[lifespan] step 2: init MCP clients...")
     try:
-        from app.agents.skills.mcp.xhs_client import init_mcp_clients
+        from app.tools.mcp.xhs_client import init_mcp_clients
         await init_mcp_clients()
         logger.info("MCP clients initialized")
     except Exception as e:
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 初始化多平台内容源（Reddit / HackerNews / 小红书）
     logger.info("[lifespan] step 3: init content sources...")
     try:
-        from app.agents.skills.sources.manager import init_sources, source_manager
+        from app.tools.sources.manager import init_sources, source_manager
         await init_sources()
         logger.info(
             f"Content sources initialized: "
@@ -239,7 +239,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"Pool monitor shutdown failed: {e}")
     try:
-        from app.agents.skills.sources.manager import source_manager
+        from app.tools.sources.manager import source_manager
         await source_manager.close_all()
     except Exception as e:
         logger.warning(f"Content sources close failed: {e}")

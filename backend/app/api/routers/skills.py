@@ -1,4 +1,4 @@
-"""Skill 列表查询 + 注册 API。
+﻿"""Skill 列表查询 + 注册 API。
 
 供前端右侧工作区动态拉取各节点可用的 Skill 清单，
 渲染模型/风格下拉框。第三方 Skill 通过 backend/skills/ 目录扫描自动加载。
@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
-from app.agents.skills.registry import SkillRegistry, ensure_builtin_skills_registered
+from app.tools.registry import SkillRegistry, ensure_builtin_skills_registered
 from app.api.deps import get_current_user
 from app.api.schemas.common import StandardResponse
 

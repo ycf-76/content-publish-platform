@@ -1,4 +1,4 @@
-"""Chat Agent：把自然语言请求跑进 AgentHarness + LoopExecutor。
+﻿"""Chat Agent：把自然语言请求跑进 AgentHarness + LoopExecutor。
 
 流程：输入守卫 → 意图解析 → 分流执行。
 职责是编排，不直接调用 LLM / Skill / 模型路由（analyze 单步除外，
@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from app.agents.core.schemas import AgentOutput, LLMProtocol, WorkflowContext
+from app.engine.schemas import AgentOutput, LLMProtocol, WorkflowContext
 from app.agents.input_rules import ChatInputRule
 from app.agents.intent_parser import ActionType, ParsedIntent, RuleBasedIntentParser
 from app.agents.registry import AgentRegistry
@@ -124,7 +124,7 @@ class ChatAgent:
 
         try:
             # Step 1: 搜索
-            from app.agents.skills.trending_search import TrendingSearchSkill
+            from app.tools.trending_search import TrendingSearchSkill
 
             search_skill = TrendingSearchSkill()
             search_result = await search_skill.execute({
@@ -159,12 +159,12 @@ class ChatAgent:
                 )
 
             # Step 2: Layer 1 规则层（0 LLM 成本）
-            from app.agents.skills.viral_analyzer import analyze_viral
+            from app.tools.viral_analyzer import analyze_viral
 
             with_metrics, layer1_stats = analyze_viral(raw_results)
 
             # Step 3: LLM 分析（Layer 2 + Layer 3）
-            from app.agents.harnesses.factory import get_deepseek_llm
+            from app.engine.factory import get_deepseek_llm
 
             llm = self._llm or get_deepseek_llm(model="deepseek-v3")
 
@@ -190,7 +190,7 @@ class ChatAgent:
                 )
 
             # Layer 2: LLM 粗分析
-            from app.agents.skills.analyze_layer import run_layer2, run_layer3
+            from app.tools.analyze_layer import run_layer2, run_layer3
 
             top5 = with_metrics[:5]
             patterns = await run_layer2(llm, top5, topic)

@@ -1,4 +1,4 @@
-"""第三方 Skill 示例：诗意文案风格。
+﻿"""第三方 Skill 示例：诗意文案风格。
 
 这是一个示范插件，展示如何在 backend/skills/ 目录下新增自己的 Skill，
 无需修改 app/ 内任何代码，重启后端即可生效。
@@ -14,8 +14,8 @@
 工作流运行到 copywrite 节点时会加载并执行这个 Skill。
 """
 
-from app.agents.skills.copywrite_builder import CopywriteSkillBase
-from app.agents.skills.registry import register
+from app.tools.copywrite_builder import CopywriteSkillBase
+from app.tools.registry import register
 
 
 @register

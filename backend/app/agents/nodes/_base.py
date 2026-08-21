@@ -1,4 +1,4 @@
-"""工作流节点共享基础设施。
+﻿"""工作流节点共享基础设施。
 
 所有节点模块（search.py / analyze.py / ...）都从这里 import：
 - NodeStatus / WorkflowState / initial_state：状态定义
@@ -216,13 +216,13 @@ async def _run_node_harness(
 ) -> dict:
     """统一调用 harness 的封装。
 
-    - harness_factory: app.agents.harnesses.factory 里的函数名
+    - harness_factory: app.engine.factory 里的函数名
     - 失败时发 node_error 事件，并把 fallback_output 作为 node_outputs 写回状态，
       保证 workflow 不因单节点崩溃而中断。
     - 把 workflow_id 写入 current_workflow_id ContextVar，让 MCP 层能感知上下文。
     """
-    from app.agents.core.schemas import WorkflowContext
-    from app.agents.harnesses import factory as harness_factory_mod
+    from app.engine.schemas import WorkflowContext
+    from app.engine import factory as harness_factory_mod
     from app.services.context import current_workflow_id
 
     factory_fn = getattr(harness_factory_mod, harness_factory, None)

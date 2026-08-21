@@ -1,4 +1,4 @@
-"""Esther Template Factory engine.
+﻿"""Esther Template Factory engine.
 
 Core flow:
   User request -> Assemble context -> LLM produces Jinja2 template -> Validate -> Save
@@ -283,7 +283,7 @@ class EstherFactory:
         if llm is None:
             try:
                 from app.config import get_settings
-                from app.agents.adapters.deepseek import DeepSeekAdapter
+                from app.adapters.deepseek import DeepSeekAdapter
 
                 s = get_settings()
                 if not s.deepseek_api_key:

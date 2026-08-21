@@ -1,4 +1,4 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
+﻿from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
 from app.services.sse_bus import sse_bus
 
 
@@ -118,11 +118,11 @@ async def copywrite_node(state: WorkflowState) -> dict:
         "message": "LLM 生成小红书文案中...",
     })
 
-    from app.agents.harnesses.factory import get_deepseek_llm
-    from app.agents.skills.registry import get_skill_class
+    from app.engine.factory import get_deepseek_llm
+    from app.tools.registry import get_skill_class
     # 触发内置 Skill 注册（import 即注册）
-    import app.agents.skills.copywrite_builder  # noqa: F401
-    from app.agents.skills.copywrite_builder import (
+    import app.tools.copywrite_builder  # noqa: F401
+    from app.tools.copywrite_builder import (
         CopywriteSkillBase,
         LivelyGirlCopywriteSkill,
         _WRITING_STYLE_TO_SKILL_NAME,

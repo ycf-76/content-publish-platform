@@ -1,4 +1,4 @@
-"""
+﻿"""
 Xiaohongshu Publish Plugin - 小红书发布器插件
 将现有 XhsPublishSkill 包装为标准 Platform Plugin
 """
@@ -51,8 +51,8 @@ class XiaohongshuPublishPlugin(BasePlatformPlugin):
         
         # 延迟导入避免循环依赖
         try:
-            from app.agents.skills.xhs_publish import XhsPublishSkill
-            from app.agents.adapters.llm_base import LLMProtocol
+            from app.tools.xhs_publish import XhsPublishSkill
+            from app.adapters.llm_base import LLMProtocol
             
             # 创建Skill实例（LLM可选，发布不需要LLM）
             self._skill = XhsPublishSkill(llm=None)

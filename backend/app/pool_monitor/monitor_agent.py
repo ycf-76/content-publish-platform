@@ -1,4 +1,4 @@
-"""监控智能体（MonitorAgent）—— v7 真实抓取版。
+﻿"""监控智能体（MonitorAgent）—— v7 真实抓取版。
 
 职责：每 10 分钟遍历 source_manager 已注册的各大平台 → 调 get_trending()
      抓全站热点 → 过滤近期内容 → SimHash 去重 → LLM 三维分类 → 评分入池
@@ -18,8 +18,8 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.skills.sources.base import TrendingContent
-from app.agents.skills.sources.manager import source_manager
+from app.tools.sources.base import TrendingContent
+from app.tools.sources.manager import source_manager
 from app.db.models import TopicPoolItem
 from app.pool_monitor.config import get_effective_llm_api_key, get_pool_settings
 from app.pool_monitor.scoring_agent import ScoringAgent

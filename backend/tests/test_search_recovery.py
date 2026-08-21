@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 
 from app.agents.nodes.search import _execute_search_with_recovery
 
@@ -15,7 +15,7 @@ class _MockSkill:
 
 
 def test_search_recovery_broadens_on_empty(monkeypatch):
-    import app.agents.harnesses.factory as factory_mod
+    import app.engine.factory as factory_mod
 
     monkeypatch.setattr(factory_mod, "_make_observer", lambda wf: None)
 
@@ -35,7 +35,7 @@ def test_search_recovery_broadens_on_empty(monkeypatch):
 
 
 def test_search_recovery_exhausted_returns_empty(monkeypatch):
-    import app.agents.harnesses.factory as factory_mod
+    import app.engine.factory as factory_mod
 
     monkeypatch.setattr(factory_mod, "_make_observer", lambda wf: None)
 

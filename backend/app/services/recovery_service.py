@@ -1,4 +1,4 @@
-"""Recovery Service（手册 Phase 6 Part D + Part F）。
+﻿"""Recovery Service（手册 Phase 6 Part D + Part F）。
 
 封装 RecoveryLoop 耗尽后的全局编排逻辑：
 1. handle_recovery_exhausted: 调用 SupervisorRecovery.decide
@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.core.harness.recovery.supervisor import (
+from app.engine.harness.recovery.supervisor import (
     RecoveryAction,
     RecoveryActionType,
     SupervisorRecovery,
@@ -47,8 +47,8 @@ from app.db.models import (
 from app.services.sse_bus import sse_bus
 
 if TYPE_CHECKING:
-    from app.agents.adapters.llm_base import BaseLLM
-    from app.agents.core.schemas import WorkflowContext
+    from app.adapters.llm_base import BaseLLM
+    from app.engine.schemas import WorkflowContext
 
 logger = logging.getLogger(__name__)
 
