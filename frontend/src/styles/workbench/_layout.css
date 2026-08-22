@@ -181,6 +181,18 @@
   --ma-shadow-focus: 0 0 0 3px rgba(107,114,128,0.08);
   --ma-radius-lg: 16px;
   --ma-radius-xl: 16px;
+
+  /* ===== z-index 分层体系（可拓展：新增页面/组件按层级取变量，不硬编码数字） ===== */
+  --z-base: 1;          /* 普通内容层 */
+  --z-raised: 10;       /* 提升层：侧边栏 toggle、面板按钮 */
+  --z-sticky: 50;       /* 粘性层：散落卡片、统计区 */
+  --z-dropdown: 100;    /* 下拉层：select 下拉、导航子菜单 */
+  --z-overlay: 500;     /* 遮罩层：dialog、collapsed 按钮 */
+  --z-tooltip: 600;     /* 提示层：tooltip、popover */
+  --z-modal: 1000;      /* 弹窗层：modal dialog */
+  --z-global-ui: 9000;  /* 全局 UI 层：头像、右键菜单 overlay */
+  --z-top: 9999;        /* 最高层：右键菜单、view-transition-new */
+  --z-max: 10000;       /* 绝对最高：头像下拉菜单 */
 }
 
 body {
@@ -243,7 +255,7 @@ body::before {
   position: fixed;
   top: 12px;
   right: 36px;
-  z-index: 9999;
+  z-index: var(--z-global-ui);
   transition: opacity 0.2s ease;
 }
 .mint-global-user:hover {
@@ -288,7 +300,7 @@ body::before {
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   overflow: hidden;
-  z-index: 10000;
+  z-index: var(--z-max);
 }
 .mint-dropdown-user-section {
   padding: 10px 14px 8px;
@@ -461,7 +473,7 @@ body::before {
   flex-direction: row;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .mint-content-card {
   flex: 1;

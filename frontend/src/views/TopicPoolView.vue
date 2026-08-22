@@ -1,31 +1,38 @@
 <template>
-  <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
+<main class="min-h-screen" style="position: relative;">
 
-    <!-- ============ 右上角用户头像 ============ -->
-    <div v-if="authStore.user" class="tp-global-user" @click="userDropdownOpen = !userDropdownOpen">
-      <img
-        v-if="authStore.user.avatar_url"
-        :src="authStore.user.avatar_url"
-        alt="头像"
-        class="tp-avatar"
-      />
-      <img
-        v-else
-        src="/images/avatar/@man.svg"
-        alt="默认头像"
-        class="tp-avatar"
-      />
-      <transition name="tp-dropdown">
-        <div v-if="userDropdownOpen" class="tp-dropdown" @click.stop>
-          <div class="tp-dropdown-user">
-            <span class="tp-dropdown-name">{{ authStore.user.nickname || '未设置' }}</span>
-          </div>
-          <button class="tp-dropdown-btn tp-dropdown-logout" @click="handleLogout">
-            <LogOut :size="14" /> 退出登录
+  <!-- ============ 右上角全局用户头像（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
+  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
+    <img
+      v-if="authStore.user.avatar_url"
+      :src="authStore.user.avatar_url"
+      alt="头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <img
+      v-else
+      src="/images/avatar/@man.svg"
+      alt="默认头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <transition name="mint-dropdown">
+      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
+        <div class="mint-dropdown-user-section">
+          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
+          <span class="mint-dropdown-user-method">{{ authStore.user.login_method === 'wechat' ? '微信登录' : '邮箱登录' }}</span>
+        </div>
+        <div class="mint-dropdown-body">
+          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
+            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
           </button>
         </div>
-      </transition>
-    </div>
+      </div>
+    </transition>
+  </div>
+
+  <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
 
     <!-- ============ LEFT COLUMN ============ -->
     <SidebarNav
@@ -370,6 +377,7 @@
 
     <SettingsView v-if="showSettings" @close="showSettings = false" />
   </div>
+</main>
 </template>
 
 <script setup lang="ts">
@@ -398,6 +406,7 @@ const userDropdownOpen = ref(false)
 async function handleLogout() {
   userDropdownOpen.value = false
   await authStore.logout()
+  router.push('/login')
 }
 
 const emit = defineEmits<{
@@ -1292,7 +1301,7 @@ min-width: 0;
   font-family: inherit;
   outline: none;
   box-sizing: border-box;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
 }
 .tp-input:focus {
   border-color: #D1D5DB;

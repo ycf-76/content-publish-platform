@@ -1,5 +1,37 @@
 <template>
 <main class="min-h-screen" style="position: relative;">
+
+  <!-- ============ 右上角全局用户头像（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
+  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
+    <img
+      v-if="authStore.user.avatar_url"
+      :src="authStore.user.avatar_url"
+      alt="头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <img
+      v-else
+      src="/images/avatar/@man.svg"
+      alt="默认头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <transition name="mint-dropdown">
+      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
+        <div class="mint-dropdown-user-section">
+          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
+          <span class="mint-dropdown-user-method">{{ authStore.user.login_method === 'wechat' ? '微信登录' : '邮箱登录' }}</span>
+        </div>
+        <div class="mint-dropdown-body">
+          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
+            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
+          </button>
+        </div>
+      </div>
+    </transition>
+  </div>
+
   <div class="mint-shell" :class="{ 'mint-collapsed': isSidebarCollapsed }" :style="{ '--right-panel-width': '0px', '--left-sidebar-width': leftSidebarWidth + 'px' }">
 
     <!-- ============ 左侧导航 ============ -->
@@ -150,12 +182,21 @@ import ScatteredDesk from '@/components/workbench/ScatteredDesk.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import { workflowApi } from '@/api/workflow'
 import { useUIState } from '@/composables/useUIState'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const { isSidebarCollapsed, toggleSidebar } = useUIState()
+const authStore = useAuthStore()
 
 const leftSidebarWidth = ref(220)
 const showSettings = ref(false)
+const userDropdownOpen = ref(false)
+
+function handleLogout() {
+  authStore.logout()
+  userDropdownOpen.value = false
+  router.push('/login')
+}
 const scrollRef = ref<HTMLElement | null>(null)
 
 const heroLines = ['从灵感到发布', '一条工作流搞定']
