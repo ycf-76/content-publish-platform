@@ -40,6 +40,8 @@
       @toggle-sidebar="toggleSidebar"
       @go-eco="goToEco"
       @open-settings="openSettings"
+      @new-workflow="goToWorkbench"
+      @new-chat="goToWorkbench"
     />
 
     <main class="mint-main wt-page">
@@ -593,6 +595,10 @@ function handleNavClick(pageName: string) {
 
 function goToEco() {
   router.push('/eco')
+}
+
+function goToWorkbench() {
+  router.push({ path: '/workbench', query: { page: 'workflow' } })
 }
 
 function selectTemplate(template: any) {

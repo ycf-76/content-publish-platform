@@ -42,6 +42,8 @@
       @toggle-sidebar="toggleSidebar"
       @go-eco="goToEco"
       @open-settings="openSettings"
+      @new-workflow="goToWorkbench"
+      @new-chat="goToWorkbench"
     />
 
     <!-- 侧边栏拖拽条（Codex 风格）：拖动调整侧边栏宽度 -->
@@ -438,6 +440,9 @@ function handleNavClick(pageName: string) {
 }
 function goToEco() {
   router.push('/eco')
+}
+function goToWorkbench() {
+  router.push({ path: '/workbench', query: { page: 'workflow' } })
 }
 
 // ===== 状态 =====

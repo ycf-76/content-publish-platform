@@ -484,24 +484,42 @@ async def get_showcase(
     替代前端逐条调 getNodes + getNodeImages 的串行模式，
     将 N 次请求降为 1 次，且只返回 URL（不返回 base64）。
     """
+    from sqlalchemy import select, func
+
     from app.agents.graph import build_workflow_graph
-    from app.services.workflow import get_workflow_service
 
-    service = get_workflow_service(db)
-    result = await service.list_workflows(user_id=user_id, limit=50)
-    items = result.get("items", [])
-    total = result.get("total", 0)
+    limit = min(limit, 20)
+    stmt = (
+        select(Workflow)
+        .where(Workflow.status.in_(["completed", "passed"]))
+        .order_by(Workflow.created_at.desc())
+        .limit(limit)
+    )
+    if user_id:
+        stmt = stmt.where(Workflow.user_id == user_id)
 
-    completed = [w for w in items if w.get("status") in ("completed", "passed")][:limit]
+    result = await db.execute(stmt)
+    workflows = result.scalars().all()
+
+    count_stmt = select(func.count()).select_from(Workflow)
+    if user_id:
+        count_stmt = count_stmt.where(Workflow.user_id == user_id)
+    total = (await db.scalar(count_stmt)) or 0
+
+    completed_count_stmt = select(func.count()).select_from(Workflow).where(
+        Workflow.status.in_(["completed", "passed"])
+    )
+    if user_id:
+        completed_count_stmt = completed_count_stmt.where(Workflow.user_id == user_id)
+    completed_count = (await db.scalar(completed_count_stmt)) or 0
 
     showcase = []
-    for w in completed:
-        wid = w.get("workflow_id") or w.get("id", "")
+    for w in workflows:
         entry: dict = {
-            "workflow_id": wid,
-            "topic": w.get("topic", ""),
-            "status": w.get("status", ""),
-            "created_at": w.get("created_at", ""),
+            "workflow_id": w.id,
+            "topic": w.topic or "",
+            "status": w.status,
+            "created_at": w.created_at.isoformat() if w.created_at else "",
             "cover_image_url": None,
             "image_urls": [],
             "title": None,
@@ -512,7 +530,7 @@ async def get_showcase(
             graph = build_workflow_graph(checkpointer=None)
             if graph is None:
                 continue
-            config = {"configurable": {"thread_id": wid}, "recursion_limit": 50}
+            config = {"configurable": {"thread_id": w.id}, "recursion_limit": 50}
             graph_state = await graph.aget_state(config)
             state_values = graph_state.values or {}
             node_outputs = state_values.get("node_outputs", {})
@@ -531,14 +549,14 @@ async def get_showcase(
             if cw_content:
                 entry["content_snippet"] = cw_content[:60] + "…" if len(cw_content) > 60 else cw_content
         except Exception as e:
-            logger.warning(f"[showcase] get state for {wid} failed: {e}")
+            logger.warning(f"[showcase] get state for {w.id} failed: {e}")
 
         showcase.append(entry)
 
     return StandardResponse(data={
         "items": showcase,
         "total": total,
-        "completed_count": len(completed),
+        "completed_count": completed_count,
     })
 
 

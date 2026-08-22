@@ -1,4 +1,37 @@
 <template>
+<main class="min-h-screen" style="position: relative;">
+
+  <!-- ============ 右上角全局用户头像（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
+  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
+    <img
+      v-if="authStore.user.avatar_url"
+      :src="authStore.user.avatar_url"
+      alt="头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <img
+      v-else
+      src="/images/avatar/@man.svg"
+      alt="默认头像"
+      class="mint-avatar"
+      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
+    />
+    <transition name="mint-dropdown">
+      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
+        <div class="mint-dropdown-user-section">
+          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
+          <span class="mint-dropdown-user-method">{{ authStore.user.login_method === 'wechat' ? '微信登录' : '邮箱登录' }}</span>
+        </div>
+        <div class="mint-dropdown-body">
+          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
+            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
+          </button>
+        </div>
+      </div>
+    </transition>
+  </div>
+
   <div class="mint-shell ef-shell" :class="{ 'mint-collapsed': isSidebarCollapsed }">
 
     <SidebarNav
@@ -6,6 +39,10 @@
       :is-collapsed="isSidebarCollapsed"
       @nav-click="handleNavClick"
       @toggle-sidebar="toggleSidebar"
+      @go-eco="goToEco"
+      @open-settings="openSettings"
+      @new-workflow="goToWorkbench"
+      @new-chat="goToWorkbench"
     />
 
     <div
@@ -366,6 +403,7 @@
 
     <SettingsView v-if="showSettings" @close="showSettings = false" />
   </div>
+</main>
 </template>
 
 <script setup lang="ts">
@@ -375,12 +413,27 @@ import { Wand2, Loader2, X, Upload, Download, ChevronDown, Camera, Sparkles, Fol
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import { estherFactoryApi, type SceneInfo, type TemplateInfo, type ProduceResult, type BrandConfig } from '@/api/esther_factory'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const showSettings = ref(false)
+const userDropdownOpen = ref(false)
+
 function openSettings() {
   showSettings.value = true
+}
+function handleLogout() {
+  authStore.logout()
+  userDropdownOpen.value = false
+  router.push('/login')
+}
+function goToEco() {
+  router.push('/eco')
+}
+function goToWorkbench() {
+  router.push({ path: '/workbench', query: { page: 'workflow' } })
 }
 
 // ===== Sidebar state =====

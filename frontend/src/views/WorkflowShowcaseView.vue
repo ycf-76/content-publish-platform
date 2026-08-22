@@ -43,7 +43,7 @@
       @go-eco="goToEco"
       @new-workflow="goToWorkbench"
       @open-settings="openSettings"
-      @new-chat="() => {}"
+      @new-chat="goToWorkbench"
       @delete-chat="() => {}"
     />
 
