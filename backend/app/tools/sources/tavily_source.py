@@ -1,4 +1,4 @@
-﻿"""Tavily 全网搜索内容源。
+"""Tavily 全网搜索内容源。
 
 Tavily 是专为 AI Agent 设计的搜索 API，特点：
 - 端点：POST https://api.tavily.com/search
@@ -57,12 +57,15 @@ class TavilySource(ContentSource):
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            from app.tools.sources.base import get_proxy_url
+            proxy = get_proxy_url()
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers={
                     "User-Agent": "multi-agent-xhs-platform/1.0",
                     "Content-Type": "application/json",
                 },
+                proxy=proxy or None,
             )
         return self._client
 
@@ -169,7 +172,7 @@ class TavilySource(ContentSource):
         topic: str = "general",
         days: int | None = None,
     ) -> dict[str, Any]:
-        """统一调 Tavily /search 端点。
+        """统一调 Tavily /search 端点，429 自动重试。
 
         Args:
             query: 搜索关键词（空字符串时用 "trending" 兜底）
@@ -182,7 +185,6 @@ class TavilySource(ContentSource):
         """
         client = await self._ensure_client()
 
-        # 空关键词时用通用 query 兜底（Tavily 要求 query 非空）
         if not query.strip():
             query = "trending topics today"
 
@@ -191,34 +193,44 @@ class TavilySource(ContentSource):
             "query": query,
             "search_depth": self.search_depth,
             "topic": topic,
-            "max_results": min(limit, 20),  # Tavily 上限 20
+            "max_results": min(limit, 20),
             "include_images": True,
             "include_image_descriptions": True,
             "include_answer": False,
             "include_raw_content": False,
         }
-        # days 仅 news topic 支持，general topic 加了会报错
         if days is not None and topic == "news":
             payload["days"] = max(1, int(days))
 
-        try:
-            resp = await client.post(_TAVILY_SEARCH_URL, json=payload)
-            resp.raise_for_status()
-            return resp.json()
-        except httpx.HTTPStatusError as e:
-            status_code = e.response.status_code
-            logger.error(
-                f"[tavily] HTTP {status_code}: {e.response.text[:300]}"
-            )
-            if status_code == 432:
-                logger.warning(
-                    "[tavily] API key usage limit exceeded. "
-                    "Please increase the limit on the Tavily dashboard: https://app.tavily.com/"
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                resp = await client.post(_TAVILY_SEARCH_URL, json=payload)
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                if status_code == 429 and attempt < max_retries:
+                    wait = 2 ** attempt + 1
+                    logger.warning(
+                        f"[tavily] 429 rate limited (attempt {attempt+1}/{max_retries+1}), "
+                        f"retrying in {wait}s"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(
+                    f"[tavily] HTTP {status_code}: {e.response.text[:300]}"
                 )
-            return {}
-        except Exception as e:
-            logger.error(f"[tavily] search failed: {e}")
-            return {}
+                if status_code == 432:
+                    logger.warning(
+                        "[tavily] API key usage limit exceeded. "
+                        "Please increase the limit on the Tavily dashboard: https://app.tavily.com/"
+                    )
+                return {}
+            except Exception as e:
+                logger.error(f"[tavily] search failed: {e}")
+                return {}
+        return {}
 
     async def search_trending(
         self,

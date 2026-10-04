@@ -5,7 +5,7 @@
         <div class="mint-wf-step">06</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="eye" class="wf-node-icon"></i>
+            <Eye class="wf-node-icon" :size="16" />
             图片确认
             <code class="wf-node-key">image_review</code>
           </div>
@@ -22,13 +22,13 @@
     </div>
     <div class="wf-node-body">
       <div v-if="nodeStatus === 'idle' || nodeStatus === 'pending'" class="wf-empty-hint">
-        <i data-lucide="info" style="width:14px;height:14px;"></i>
+        <Info :size="14" />
         等待图片生成后进行确认
       </div>
       <div v-else-if="nodeStatus === 'awaiting_review'" class="wf-review-container">
         <!-- 顶部提示 -->
         <div class="wf-review-header">
-          <div class="wf-review-header-icon"><i data-lucide="clock" style="width:20px;height:20px;"></i></div>
+          <div class="wf-review-header-icon"><Clock :size="20" /></div>
           <div class="wf-review-header-text">
             <div class="wf-review-header-title">请确认图片样式与质量</div>
             <div class="wf-review-header-desc">查看下方图片，满意则通过，不满意可调优重做</div>
@@ -42,7 +42,7 @@
             <div class="wf-copywrite-loading-text">加载图片中...</div>
           </div>
           <div v-else-if="imagesError" class="mint-search-error">
-            <i data-lucide="alert-circle" style="width:20px;height:20px;"></i>
+            <AlertCircle :size="20" />
             <span>{{ imagesError }}</span>
           </div>
           <div v-else-if="reviewImages.length" class="wf-image-grid">
@@ -52,7 +52,7 @@
             </div>
           </div>
           <div v-else class="wf-empty-hint">
-            <i data-lucide="image-off" style="width:14px;height:14px;"></i>
+            <ImageOff :size="14" />
             未找到图片数据
           </div>
         </div>
@@ -60,11 +60,11 @@
         <!-- 审核按钮 -->
         <div v-if="!imagesLoading && reviewImages.length" class="wf-review-actions">
           <button class="wf-review-btn wf-review-pass" @click="submitReviewAction('pass')" :disabled="submitting">
-            <i data-lucide="check" style="width:16px;height:16px;"></i>
+            <Check :size="16" />
             {{ submitting ? '提交中...' : '确认通过' }}
           </button>
           <button class="wf-review-btn wf-review-reject" @click="submitReviewAction('reject')" :disabled="submitting">
-            <i data-lucide="rotate-ccw" style="width:16px;height:16px;"></i>
+            <RotateCcw :size="16" />
             {{ submitting ? '提交中...' : '调优重做' }}
           </button>
         </div>
@@ -75,17 +75,17 @@
         <div class="wf-copywrite-loading-text">图片确认处理中...</div>
       </div>
       <div v-else-if="nodeStatus === 'error'" class="mint-search-error">
-        <i data-lucide="alert-circle" style="width:20px;height:20px;"></i>
+        <AlertCircle :size="20" />
         <span>{{ errorMessage || '图片确认失败' }}</span>
       </div>
       <template v-else-if="result">
         <div class="wf-plan-summary" :style="{ background: reviewBgColor }">
-          <i :data-lucide="reviewIcon" style="width:16px;height:16px;" :style="{ color: reviewIconColor }"></i>
+          <component :is="reviewIcon" :size="16" :style="{ color: reviewIconColor }" />
           <span :style="{ color: reviewTextColor, fontWeight: 600, fontSize: '14px' }">{{ reviewStatusLabel }}</span>
           <span v-if="result.image_count" class="wf-plan-count" style="margin-left:auto;">共 {{ result.image_count }} 张</span>
         </div>
         <div v-if="result.feedback" class="wf-copywrite-feedback">
-          <i data-lucide="message-square-warning" style="width:12px;height:12px;"></i>
+          <MessageSquareWarning :size="12" />
           <span>{{ result.feedback }}</span>
         </div>
         <div v-if="displayImages.length" class="wf-review-images-area">
@@ -102,22 +102,26 @@
         </div>
       </template>
       <div v-else class="wf-empty-hint">
-        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        <CheckCircle :size="14" style="color:#60A5FA" />
         图片确认已完成（详细数据不可用）
       </div>
     </div>
     <div class="wf-node-meta" v-if="nodeMeta">
-      <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-      <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-      <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+      <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+      <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+      <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
     </div>
     
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { ref, computed, watch } from 'vue'
+import {
+  AlertCircle, Check, CheckCircle, Clock,
+  Cpu, Eye, ImageOff, Info, MessageSquareWarning,
+  RotateCcw, XCircle, Zap,
+} from 'lucide-vue-next'
 import { workflowApi } from '@/api/workflow'
 import { useWorkflowStore } from '@/stores/workflow'
 
@@ -130,8 +134,8 @@ const props = defineProps<{
   workflowId?: string
 }>()
 
-watch(() => props.nodeStatus, () => nextTick(() => createIcons({ icons })))
-watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
+watch(() => props.nodeStatus, () => {})
+watch(() => props.result, () => {}, { deep: true })
 
 const workflowStore = useWorkflowStore()
 
@@ -193,7 +197,7 @@ async function fetchReviewImages() {
     console.error('[ImageReviewCard] fetchReviewImages error:', e)
   } finally {
     imagesLoading.value = false
-    nextTick(() => createIcons({ icons }))
+    
   }
 }
 
@@ -230,9 +234,17 @@ const statusBadgeStyle = computed(() => {
   if (props.nodeStatus === 'running') return { background: '#FEE2E2', color: '#DC2626' }
   return { background: '#F1F5F9', color: '#64748B' }
 })
+const _CDN_HOSTS = ['xhscdn.com', 'xiaohongshu.com', 'picasso-static']
+
 function imageDataUrl(img: string): string {
   if (img.startsWith('data:')) return img
-  if (img.startsWith('/uploads/') || img.startsWith('http://') || img.startsWith('https://')) return img
+  if (img.startsWith('/uploads/')) return img
+  if (img.startsWith('http://') || img.startsWith('https://')) {
+    if (_CDN_HOSTS.some(h => img.includes(h))) {
+      return '/api/proxy/image?url=' + encodeURIComponent(img)
+    }
+    return img
+  }
   const prefix = img.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
   return prefix + img
 }
@@ -253,9 +265,9 @@ const reviewIconColor = computed(() => {
   return '#D97706'
 })
 const reviewIcon = computed(() => {
-  if (reviewStatus.value === 'passed') return 'check-circle'
-  if (reviewStatus.value === 'rejected') return 'x-circle'
-  return 'clock'
+  if (reviewStatus.value === 'passed') return CheckCircle
+  if (reviewStatus.value === 'rejected') return XCircle
+  return Clock
 })
 const reviewTextColor = computed(() => {
   if (reviewStatus.value === 'passed') return '#059669'

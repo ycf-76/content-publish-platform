@@ -1,4 +1,4 @@
-﻿"""Adapters subpackage.
+"""Adapters subpackage.
 
 Exports: BaseLLM, DeepSeekAdapter, QwenVLAdapter, ImageGenAdapter, WanxAdapter, PollinationsAdapter.
 """

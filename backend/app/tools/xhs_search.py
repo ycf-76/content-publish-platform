@@ -1,4 +1,4 @@
-﻿"""Xiaohongshu search skill.
+"""Xiaohongshu search skill.
 
 Searches Xiaohongshu via MCP Client Manager (plugin + local).
 已接通 mcp_manager：plugin client 为主，本地 Playwright 兜底（D17 双模架构）。
@@ -53,7 +53,7 @@ class XhsSearchSkill(Skill):
 
     node_type = "search"
     name = "xhs_search"
-    description = "Search Xiaohongshu notes by keyword (filtered by popularity, sorted by likes desc)"
+    description = "搜索小红书笔记。仅在用户明确要求搜索小红书内容时调用。不要在分析/追问/闲聊场景调用"
     input_schema = XhsSearchInput
     output_schema = XhsNoteSummary
     required_permissions = [Permission.XHS_SEARCH]
@@ -126,8 +126,11 @@ class XhsSearchSkill(Skill):
 
     def _get_xhs_client(self):
         """返回全局 MCPClientManager（plugin 主 + local 兜底）。"""
-        from app.tools.mcp.xhs_client import mcp_manager
-        if mcp_manager._plugin_client is None and mcp_manager._local_client is None:
+        try:
+            from app.tools.mcp.xhs_client import mcp_manager
+        except ImportError:
+            mcp_manager = None
+        if mcp_manager is None or (mcp_manager._plugin_client is None and mcp_manager._local_client is None):
             raise RuntimeError(
                 "MCPClientManager 未初始化：请先在 lifespan 调用 init_mcp_clients()"
             )

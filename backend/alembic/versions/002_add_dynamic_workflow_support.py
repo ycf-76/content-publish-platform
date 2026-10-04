@@ -21,7 +21,7 @@ from sqlalchemy.dialects import sqlite, postgresql
 
 
 revision = '002'
-down_revision = '001'
+down_revision = '001_plugin_system'
 branch_labels = None
 depends_on = None
 

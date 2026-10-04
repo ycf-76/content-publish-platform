@@ -1,4 +1,4 @@
-﻿"""Chat 输入守卫规则（守卫层）。
+"""Chat 输入守卫规则（守卫层）。
 
 对 Chat 输入做 prompt injection 过滤、长度限制、敏感词校验。
 红线：这是「守卫」，不是「理解」。意图解析由 `IntentParser` 负责。
@@ -18,6 +18,14 @@ _PROMPT_INJECTION_PATTERNS = [
     r"you\s+are\s+now",
     r"system\s*:",
     r"<\|im_start\|>",
+    r"forget\s+(all\s+)?previous",
+    r"new\s+instructions?\s*:",
+    r"disregard\s+(all\s+)?previous",
+    r"override\s+(previous|default|system)",
+    r"jailbreak",
+    r"DAN\s+mode",
+    r"developer\s+mode",
+    r"<\|/?system\|>",
 ]
 
 # 敏感词列表：按业务补充，这里仅保留占位。

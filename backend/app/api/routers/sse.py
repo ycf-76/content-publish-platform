@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.services.notification_bus import notification_bus
+from app.services import chat_session as _chat_session_svc
 from app.services.sse_bus import sse_bus
 from app.services.workflow import WorkflowService
 
@@ -35,11 +36,13 @@ async def subscribe_workflow(
         Accept: text/event-stream
         Last-Event-ID: <event_id> (optional, for continuation)
     """
-    # 校验用户是否拥有该工作流
     service = WorkflowService(db)
     workflow = await service.get_workflow(workflow_id, user_id)
     if not workflow:
-        raise HTTPException(status_code=403, detail="无权访问此工作流")
+        from app.services import chat_session as cs
+        existing = await cs.get_session(workflow_id)
+        if not existing or existing["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="无权访问此工作流")
 
     last_event_id = request.headers.get("Last-Event-ID")
 
@@ -59,6 +62,39 @@ async def subscribe_workflow(
         },
     )
 
+
+
+@router.get("/chat/{session_id}")
+async def subscribe_chat(
+    session_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Subscribe to chat session events via SSE (Agentic Loop tool calls)."""
+    from app.services import chat_session as cs
+
+    existing = await cs.get_session(session_id)
+    if not existing or existing["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="无权访问此会话")
+
+    last_event_id = request.headers.get("Last-Event-ID")
+
+    async def event_stream():
+        async for event_str in sse_bus.subscribe(session_id, last_event_id):
+            if await request.is_disconnected():
+                break
+            yield event_str
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 @router.get("/notifications")
 async def subscribe_notifications(

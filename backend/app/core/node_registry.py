@@ -66,7 +66,7 @@ class NodeDefinition:
     节点定义（元数据 + 执行函数）
     
     Attributes:
-        node_type: 节点类型唯一标识符（如 "ai_copywrite", "xhs_publish"）
+        node_type: 节点类型唯一标识符（如 "ai_copywrite", "content_audit"）
         display_name: 显示名称（如 "AI文案生成", "小红书发布器"）
         category: 所属分类（用于UI分组展示）
         description: 功能描述（帮助文档）
@@ -764,6 +764,8 @@ def register_default_workflow_nodes():
         from app.agents.nodes.audit import audit_node
         from app.agents.nodes.final_review import final_review_node
         from app.agents.nodes.publish import publish_node
+        from app.agents.nodes.card_gen import card_gen_node
+        from app.agents.nodes.wechat_push import wechat_push_node
         
         # ===== 数据源类节点 =====
         node_registry.register_builtin_node(
@@ -1374,6 +1376,60 @@ def register_default_workflow_nodes():
                     }
                 }
             }
+        )
+        
+        # ===== 后处理类节点 =====
+        node_registry.register_builtin_node(
+            node_type="card_gen",
+            display_name="生成卡片",
+            category="process",
+            execute_func=card_gen_node,
+            icon="🃏",
+            description="从文案产出生成小红书卡片 PNG（封面+内容）",
+            tags=["card", "render", "png", "post-process"],
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "标题"},
+                    "content": {"type": "string", "description": "正文"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "标签"},
+                    "card_style": {"type": "string", "default": "default", "description": "卡片风格"}
+                }
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "cards_base64": {"type": "array", "items": {"type": "string"}, "description": "卡片PNG base64列表"},
+                    "card_count": {"type": "integer", "description": "卡片数量"}
+                }
+            },
+        )
+        
+        node_registry.register_builtin_node(
+            node_type="wechat_push",
+            display_name="推送到微信",
+            category="publish",
+            execute_func=wechat_push_node,
+            icon="💬",
+            description="将卡片/文案推送到微信（通过 iLink Bot）",
+            tags=["wechat", "push", "notify", "distribution"],
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "cards_base64": {"type": "array", "items": {"type": "string"}, "description": "卡片PNG base64列表"},
+                    "title": {"type": "string", "description": "标题"},
+                    "content": {"type": "string", "description": "正文"},
+                    "wechat_target_user_id": {"type": "string", "description": "微信目标用户ID"}
+                }
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "push_status": {"type": "string", "description": "推送状态"},
+                    "pushed_count": {"type": "integer", "description": "成功推送数量"},
+                    "push_message": {"type": "string", "description": "状态消息"}
+                }
+            },
         )
         
         logger.info(

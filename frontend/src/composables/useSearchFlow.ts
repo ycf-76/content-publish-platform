@@ -24,7 +24,6 @@ export interface SearchNote {
  *
  * 权限控制：
  * - 邮箱登录用户可搜索除小红书外的所有平台
- * - 小红书搜索需要小红书扫码登录授权
  */
 export function useSearchFlow(
   keywordRef: Ref<string>,
@@ -66,7 +65,7 @@ export function useSearchFlow(
     } catch (e: any) {
       const detail = e?.response?.data?.detail || e?.response?.data?.message || e?.message || '搜索失败'
       if (detail.includes('XHS_AUTH_REQUIRED')) {
-        showSearchError('小红书搜索需要先通过小红书扫码登录授权，请在账号中心绑定小红书账号')
+        showSearchError('小红书搜索暂不可用，请使用其他平台搜索')
       } else if (detail.includes('local client') || detail.includes('浏览器扩展未连接')) {
         showSearchError('小红书搜索服务暂不可用（浏览器扩展未连接），请使用其他平台搜索')
       } else if (e?.response?.status === 503) {
@@ -86,7 +85,7 @@ export function useSearchFlow(
     const platform = selectedPlatformRef.value
     const platformInfo = searchPlatformsRef.value.find(p => p.name === platform)
     if (platformInfo?.locked) {
-      showSearchError('小红书搜索需要先通过小红书扫码登录授权，请在账号中心绑定小红书账号')
+      showSearchError('该平台搜索暂未开放，请使用其他平台')
       return
     }
 

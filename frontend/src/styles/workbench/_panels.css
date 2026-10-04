@@ -122,33 +122,23 @@
 /* ===== 鍙充晶闈㈡澘鍙嫋鎷藉垎鍓茬嚎 ===== */
 .mint-resize-handle {
   position: absolute;
-  top: 20px;
-  bottom: 20px;
-  width: 10px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
   cursor: col-resize;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s;
-  right: calc(var(--right-panel-width, 280px) + 20px + 10px);
-  margin-right: -5px;
+  right: var(--right-panel-width, 280px);
+  margin-right: -4px;
+  background: transparent;
 }
 
 .mint-resize-handle:hover {
-  background-color: rgba(59, 108, 246, 0.1);
+  background-color: rgba(0, 0, 0, 0.04);
 }
-
-.mint-resize-handle:hover .mint-resize-line {
-  background-color: var(--ma-blue-500);
-}
+body.is-detail-resizing .mint-resize-handle { background-color: rgba(0, 0, 0, 0.04); }
 
 .mint-resize-line {
-  width: 2px;
-  height: 40px;
-  background-color: #E5E7EB;
-  border-radius: 1px;
-  transition: background-color 0.2s;
+  display: none !important;
 }
 
 .mint-right-toggle {

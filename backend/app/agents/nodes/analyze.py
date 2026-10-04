@@ -1,4 +1,7 @@
-﻿from app.agents.nodes._base import NodeStatus, WorkflowState, emit_node_event, logger
+from app.agents.nodes._base import (
+    NodeStatus, WorkflowState, emit_node_event, logger,
+    build_belief_dict, build_loop_counter_update, read_upstream_belief,
+)
 
 
 async def analyze_node(state: WorkflowState) -> dict:
@@ -42,6 +45,31 @@ async def analyze_node(state: WorkflowState) -> dict:
     search_output = state.get("node_outputs", {}).get("search", {})
     raw_results = search_output.get("results", [])
 
+    # 读取上游 agent 信念（回溯带上下文）
+    # search 的信念告诉我们搜索结果质量和数量
+    search_belief = read_upstream_belief(state, "search")
+    search_quality_context = {}
+    if search_belief:
+        search_confidence = search_belief.get("confidence", 1.0)
+        search_verdict = search_belief.get("verdict", "sufficient")
+        search_quality_context = {
+            "search_confidence": search_confidence,
+            "search_verdict": search_verdict,
+        }
+        if search_verdict != "sufficient":
+            search_reasoning = search_belief.get("reasoning", "")
+            logger.info(
+                f"[{workflow_id}] {node_id} 收到 search 信念: "
+                f"verdict={search_verdict} conf={search_confidence} "
+                f"reason={search_reasoning[:60]}"
+            )
+        # search 信心低时，降低 analyze 对数据量的期望
+        if search_confidence < 0.5:
+            logger.info(
+                f"[{workflow_id}] {node_id} search 信心低({search_confidence})，"
+                f"将基于有限数据做分析"
+            )
+
     # 用户级长期记忆中的偏好（preferred_topics / avoided_topics）
     # 注入 Layer3 prompt，让 LLM 推荐选题时优先/避免某些方向
     user_memory = state.get("user_memory", {}) or {}
@@ -56,11 +84,20 @@ async def analyze_node(state: WorkflowState) -> dict:
     analyze_skill_cls = get_skill_class("analyze", analyze_skill_name)
     if analyze_skill_cls is None:
         logger.warning(
-            f"[{workflow_id}] analyze skill '{analyze_skill_name}' not found, "
-            f"falling back to StandardAnalyzeSkill"
+            f"[{workflow_id}] analyze skill '{analyze_skill_name}' not found, skipping analyze"
         )
-        from app.tools.analyze_skill import StandardAnalyzeSkill
-        analyze_skill_cls = StandardAnalyzeSkill
+        await emit_node_event(workflow_id, node_id, "node_status_changed", {"status": "completed"})
+        return {
+            "node_statuses": {node_id: NodeStatus.COMPLETED.value},
+            "node_outputs": {
+                node_id: {
+                    "patterns": [],
+                    "insights": [],
+                    "_skipped": True,
+                    "_skip_reason": "analyze_skill removed",
+                }
+            },
+        }
     analyze_skill = analyze_skill_cls()
     logger.info(
         f"[{workflow_id}] analyze using skill: {analyze_skill.name} "
@@ -123,6 +160,9 @@ async def analyze_node(state: WorkflowState) -> dict:
         patterns = await analyze_skill.analyze_layer2_streaming(
             llm, top5, analysis_topic, workflow_id=workflow_id, node_id=node_id
         )
+        # 从 streaming 返回结果中取 token_usage（如果 skill 回传了）
+        if isinstance(patterns, dict) and patterns.get("_token_usage"):
+            total_tokens += int(patterns["_token_usage"])
         await emit_node_event(workflow_id, node_id, "tool_call_end", {
             "tool": "deepseek_layer2",
             "success": "_error" not in patterns and "_parse_failed" not in patterns,
@@ -148,6 +188,9 @@ async def analyze_node(state: WorkflowState) -> dict:
             llm, top2, with_metrics, patterns, analysis_topic, user_preferences,
             workflow_id=workflow_id, node_id=node_id
         )
+        # 从 streaming 返回结果中取 token_usage（如果 skill 回传了）
+        if isinstance(insights, dict) and insights.get("_token_usage"):
+            total_tokens += int(insights["_token_usage"])
         await emit_node_event(workflow_id, node_id, "tool_call_end", {
             "tool": "deepseek_layer3",
             "success": "_error" not in insights and "_parse_failed" not in insights,
@@ -159,6 +202,16 @@ async def analyze_node(state: WorkflowState) -> dict:
 
         model_used = "deepseek-v3 (3-layer)"
 
+        # 新增：从 user_memory 加载我的归因处方和避坑清单
+        my_patterns = user_memory.get("my_attribution", {}) or {}
+        my_avoid = user_memory.get("avoid_patterns", []) or []
+
+        # 新增：计算 predicted_viral_score（基于 Layer1 规则层的 top1 结果）
+        predicted_viral_score = 0.0
+        if with_metrics:
+            top1 = with_metrics[0]
+            predicted_viral_score = float(top1.get("viral_score", 0.0) or 0.0)
+
         # 组装最终输出
         output = {
             "results": with_metrics,
@@ -166,6 +219,10 @@ async def analyze_node(state: WorkflowState) -> dict:
             "insights": insights,
             "filter_stats": search_output.get("filter_stats", {}),
             "layer1_stats": layer1_stats,
+            "predicted_viral_score": predicted_viral_score,
+            "my_patterns": my_patterns,
+            "my_avoid": my_avoid,
+            "search_quality_context": search_quality_context,
             "_model_used": model_used,
             "_duration_ms": int((time.time() - start_time) * 1000),
             "_token_usage": {"prompt": 0, "completion": 0, "total": total_tokens},
@@ -200,4 +257,11 @@ async def analyze_node(state: WorkflowState) -> dict:
         "current_node": node_id,
         "node_statuses": {node_id: NodeStatus.COMPLETED.value},
         "node_outputs": {node_id: output},
+        "agent_beliefs": build_belief_dict(node_id, output),
+        "loop_counters": build_loop_counter_update(state, node_id),
     }
+
+
+def _build_belief(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，写入 state.agent_beliefs。"""
+    return build_belief_dict(node_id, output)

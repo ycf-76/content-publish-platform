@@ -1,4 +1,4 @@
-﻿"""工作流节点共享基础设施。
+"""工作流节点共享基础设施。
 
 所有节点模块（search.py / analyze.py / ...）都从这里 import：
 - NodeStatus / WorkflowState / initial_state：状态定义
@@ -130,6 +130,17 @@ class WorkflowState(TypedDict, total=False):
     # Phase 5：目标平台与输出比例
     platform: str
     format_name: str
+    # 智能体信念系统：每个 agent 的信念快照（agent_id -> belief dict）
+    agent_beliefs: Annotated[dict[str, dict], _merge_dict]
+    # 协商记录（audit vs copywrite 冲突仲裁等）
+    negotiations: list[dict]
+    # 回溯计数器（node_id -> 回溯次数），防死循环
+    loop_counters: Annotated[dict[str, int], _merge_dict]
+    # D18 创作者画像：启动工作流时从 DB 读取注入（UserProfile.model_dump()）
+    # 红线：启动时一次性注入 state，节点内禁止自己读 DB 查画像
+    user_profile: dict | None
+    # D19 自我进化机制：预留字段恒 None，禁止实现任何注入逻辑
+    experience_hints: dict | None
 
 
 def initial_state(
@@ -147,17 +158,21 @@ def initial_state(
     platform: str = "xiaohongshu",
     format_name: str = "",
     node_types: list[str] | None = None,
+    user_profile: dict | None = None,
 ) -> WorkflowState:
     """Create initial workflow state.
 
     Args:
         node_types: 动态节点类型列表。如果为 None，使用默认9个节点。
                     传入后，node_statuses 只包含这些节点。
+        user_profile: D18 创作者画像（UserProfile.model_dump()）。
+                     启动工作流时由 WorkflowService 从 DB 读取注入。
     """
     if node_types is None:
         node_types = [
             "search", "analyze", "copywrite", "image_plan",
             "image_gen", "image_review", "audit", "final_review", "publish",
+            "card_gen", "wechat_push", "feishu_push",
         ]
 
     node_statuses_init = {nt: NodeStatus.PENDING.value for nt in node_types}
@@ -184,6 +199,13 @@ def initial_state(
         asset_mode=asset_mode,
         platform=platform,
         format_name=format_name,
+        agent_beliefs={},
+        negotiations=[],
+        loop_counters={},
+        # D18: 启动时一次性注入画像（节点从 state 读取，禁止自己查 DB）
+        user_profile=dict(user_profile) if user_profile else None,
+        # D19: 预留恒 None（红线：禁止实现任何注入逻辑）
+        experience_hints=None,
     )
 
 
@@ -253,6 +275,8 @@ async def _run_node_harness(
         account_id=state.get("account_id", ""),
         topic=state.get("topic", ""),
         upstream_outputs=state.get("node_outputs", {}),
+        # D18: 画像从 state 透传给 harness（prompt 渲染可从 context.user_profile 取）
+        user_profile=state.get("user_profile") or None,
     )
 
     token = current_workflow_id.set(workflow_id)
@@ -272,3 +296,62 @@ async def _run_node_harness(
         return {**fallback_output, "_error": str(e)}
     finally:
         current_workflow_id.reset(token)
+
+
+# ----------------------------------------------------------------------
+# 智能体信念 + 回溯计数器 辅助函数
+# ----------------------------------------------------------------------
+
+
+def build_belief_dict(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，返回 agent_beliefs 增量 dict。"""
+    from app.agents.belief import belief_from_output
+    belief = belief_from_output(node_id, output)
+    return {node_id: belief.to_dict()}
+
+
+def build_loop_counter_update(state: WorkflowState, node_id: str) -> dict:
+    """检测当前节点是否被回溯到，返回 loop_counters 增量 dict。
+
+    判断逻辑：如果 node_statuses[node_id] 已经是 COMPLETED，
+    说明这个节点之前已经执行过，现在是回溯重跑。
+    """
+    current_status = state.get("node_statuses", {}).get(node_id, "")
+    if current_status in (NodeStatus.COMPLETED.value, NodeStatus.PASSED.value):
+        current_count = state.get("loop_counters", {}).get(node_id, 0)
+        return {node_id: current_count + 1}
+    return {}
+
+
+def read_upstream_belief(state: WorkflowState, upstream_node_id: str) -> dict | None:
+    """读取上游节点的信念（回溯带上下文）。
+
+    用法：在节点函数里调用 read_upstream_belief(state, "audit")
+    获取 audit 的修改意见/补充请求。
+    """
+    return state.get("agent_beliefs", {}).get(upstream_node_id)
+
+
+def safe_get_selected_direction(analyze_output: dict, recommendations: list | None = None) -> int:
+    """安全提取 selected_direction 索引（共享函数，去重三节点重复逻辑）。
+
+    analyze / copywrite / image_plan 三个节点都需要从 analyze_output 取
+    selected_direction 并做边界检查。统一在此处理。
+
+    Returns:
+        合法的索引（0 ~ len(recommendations)-1），默认 0。
+    """
+    if recommendations is None:
+        insights = (analyze_output.get("insights") or {}) if isinstance(analyze_output, dict) else {}
+        recommendations = insights.get("recommendations") or []
+    rec_count = len(recommendations) if isinstance(recommendations, list) else 0
+
+    raw = (analyze_output.get("selected_direction", 0)
+           if isinstance(analyze_output, dict) else 0)
+    try:
+        idx = int(raw)
+    except (TypeError, ValueError):
+        idx = 0
+    if idx < 0 or idx >= rec_count:
+        idx = 0
+    return idx

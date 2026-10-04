@@ -68,8 +68,7 @@ apiClient.interceptors.response.use(
 
       if (!refreshToken) {
         localStorage.removeItem('token')
-        sessionStorage.setItem('redirect_after_login', window.location.pathname + window.location.search)
-        window.location.href = '/login'
+        // DEV: 登录验证已暂停，401 不跳登录页
         return Promise.reject(error)
       }
 
@@ -107,8 +106,7 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         localStorage.removeItem('token')
         localStorage.removeItem('refresh_token')
-        sessionStorage.setItem('redirect_after_login', window.location.pathname + window.location.search)
-        window.location.href = '/login'
+        // DEV: 登录验证已暂停，refresh 失败不跳登录页
         return Promise.reject(refreshError)
       } finally {
         _isRefreshing = false
@@ -120,3 +118,69 @@ apiClient.interceptors.response.use(
 )
 
 export default apiClient
+
+let _fetchIsRefreshing = false
+let _fetchRefreshSubscribers: Array<(token: string) => void> = []
+
+function _fetchOnTokenRefreshed(token: string) {
+  _fetchRefreshSubscribers.forEach((cb) => cb(token))
+  _fetchRefreshSubscribers = []
+}
+
+function _fetchAddRefreshSubscriber(cb: (token: string) => void) {
+  _fetchRefreshSubscribers.push(cb)
+}
+
+export async function tryRefreshToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('refresh_token')
+  if (!refreshToken) return null
+
+  if (_fetchIsRefreshing) {
+    return new Promise((resolve) => {
+      _fetchAddRefreshSubscriber((newToken: string) => resolve(newToken))
+    })
+  }
+
+  _fetchIsRefreshing = true
+  try {
+    const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
+    const resp = await axios.post(`${baseURL}/auth/refresh`, null, {
+      params: { refresh_token: refreshToken },
+    })
+    const data = resp.data?.data || resp.data
+    const newToken = data.token
+    const newRefresh = data.refresh_token
+
+    localStorage.setItem('token', newToken)
+    if (newRefresh) localStorage.setItem('refresh_token', newRefresh)
+
+    _fetchOnTokenRefreshed(newToken)
+    return newToken
+  } catch {
+    localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
+    // DEV: 登录验证已暂停，refresh 失败不跳登录页
+    return null
+  } finally {
+    _fetchIsRefreshing = false
+  }
+}
+
+export async function authFetch(input: string, init?: RequestInit): Promise<Response> {
+  const token = localStorage.getItem('token')
+  const headers = new Headers(init?.headers)
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+
+  const response = await fetch(input, { ...init, headers })
+
+  if (response.status === 401) {
+    const newToken = await tryRefreshToken()
+    if (newToken) {
+      headers.set('Authorization', `Bearer ${newToken}`)
+      return fetch(input, { ...init, headers })
+    }
+  }
+
+  return response
+}

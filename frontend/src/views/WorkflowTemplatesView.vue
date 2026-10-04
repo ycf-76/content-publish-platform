@@ -1,38 +1,7 @@
 <template>
-<main class="min-h-screen" style="position: relative;">
+<div class="min-h-screen" style="position: relative;">
 
-  <!-- ============ 右上角全局用户头像（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
-  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
-    <img
-      v-if="authStore.user.avatar_url"
-      :src="authStore.user.avatar_url"
-      alt="头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <img
-      v-else
-      src="/images/avatar/@man.svg"
-      alt="默认头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <transition name="mint-dropdown">
-      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
-        <div class="mint-dropdown-user-section">
-          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
-          <span class="mint-dropdown-user-method">{{ authStore.user.login_method === 'wechat' ? '微信登录' : '邮箱登录' }}</span>
-        </div>
-        <div class="mint-dropdown-body">
-          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
-            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
-          </button>
-        </div>
-      </div>
-    </transition>
-  </div>
-
-  <div class="mint-shell wt-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
+  <div class="mint-shell wt-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }" :style="{ '--left-sidebar-width': leftSidebarWidth + 'px' }">
     <SidebarNav
       current-page="workflow-templates"
       :is-collapsed="isSidebarCollapsed"
@@ -41,8 +10,20 @@
       @go-eco="goToEco"
       @open-settings="openSettings"
       @new-workflow="goToWorkbench"
-      @new-chat="goToWorkbench"
+      @new-chat="goToChat"
     />
+
+    <!-- left sidebar resize handle -->
+    <div
+      class="mint-left-resize-handle"
+      v-show="!isSidebarCollapsed"
+      :class="{ 'is-left-resizing': isLeftResizing }"
+      title="拖拽调整侧边栏宽度 · 双击恢复默认"
+      @mousedown="startLeftResize"
+      @dblclick.prevent="resetLeftSidebarWidth"
+    >
+      <div class="mint-resize-line"></div>
+    </div>
 
     <main class="mint-main wt-page">
       <div class="mint-content-card-wrapper">
@@ -50,7 +31,7 @@
           <div class="wt-header">
             <div>
               <div class="wt-kicker">
-                <i data-lucide="git-branch"></i>
+                <GitBranch :size="16" />
                 Dynamic Orchestration
               </div>
               <h1>动态编排</h1>
@@ -58,11 +39,11 @@
             </div>
             <div class="wt-actions">
               <button class="mint-btn mint-btn-outline" :disabled="loading" @click="refreshData">
-                <i data-lucide="refresh-cw" :class="{ spinning: loading }"></i>
+                <RefreshCw :class="{ spinning: loading }" :size="16" />
                 刷新
               </button>
               <button class="mint-btn mint-btn-primary" @click="goToEditor()">
-                <i data-lucide="plus"></i>
+                <Plus :size="16" />
                 创建流程
               </button>
             </div>
@@ -86,7 +67,7 @@
           <div class="wt-body">
             <section class="wt-section">
               <div class="wt-section-title">
-                <i data-lucide="star"></i>
+                <Star :size="16" />
                 <span>推荐模板</span>
               </div>
 
@@ -108,8 +89,8 @@
                     <span class="wt-template-name">{{ template.name }}</span>
                     <span class="wt-template-desc">{{ template.description }}</span>
                     <span class="wt-template-meta">
-                      <span><i data-lucide="layers"></i>{{ template.graph_definition?.nodes?.length || 0 }} 节点</span>
-                      <span><i data-lucide="play"></i>{{ template.usage_count }} 次使用</span>
+                      <span><Layers :size="16" />{{ template.graph_definition?.nodes?.length || 0 }} 节点</span>
+                      <span><Play :size="16" />{{ template.usage_count }} 次使用</span>
                     </span>
                   </span>
                   <span class="wt-template-actions">
@@ -123,7 +104,7 @@
 
             <section class="wt-section">
               <div class="wt-section-title">
-                <i data-lucide="folder"></i>
+                <Folder :size="16" />
                 <span>我的流程</span>
                 <span class="wt-count">{{ customDefinitions.length }}</span>
               </div>
@@ -134,7 +115,7 @@
               </div>
 
               <div v-else-if="customDefinitions.length === 0" class="wt-empty">
-                <i data-lucide="inbox"></i>
+                <Inbox :size="16" />
                 <strong>还没有自定义流程</strong>
                 <span>从推荐模板开始，或创建一张空白画布。</span>
                 <button class="mint-btn mint-btn-primary" @click="goToEditor()">创建第一个流程</button>
@@ -157,9 +138,9 @@
                   </span>
                   <span class="wt-status" :class="defn.status">{{ statusLabels[defn.status] || defn.status }}</span>
                   <span class="wt-custom-actions">
-                    <button class="mint-icon-btn" title="运行" @click.stop="quickStart(defn)"><i data-lucide="play"></i></button>
-                    <button class="mint-icon-btn" title="编辑" @click.stop="editDefinition(defn)"><i data-lucide="edit-2"></i></button>
-                    <button class="mint-icon-btn danger" title="删除" @click.stop="confirmDelete(defn)"><i data-lucide="trash-2"></i></button>
+                    <button class="mint-icon-btn" title="运行" @click.stop="quickStart(defn)"><Play :size="16" /></button>
+                    <button class="mint-icon-btn" title="编辑" @click.stop="editDefinition(defn)"><Edit2 :size="16" /></button>
+                    <button class="mint-icon-btn danger" title="删除" @click.stop="confirmDelete(defn)"><Trash2 :size="16" /></button>
                   </span>
                 </div>
               </div>
@@ -167,7 +148,7 @@
 
             <section class="wt-section">
               <div class="wt-section-title">
-                <i data-lucide="cpu"></i>
+                <Cpu :size="16" />
                 <span>可用节点</span>
                 <span class="wt-count">{{ availableNodes.total }}</span>
               </div>
@@ -207,7 +188,7 @@
               <p>{{ selectedTemplate?.name }}</p>
             </div>
           </div>
-          <button class="mint-icon-btn" @click="showStartDialog = false"><i data-lucide="x"></i></button>
+          <button class="mint-icon-btn" @click="showStartDialog = false"><X :size="16" /></button>
         </div>
         <form class="wt-modal-body" @submit.prevent="handleStartWorkflow">
           <label>创作主题</label>
@@ -221,7 +202,7 @@
           <select v-model="startForm.account_id" class="mint-select">
             <option value="">使用默认账号</option>
             <option v-for="account in accounts" :key="account.id" :value="account.id">
-              {{ account.xhs_nickname || account.xhs_user_id || account.id }}
+              {{ account.id }}
             </option>
           </select>
 
@@ -291,7 +272,7 @@
               <p>{{ detailTemplate?.description }}</p>
             </div>
           </div>
-          <button class="mint-icon-btn" @click="showDetailDialog = false"><i data-lucide="x"></i></button>
+          <button class="mint-icon-btn" @click="showDetailDialog = false"><X :size="16" /></button>
         </div>
         <div class="wt-modal-body">
           <div class="wt-detail-stats">
@@ -306,7 +287,7 @@
                 <span>{{ getNodeIcon(node.type) }}</span>
                 {{ getNodeName(node.type) }}
               </span>
-              <i v-if="Number(index) < (detailTemplate?.graph_definition?.nodes?.length || 0) - 1" data-lucide="chevron-right"></i>
+              <ChevronRight v-if="Number(index) < (detailTemplate?.graph_definition?.nodes?.length || 0) - 1" :size="16" />
             </template>
           </div>
           <div class="wt-modal-actions">
@@ -317,32 +298,57 @@
     </div>
 
     <SettingsView v-if="showSettings" @close="showSettings = false" />
+
+    <ConfirmDialog
+      :visible="confirmState.visible"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :confirm-text="confirmState.confirmText"
+      :cancel-text="confirmState.cancelText"
+      :danger="confirmState.danger"
+      @confirm="onConfirm"
+      @cancel="onCancel"
+    />
   </div>
-</main>
+</div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, nextTick, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { createIcons, icons } from 'lucide'
+import {
+  ChevronRight, Cpu, Edit2, Folder, GitBranch, Inbox,
+  Layers, Play, Plus, RefreshCw, Star, Trash2, X,
+} from 'lucide-vue-next'
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import workflowDefinitionsApi from '@/api/workflowDefinitions'
 import { useAccountStore } from '@/stores/account'
 import { useAuthStore } from '@/stores/auth'
 import { useUIState } from '@/composables/useUIState'
+import { useConfirm } from '@/composables/useConfirm'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const router = useRouter()
+const { state: confirmState, confirm, onConfirm, onCancel } = useConfirm()
 
 const showSettings = ref(false)
 const userDropdownOpen = ref(false)
 const authStore = useAuthStore()
 
-function handleLogout() {
-  authStore.logout()
-  userDropdownOpen.value = false
-  router.push('/login')
-}
+import { useResizeHandle } from '@/composables/useResizeHandle'
+const {
+  width: leftSidebarWidth,
+  isResizing: isLeftResizing,
+  startResize: startLeftResize,
+  resetWidth: resetLeftSidebarWidth,
+} = useResizeHandle({
+  direction: 'left',
+  minWidth: 170,
+  maxWidth: 520,
+  storageKey: 'mint-left-sidebar-width-v2',
+})
+
 function openSettings() {
   showSettings.value = true
 }
@@ -536,14 +542,14 @@ function showToast(message: string, type: 'success' | 'error' | 'warning' | 'inf
 const FALLBACK_AVAILABLE_NODES = {
   nodes: [
     { node_type: 'search', display_name: '智能搜索', category: 'datasource', icon: '🔍', description: '搜索热点内容' },
-    { node_type: 'analyze', display_name: 'AI分析', category: 'analysis', icon: '📊', description: '分析选题价值' },
-    { node_type: 'copywrite', display_name: 'AI文案', category: 'creation', icon: '✍️', description: '生成小红书文案' },
+    { node_type: 'analyze', display_name: '选题分析', category: 'analysis', icon: '📊', description: '分析选题价值' },
+    { node_type: 'copywrite', display_name: '文案生成', category: 'creation', icon: '✍️', description: '生成平台文案' },
     { node_type: 'image_plan', display_name: '图片规划', category: 'creation', icon: '🖼️', description: '规划配图方案' },
-    { node_type: 'image_gen', display_name: 'AI生图', category: 'creation', icon: '🎨', description: 'AI生成配图' },
+    { node_type: 'image_gen', display_name: '图片生成', category: 'creation', icon: '🎨', description: '生成配图' },
     { node_type: 'image_review', display_name: '图片审核', category: 'review', icon: '👁️', description: '审核图片质量' },
     { node_type: 'audit', display_name: '合规审查', category: 'review', icon: '🛡️', description: '内容合规审查' },
     { node_type: 'final_review', display_name: '终审确认', category: 'review', icon: '✅', description: '人工终审' },
-    { node_type: 'publish', display_name: '发布', category: 'publish', icon: '🚀', description: '发布到小红书' },
+    { node_type: 'publish', display_name: '发布', category: 'publish', icon: '🚀', description: '发布到内容平台' },
   ],
   categories: [
     { category: 'datasource', label: '数据源', count: 1 },
@@ -590,7 +596,11 @@ async function loadAccounts() {
 
 function handleNavClick(pageName: string) {
   if (pageName === 'workflow-templates') return
-  router.push({ path: '/workbench', query: pageName === 'workflow' ? {} : { page: pageName } })
+  if (pageName === 'topic-pool' || pageName === 'my-works' || pageName === 'task-plans' || pageName === 'portfolio') {
+    router.push(`/${pageName}`).catch(() => {})
+    return
+  }
+  router.push({ path: '/workbench', query: { page: pageName } })
 }
 
 function goToEco() {
@@ -599,6 +609,10 @@ function goToEco() {
 
 function goToWorkbench() {
   router.push({ path: '/workbench', query: { page: 'workflow' } })
+}
+
+function goToChat() {
+  router.push({ path: '/workbench', query: { page: 'chat' } })
 }
 
 function selectTemplate(template: any) {
@@ -623,6 +637,8 @@ async function handleStartWorkflow() {
         const existing = await workflowDefinitionsApi.getWorkflowDefinition(definitionId)
         if (existing?.id) {
           definitionId = existing.id
+          selectedTemplate.value._fromApi = true
+          selectedTemplate.value.id = existing.id
         }
       } catch {
         const created = await workflowDefinitionsApi.createWorkflowDefinition({
@@ -634,6 +650,8 @@ async function handleStartWorkflow() {
           tags: ['builtin'],
         })
         definitionId = created.id
+        selectedTemplate.value._fromApi = true
+        selectedTemplate.value.id = created.id
       }
     }
 
@@ -690,7 +708,12 @@ function editDefinition(defn: any) {
 }
 
 async function confirmDelete(defn: any) {
-  if (!window.confirm(`确定删除流程「${defn.name}」吗？`)) return
+  const ok = await confirm({
+    title: '删除流程',
+    message: `确定删除流程「${defn.name}」吗？\n此操作不可撤销。`,
+    danger: true,
+  })
+  if (!ok) return
   try {
     await workflowDefinitionsApi.deleteWorkflowDefinition(defn.id)
     showToast('已删除', 'success')
@@ -710,7 +733,7 @@ function getNodeIcon(nodeType: string): string {
 
 function getNodeName(nodeType: string): string {
   const map: Record<string, string> = {
-    search: '智能搜索', analyze: 'AI分析', copywrite: '文案生成', image_plan: '图片规划',
+    search: '智能搜索', analyze: '选题分析', copywrite: '文案生成', image_plan: '图片规划',
     image_gen: '图片生成', image_review: '图片审核', audit: '合规审核', final_review: '终审确认', publish: '发布',
   }
   return map[nodeType] || nodeType
@@ -721,9 +744,21 @@ function getNodesByCategory(category: string): any[] {
 }
 
 onMounted(async () => {
+  document.addEventListener('click', handleDocClick)
   await Promise.all([refreshData(), loadAccounts()])
-  nextTick(() => createIcons({ icons }))
+  
 })
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocClick)
+})
+
+function handleDocClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.mint-global-user')) {
+    userDropdownOpen.value = false
+  }
+}
 </script>
 
 <style scoped>

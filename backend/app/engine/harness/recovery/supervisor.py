@@ -1,4 +1,4 @@
-﻿"""监督 Agent Recovery 决策层（架构文档 6.4 + 手册 Phase 6 Part D）。
+"""监督 Agent Recovery 决策层（架构文档 6.4 + 手册 Phase 6 Part D）。
 
 只在 RecoveryLoop 三次策略全失败后触发。
 分类：

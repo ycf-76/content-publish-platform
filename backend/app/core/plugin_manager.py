@@ -242,6 +242,11 @@ class PluginManager:
 
             # 使用importlib动态导入
             module_name = f"plugin_{manifest.id.replace('-', '_')}"
+
+            if module_name in sys.modules:
+                del sys.modules[module_name]
+                self._logger.debug(f"Cleared stale '{module_name}' from sys.modules before reload")
+
             spec = importlib.util.spec_from_file_location(module_name, str(module_file))
             
             if spec is None or spec.loader is None:
@@ -486,7 +491,16 @@ class PluginManager:
                 del self._registry[plugin_id]
             
             if plugin_id in self._loaded_modules:
-                del self._loaded_modules[plugin_id]
+                old_module = self._loaded_modules.pop(plugin_id)
+                module_name = getattr(old_module, "__name__", None)
+                if module_name and module_name in sys.modules:
+                    del sys.modules[module_name]
+                    self._logger.debug(f"Removed '{module_name}' from sys.modules")
+
+            module_name_fallback = f"plugin_{plugin_id.replace('-', '_')}"
+            if module_name_fallback in sys.modules:
+                del sys.modules[module_name_fallback]
+                self._logger.debug(f"Removed '{module_name_fallback}' from sys.modules (fallback)")
             
             # 发布事件
             await self._event_bus.publish(
@@ -652,6 +666,57 @@ class PluginManager:
         
         self._logger.info(f"✅ 已卸载全部 {len(plugin_ids)} 个插件")
 
+    async def load_plugin_from_dir(self, plugin_folder: str) -> PluginLoadResult:
+        """
+        从指定目录热加载一个插件（上传后调用）
+
+        如果同ID插件已加载，先卸载旧版本再加载新版本。
+
+        Args:
+            plugin_folder: 插件目录绝对路径
+
+        Returns:
+            PluginLoadResult 加载结果
+        """
+        folder_path = Path(plugin_folder)
+        if not folder_path.exists():
+            return PluginLoadResult(
+                success=False,
+                error=f"插件目录不存在: {plugin_folder}",
+            )
+
+        manifest_path = folder_path / "plugin.json"
+        if not manifest_path.exists():
+            return PluginLoadResult(
+                success=False,
+                error="缺少plugin.json文件",
+            )
+
+        try:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
+                manifest_data = json.load(f)
+            plugin_id = manifest_data.get("id", "")
+        except Exception as e:
+            return PluginLoadResult(
+                success=False,
+                error=f"读取plugin.json失败: {e}",
+            )
+
+        if plugin_id and plugin_id in self._registry:
+            self._logger.info(f"插件 {plugin_id} 已加载，先卸载旧版本")
+            await self.unload_plugin(plugin_id)
+
+        result = await self._load_single_plugin(folder_path)
+
+        if result.success:
+            await self._event_bus.publish(
+                "plugin:loaded",
+                {"plugin_id": result.plugin_id},
+                source_plugin_id="system",
+            )
+
+        return result
+
     def __len__(self):
         """返回已加载插件数量"""
         return len(self._registry)
@@ -663,3 +728,17 @@ class PluginManager:
     def __iter__(self):
         """迭代所有插件ID"""
         return iter(self._registry.keys())
+
+
+_global_plugin_manager: Optional[PluginManager] = None
+
+
+def get_global_plugin_manager() -> Optional[PluginManager]:
+    """获取全局 PluginManager 单例（由 plugin_node_bridge 初始化时设置）"""
+    return _global_plugin_manager
+
+
+def set_global_plugin_manager(pm: PluginManager) -> None:
+    """设置全局 PluginManager 单例"""
+    global _global_plugin_manager
+    _global_plugin_manager = pm

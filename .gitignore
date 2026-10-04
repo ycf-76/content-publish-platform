@@ -66,3 +66,13 @@ pw-browsers/
 
 # Scratch scripts (backend root)
 backend/_*.py
+backend/test_*.py
+backend/test_*.txt
+
+# pytest cache
+.pytest_cache/
+
+# Frontend temp files
+frontend/_sfc_check.mjs
+frontend/_typecheck_output.txt
+frontend/*.proof.png

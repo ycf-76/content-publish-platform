@@ -5,7 +5,7 @@
         <div class="mint-wf-step">02</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="trending-up" class="wf-node-icon"></i>
+            <TrendingUp class="wf-node-icon" :size="16" />
             趋势分析
             <code class="wf-node-key">analyze</code>
           </div>
@@ -25,7 +25,7 @@
     <div class="wf-node-body">
       <!-- idle 状态 -->
       <div v-if="nodeStatus === 'idle'" class="wf-empty-hint">
-        <i data-lucide="info" style="width:14px; height:14px;"></i>
+        <Info :size="14" />
         等待搜索节点完成后自动进入分析
       </div>
 
@@ -34,17 +34,17 @@
         <div class="wf-analyze-loading-step" :class="{ 'is-active': currentLayer >= 1 }">
           <span class="wf-layer-tag wf-layer-tag-rule">Layer 1</span>
           <span class="wf-analyze-loading-text">规则层：派生指标 + 爆点分类</span>
-          <i v-if="currentLayer >= 1" data-lucide="check" style="width:14px;height:14px;color:#10B981;"></i>
+          <Check v-if="currentLayer >= 1" :size="14" style="color:#10B981;" />
         </div>
         <div class="wf-analyze-loading-step" :class="{ 'is-active': currentLayer >= 2 }">
           <span class="wf-layer-tag wf-layer-tag-llm">Layer 2</span>
           <span class="wf-analyze-loading-text">LLM 粗分析：标题钩子 / 内容结构 / 情绪触发</span>
-          <i v-if="currentLayer >= 2" data-lucide="check" style="width:14px;height:14px;color:#10B981;"></i>
+          <Check v-if="currentLayer >= 2" :size="14" style="color:#10B981;" />
         </div>
         <div class="wf-analyze-loading-step" :class="{ 'is-active': currentLayer >= 3 }">
           <span class="wf-layer-tag wf-layer-tag-deep">Layer 3</span>
           <span class="wf-analyze-loading-text">LLM 深度归因：趋势信号 + 选题建议</span>
-          <i v-if="currentLayer >= 3" data-lucide="check" style="width:14px;height:14px;color:#10B981;"></i>
+          <Check v-if="currentLayer >= 3" :size="14" style="color:#10B981;" />
         </div>
         <!-- 流式输出文本区域：打字机逐字打印 + 光标 -->
         <div v-show="typedText" ref="streamBoxRef" class="wf-analyze-stream-text">
@@ -54,7 +54,7 @@
 
       <!-- error 状态 -->
       <div v-else-if="nodeStatus === 'error'" class="mint-search-error">
-        <i data-lucide="alert-circle" style="width:20px; height:20px;"></i>
+        <AlertCircle :size="20" />
         <span>{{ errorMessage }}</span>
       </div>
 
@@ -108,8 +108,8 @@
                   <div class="wf-trending-title">{{ note.title || '无标题' }}</div>
                   <div class="wf-trending-meta">
                     <span v-if="note.platform" class="wf-trending-platform">{{ note.platform }}</span>
-                    <span class="wf-trending-likes"><i data-lucide="heart" style="width:11px;height:11px;"></i>{{ note.likes || 0 }}</span>
-                    <span v-if="note.comments" class="wf-trending-comments"><i data-lucide="message-circle" style="width:11px;height:11px;"></i>{{ note.comments }}</span>
+                    <span class="wf-trending-likes"><Heart :size="11" />{{ note.likes || 0 }}</span>
+                    <span v-if="note.comments" class="wf-trending-comments"><MessageCircle :size="11" />{{ note.comments }}</span>
                     <span v-if="note.viral_score" class="wf-trending-score">爆点分 {{ note.viral_score.toFixed(2) }}</span>
                     <span v-if="note.viral_type" class="wf-trending-type">{{ note.viral_type }}</span>
                   </div>
@@ -130,13 +130,13 @@
           </div>
           <div class="wf-layer-body">
             <div v-if="isSkipped(result.patterns)" class="wf-layer-skipped">
-              <i data-lucide="minus-circle" style="width:14px;height:14px;color:#94A3B8;"></i>
+              <MinusCircle :size="14" style="color:#94A3B8" />
               <span class="wf-layer-skipped-text">LLM 不可用，跳过 Layer 2</span>
             </div>
             <template v-else-if="result.patterns">
               <!-- 标题钩子 -->
               <div v-if="result.patterns.title_patterns?.length" class="wf-pattern-group">
-                <div class="wf-pattern-label"><i data-lucide="hash" style="width:12px;height:12px;"></i>标题钩子</div>
+                <div class="wf-pattern-label"><Hash :size="12" />标题钩子</div>
                 <div class="wf-pattern-chips">
                   <div v-for="(p, i) in result.patterns.title_patterns" :key="`tp-${i}`" class="wf-chip wf-chip-title">
                     <span class="wf-chip-type">{{ p.type }}</span>
@@ -146,7 +146,7 @@
               </div>
               <!-- 内容结构 -->
               <div v-if="result.patterns.content_structures?.length" class="wf-pattern-group">
-                <div class="wf-pattern-label"><i data-lucide="layout-list" style="width:12px;height:12px;"></i>内容结构</div>
+                <div class="wf-pattern-label"><LayoutList :size="12" />内容结构</div>
                 <div class="wf-pattern-chips">
                   <div v-for="(s, i) in result.patterns.content_structures" :key="`cs-${i}`" class="wf-chip wf-chip-structure">
                     <span class="wf-chip-main">{{ s.structure }}</span>
@@ -156,7 +156,7 @@
               </div>
               <!-- 情绪触发点 -->
               <div v-if="result.patterns.emotion_triggers?.length" class="wf-pattern-group">
-                <div class="wf-pattern-label"><i data-lucide="zap" style="width:12px;height:12px;"></i>情绪触发点</div>
+                <div class="wf-pattern-label"><Zap :size="12" />情绪触发点</div>
                 <div class="wf-pattern-chips">
                   <div v-for="(e, i) in result.patterns.emotion_triggers" :key="`et-${i}`" class="wf-chip wf-chip-emotion">
                     <span class="wf-chip-main">{{ e.emotion }}</span>
@@ -176,7 +176,7 @@
           </div>
           <div class="wf-layer-body">
             <div v-if="isSkipped(result.insights)" class="wf-layer-skipped">
-              <i data-lucide="minus-circle" style="width:14px;height:14px;color:#94A3B8;"></i>
+              <MinusCircle :size="14" style="color:#94A3B8" />
               <span class="wf-layer-skipped-text">LLM 不可用，跳过 Layer 3</span>
             </div>
             <template v-else-if="result.insights">
@@ -224,7 +224,7 @@
                       <span class="wf-rec-value">{{ rec.emotion_hook }}</span>
                     </div>
                     <div v-if="rec.reason" class="wf-recommendation-reason">
-                      <i data-lucide="quote" style="width:11px;height:11px;color:#9CA3AF;"></i>
+                      <Quote :size="11" style="color:#9CA3AF" />
                       {{ rec.reason }}
                     </div>
                     <!-- 执行指令 -->
@@ -264,36 +264,52 @@
 
       <!-- completed 状态但无数据（checkpoint 丢失时二次兜底） -->
       <div v-else-if="nodeStatus === 'completed'" class="wf-empty-hint">
-        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        <CheckCircle :size="14" style="color:#60A5FA" />
         分析已完成（详细数据不可用，服务重启后历史数据需重新执行查看）
       </div>
 
       <!-- awaiting_review 状态：analyze 完成后等待用户选方向 -->
       <div v-else-if="nodeStatus === 'awaiting_review'" class="wf-analyze-awaiting">
         <div class="wf-analyze-awaiting-hint">
-          <i data-lucide="mouse-pointer-click" style="width:16px;height:16px;color:#FF2442;"></i>
+          <MousePointerClick :size="16" style="color:#FF2442" />
           <span>分析完成，请选择创作方向后继续</span>
         </div>
         <button class="wf-continue-btn" @click="$emit('enter-copywrite')">
-          <i data-lucide="arrow-right" style="width:16px;height:16px;"></i>
+          <ArrowRight :size="16" />
           开始创作
         </button>
       </div>
     </div>
 
     <div class="wf-node-meta" v-if="nodeMeta">
-      <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-      <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-      <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+      <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+      <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+      <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
     </div>
 
-    
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, watch, nextTick, ref } from 'vue'
-import { createIcons, icons } from 'lucide'
+import {
+  AlertCircle,
+  ArrowRight,
+  Check,
+  CheckCircle,
+  Clock,
+  Cpu,
+  Hash,
+  Heart,
+  Info,
+  LayoutList,
+  MessageCircle,
+  MinusCircle,
+  MousePointerClick,
+  Quote,
+  TrendingUp,
+  Zap,
+} from 'lucide-vue-next'
 import TrendChart from './TrendChart.vue'
 import { useTypewriter } from '@/composables/useTypewriter'
 
@@ -337,8 +353,8 @@ const summaryHotspots = computed(() => props.result?.results?.length || 0)
 const summaryDirections = computed(() => props.result?.insights?.recommendations?.length || 0)
 
 // 重建图标（状态变化时）
-watch(() => props.nodeStatus, () => nextTick(() => createIcons({ icons })))
-watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
+watch(() => props.nodeStatus, () => {})
+watch(() => props.result, () => {}, { deep: true })
 
 const statusColor = computed(() => {
   const map: Record<string, string> = {

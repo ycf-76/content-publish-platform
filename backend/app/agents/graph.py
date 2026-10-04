@@ -5,7 +5,6 @@ Red lines:
 - Nodes must call Harness, not MCP/LLM directly.
 - Routing must be hardcoded (no LLM decisions).
 - Use SqliteSaver for checkpoints (persistent, no stale state across restarts).
-- 软语义节点（quality_check_*）是分散式守卫，只判质量不做路由决策。
 
 所有节点函数、状态定义、路由函数已拆分到 app.agents.nodes 包，
 本文件仅保留：
@@ -62,11 +61,16 @@ from app.agents.nodes import (  # noqa: E402
     audit_node,
     final_review_node,
     publish_node,
+    card_gen_node,
+    wechat_push_node,
+    feishu_push_node,
     route_after_search,
+    route_after_analyze,
+    route_after_copywrite,
     route_after_image_gen,
     route_after_image_review,
+    route_after_audit,
     route_after_final_review,
-    rollback_to_node,
 )
 
 
@@ -205,6 +209,9 @@ def build_workflow_graph(checkpointer=None):
                 "audit": audit_node,
                 "final_review": final_review_node,
                 "publish": publish_node,
+                "card_gen": card_gen_node,
+                "wechat_push": wechat_push_node,
+                "feishu_push": feishu_push_node,
             }
             
             if plugin_func != builtin_funcs.get(node_type):
@@ -227,40 +234,101 @@ def build_workflow_graph(checkpointer=None):
     graph.add_node("audit", _resolve_node("audit", audit_node))
     graph.add_node("final_review", _resolve_node("final_review", final_review_node))
     graph.add_node("publish", _resolve_node("publish", publish_node))
+    graph.add_node("card_gen", _resolve_node("card_gen", card_gen_node))
+    graph.add_node("wechat_push", _resolve_node("wechat_push", wechat_push_node))
+    graph.add_node("feishu_push", _resolve_node("feishu_push", feishu_push_node))
 
     # Set entry point
     graph.set_entry_point("search")
 
-    # Add edges (hardcoded routing)
-    # search 失败（空结果/异常）→ END，避免后续节点白跑
+    # Add edges (smart routing with back-edges)
+    # search: 失败/空结果 → END，否则 → analyze
     graph.add_conditional_edges(
         "search",
         route_after_search,
         {"analyze": "analyze", "end": END},
     )
-    graph.add_edge("analyze", "copywrite")
-    graph.add_edge("copywrite", "image_plan")
-    # 第一期新增：image_plan 先规划图片类型+模板数据，再交给 image_gen 渲染
+    # analyze: 信心不足 → 回 search 补数据，否则 → copywrite
+    graph.add_conditional_edges(
+        "analyze",
+        route_after_analyze,
+        {"search": "search", "copywrite": "copywrite"},
+    )
+    # copywrite: 信心不足 → 回 analyze 换方向，否则 → image_plan
+    graph.add_conditional_edges(
+        "copywrite",
+        route_after_copywrite,
+        {"analyze": "analyze", "image_plan": "image_plan"},
+    )
+    # image_plan → image_gen（确定性，无路由）
     graph.add_edge("image_plan", "image_gen")
-    # image_gen 失败（欠费/认证/限流）→ END，避免后续 image_review/audit 白跑
+    # image_gen: 失败 → 回退 image_plan，否则 → image_review
     graph.add_conditional_edges(
         "image_gen",
         route_after_image_gen,
-        {"image_review": "image_review", "end": END},
+        {"image_review": "image_review", "image_plan": "image_plan"},
     )
-    # 图片审核通过 → audit；拒绝 → 重做 image_gen
+    # image_review: 通过 → audit，拒绝 → 重做 image_gen
     graph.add_conditional_edges(
         "image_review",
         route_after_image_review,
         {"audit": "audit", "image_gen": "image_gen"},
     )
-    graph.add_edge("audit", "final_review")
+    # audit: 通过 → final_review，需要修改 → 回 copywrite 带修改意见，冲突 → final_review 仲裁
+    graph.add_conditional_edges(
+        "audit",
+        route_after_audit,
+        {"copywrite": "copywrite", "final_review": "final_review"},
+    )
+    # final_review: 通过 → publish，不通过 → 回溯到指定节点
     graph.add_conditional_edges(
         "final_review",
         route_after_final_review,
-        {"publish": "publish", "rollback": "copywrite"},
+        {
+            "publish": "publish",
+            "copywrite": "copywrite",
+            "analyze": "analyze",
+            "image_gen": "image_gen",
+            "search": "search",
+        },
     )
-    graph.add_edge("publish", END)
+
+    def route_after_publish(state: WorkflowState) -> str:
+        model_settings = state.get("model_settings", {}) or {}
+        if model_settings.get("enable_card_gen"):
+            return "card_gen"
+        return "end"
+
+    def route_after_card_gen(state: WorkflowState) -> str:
+        model_settings = state.get("model_settings", {}) or {}
+        if model_settings.get("enable_wechat_push"):
+            return "wechat_push"
+        if model_settings.get("enable_feishu_push"):
+            return "feishu_push"
+        return "end"
+
+    def route_after_wechat_push(state: WorkflowState) -> str:
+        model_settings = state.get("model_settings", {}) or {}
+        if model_settings.get("enable_feishu_push"):
+            return "feishu_push"
+        return "end"
+
+    graph.add_conditional_edges(
+        "publish",
+        route_after_publish,
+        {"card_gen": "card_gen", "end": END},
+    )
+    graph.add_conditional_edges(
+        "card_gen",
+        route_after_card_gen,
+        {"wechat_push": "wechat_push", "feishu_push": "feishu_push", "end": END},
+    )
+    graph.add_conditional_edges(
+        "wechat_push",
+        route_after_wechat_push,
+        {"feishu_push": "feishu_push", "end": END},
+    )
+    graph.add_edge("feishu_push", END)
 
     # Compile：使用 interrupt_before 在创作决策点暂停，把选择权还给用户
     # - 必须提供 checkpointer（SqliteSaver 单例），否则 interrupt 后无法 resume
@@ -310,6 +378,9 @@ def _get_node_func_map() -> dict[str, Callable]:
         audit_node,
         final_review_node,
         publish_node,
+        card_gen_node,
+        wechat_push_node,
+        feishu_push_node,
     )
 
     # 1. 注册内置节点
@@ -323,6 +394,9 @@ def _get_node_func_map() -> dict[str, Callable]:
         "audit": audit_node,
         "final_review": final_review_node,
         "publish": publish_node,
+        "card_gen": card_gen_node,
+        "wechat_push": wechat_push_node,
+        "feishu_push": feishu_push_node,
     }
 
     # 2. 集成 NodeRegistry 中的插件节点
@@ -506,79 +580,124 @@ def build_dynamic_workflow_graph(
     # 设置入口点（拓扑排序的第一个节点）
     graph.set_entry_point(sorted_ids[0])
 
-    # 构建邻接表
+    # 构建邻接表（区分条件边和普通边）
     from collections import defaultdict
     adj: dict[str, list[str]] = defaultdict(list)
+    conditional_adj: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for e in effective_edges:
         src, tgt = e["source"], e["target"]
-        if src in sorted_ids and tgt in sorted_ids:
+        if src not in sorted_ids or tgt not in sorted_ids:
+            continue
+        condition = e.get("condition")
+        if condition:
+            conditional_adj[src].append((tgt, condition))
+        else:
             adj[src].append(tgt)
 
     node_set = set(sorted_ids)
 
-    # 为关键节点保留固定工作流里的条件路由。只有目标节点真的出现在当前图中时
-    # 才启用，避免自定义轻量图因缺少目标节点而无法编译。
+    # 内置节点类型 → 对应的 smart_routing 函数
+    _BUILTIN_ROUTERS: dict[str, tuple[callable, dict[str, list[str]]]] = {
+        "search": (route_after_search, {"end": []}),
+        "analyze": (route_after_analyze, {}),
+        "copywrite": (route_after_copywrite, {}),
+        "image_gen": (route_after_image_gen, {"image_plan": []}),
+        "image_review": (route_after_image_review, {}),
+        "audit": (route_after_audit, {}),
+        "final_review": (route_after_final_review, {}),
+    }
+
     conditional_nodes: set[str] = set()
 
-    # search 节点始终加条件路由保护：搜索失败（空结果）→ END
-    if "search" in node_set:
-        search_targets = adj.get("search", [])
-        if search_targets:
-            first_target = search_targets[0]
-            graph.add_conditional_edges(
-                "search",
-                route_after_search,
-                {first_target: first_target, "end": END},
-            )
+    # 第一优先级：用户在 graph_definition 边上声明了 condition 的条件路由
+    for src, cond_targets in conditional_adj.items():
+        if src not in node_set:
+            continue
+        router_info = _BUILTIN_ROUTERS.get(src)
+        if router_info:
+            router_func, _ = router_info
+            target_map: dict[str, str] = {}
+            for tgt, _cond in cond_targets:
+                target_map[tgt] = tgt
+            if src == "search":
+                target_map["end"] = END
+            if src == "image_gen" and "image_plan" in node_set:
+                target_map["image_plan"] = "image_plan"
+            if src == "final_review":
+                for fallback in ("publish", "copywrite", "analyze", "image_gen", "search"):
+                    if fallback in node_set:
+                        target_map.setdefault(fallback, fallback)
+            graph.add_conditional_edges(src, router_func, target_map)
+            conditional_nodes.add(src)
         else:
-            graph.add_conditional_edges(
-                "search",
-                route_after_search,
-                {"end": END},
-            )
-        conditional_nodes.add("search")
+            targets = [t for t, _ in cond_targets]
+            if len(targets) == 1:
+                target_map = {targets[0]: targets[0]}
+                if targets[0] not in node_set:
+                    target_map = {"end": END}
+            else:
+                target_map = {t: t for t in targets if t in node_set}
+            if not target_map:
+                target_map = {"end": END}
 
-    if "image_gen" in node_set:
-        image_gen_targets = adj.get("image_gen", [])
-        if "image_review" in node_set:
-            graph.add_conditional_edges(
-                "image_gen",
-                route_after_image_gen,
-                {"image_review": "image_review", "end": END},
-            )
-            conditional_nodes.add("image_gen")
-        elif image_gen_targets:
-            first_target = image_gen_targets[0]
-            graph.add_conditional_edges(
-                "image_gen",
-                route_after_image_gen,
-                {first_target: first_target, "end": END},
-            )
-            conditional_nodes.add("image_gen")
+            def _make_fan_router(t_map):
+                def _router(state):
+                    first_key = next(iter(t_map))
+                    return first_key
+                return _router
 
-    if (
-        "image_review" in node_set
-        and "audit" in node_set
-        and "image_gen" in node_set
-    ):
-        graph.add_conditional_edges(
-            "image_review",
-            route_after_image_review,
-            {"audit": "audit", "image_gen": "image_gen"},
-        )
-        conditional_nodes.add("image_review")
+            graph.add_conditional_edges(src, _make_fan_router(target_map), target_map)
+            conditional_nodes.add(src)
 
-    if (
-        "final_review" in node_set
-        and "publish" in node_set
-        and "copywrite" in node_set
-    ):
-        graph.add_conditional_edges(
-            "final_review",
-            route_after_final_review,
-            {"publish": "publish", "rollback": "copywrite"},
-        )
-        conditional_nodes.add("final_review")
+    # 第二优先级：内置节点类型有 smart_routing 函数，且未被用户 condition 覆盖
+    for node_type, (router_func, _extra) in _BUILTIN_ROUTERS.items():
+        if node_type not in node_set or node_type in conditional_nodes:
+            continue
+        targets = adj.get(node_type, [])
+        if not targets:
+            continue
+
+        target_map: dict[str, str] = {}
+        if node_type == "search":
+            first_target = targets[0]
+            target_map = {first_target: first_target, "end": END}
+        elif node_type == "image_gen":
+            if "image_review" in node_set:
+                target_map = {"image_review": "image_review", "image_plan": "image_plan"}
+            else:
+                first_target = targets[0]
+                target_map = {first_target: first_target, "image_plan": "image_plan"}
+        elif node_type == "image_review":
+            if "audit" in node_set and "image_gen" in node_set:
+                target_map = {"audit": "audit", "image_gen": "image_gen"}
+            else:
+                continue
+        elif node_type == "final_review":
+            for t in ("publish", "copywrite", "analyze", "image_gen", "search"):
+                if t in node_set:
+                    target_map[t] = t
+            if not target_map:
+                continue
+        elif node_type == "analyze":
+            if "search" in node_set and "copywrite" in node_set:
+                target_map = {"search": "search", "copywrite": "copywrite"}
+            else:
+                continue
+        elif node_type == "copywrite":
+            if "analyze" in node_set and "image_plan" in node_set:
+                target_map = {"analyze": "analyze", "image_plan": "image_plan"}
+            else:
+                continue
+        elif node_type == "audit":
+            if "copywrite" in node_set and "final_review" in node_set:
+                target_map = {"copywrite": "copywrite", "final_review": "final_review"}
+            else:
+                continue
+        else:
+            continue
+
+        graph.add_conditional_edges(node_type, router_func, target_map)
+        conditional_nodes.add(node_type)
 
     # 添加普通边
     for nid in sorted_ids:
@@ -586,21 +705,22 @@ def build_dynamic_workflow_graph(
             continue
         targets = adj.get(nid, [])
         if not targets:
-            # 没有出边的节点 → 连到 END
             graph.add_edge(nid, END)
         elif len(targets) == 1:
-            # 单一后继 → 直连
             graph.add_edge(nid, targets[0])
         else:
-            # 多个后继 → 简单扇出（并行执行）
-            # 注意：LangGraph 的 fan-out 会并行执行所有后继节点
             for tgt in targets:
                 graph.add_edge(nid, tgt)
 
     # 确定哪些节点需要 interrupt（审核类节点）
+    # 节点 config 可声明 "interrupt": false 跳过人工挂起点，
+    # 供定时任务流水线等无人值守场景使用（默认 true，行为不变）。
+    node_config_map = {n["type"]: (n.get("config") or {}) for n in nodes_def}
     interrupt_nodes = []
     for nid in sorted_ids:
         if nid in ("copywrite", "image_gen", "image_review", "final_review", "publish"):
+            if not node_config_map.get(nid, {}).get("interrupt", True):
+                continue
             interrupt_nodes.append(nid)
 
     if checkpointer is None:

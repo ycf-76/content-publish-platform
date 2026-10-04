@@ -256,14 +256,21 @@ function onDragStart(e: MouseEvent) {
   document.addEventListener('mouseup', onDragEnd)
 }
 
+let dragRafId = 0
 function onDragMove(e: MouseEvent) {
   if (!isDragging.value) return
   hasDragged = true
-  dragX.value = e.clientX - dragOffsetX
-  dragY.value = e.clientY - dragOffsetY
+  const cx = e.clientX - dragOffsetX
+  const cy = e.clientY - dragOffsetY
+  cancelAnimationFrame(dragRafId)
+  dragRafId = requestAnimationFrame(() => {
+    dragX.value = cx
+    dragY.value = cy
+  })
 }
 
 function onDragEnd() {
+  cancelAnimationFrame(dragRafId)
   isDragging.value = false
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
@@ -284,16 +291,23 @@ function onTouchStart(e: TouchEvent) {
   document.addEventListener('touchend', onTouchEnd)
 }
 
+let touchRafId = 0
 function onTouchMove(e: TouchEvent) {
   e.preventDefault()
   if (!isDragging.value) return
   hasDragged = true
   const touch = e.touches[0]
-  dragX.value = touch.clientX - dragOffsetX
-  dragY.value = touch.clientY - dragOffsetY
+  const cx = touch.clientX - dragOffsetX
+  const cy = touch.clientY - dragOffsetY
+  cancelAnimationFrame(touchRafId)
+  touchRafId = requestAnimationFrame(() => {
+    dragX.value = cx
+    dragY.value = cy
+  })
 }
 
 function onTouchEnd() {
+  cancelAnimationFrame(touchRafId)
   isDragging.value = false
   document.removeEventListener('touchmove', onTouchMove)
   document.removeEventListener('touchend', onTouchEnd)

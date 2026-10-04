@@ -258,7 +258,7 @@ describe('useWorkflowStore', () => {
       }, 'evt9')
 
       expect(store.nodes[0].status).toBe('awaiting_review')
-      expect(store.nodes[0].output.review_type).toBe('direction_select')
+      expect(store.nodes[0].output?.review_type).toBe('direction_select')
     })
 
     it('should handle stream_chunk event and append text to agent_thinking', () => {

@@ -3,10 +3,16 @@ import type { RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
   {
-    path: '/',
-    name: 'Landing',
-    component: () => import('@/views/LandingView.vue'),
+    path: '/particle',
+    name: 'ParticleHome',
+    component: () => import('@/views/ParticleHomeView.vue'),
     meta: { requiresAuth: false }
+  },
+  {
+    path: '/',
+    name: 'Home',
+    component: () => import('@/views/HomeView.vue'),
+    meta: { requiresAuth: true, title: '数据看板' },
   },
   {
     path: '/login',
@@ -72,18 +78,6 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false }
   },
   {
-    path: '/card-editor',
-    name: 'CardEditor',
-    component: () => import('@/views/CardEditorView.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/esther-factory',
-    name: 'EstherFactory',
-    component: () => import('@/views/EstherFactoryView.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/SettingsView.vue'),
@@ -92,13 +86,41 @@ const routes: RouteRecordRaw[] = [
       title: '设置'
     }
   },
+
   {
-    path: '/wechat-bot-test',
-    name: 'WeChatBotTest',
-    component: () => import('@/pages/WeChatBotTest.vue'),
+    path: '/my-works',
+    name: 'MyWorks',
+    component: () => import('@/views/MyWorksView.vue'),
     meta: {
       requiresAuth: true,
-      title: '微信机器人测试 - Phase 2'
+      title: '我的作品'
+    }
+  },
+  {
+    path: '/task-plans',
+    name: 'TaskPlans',
+    component: () => import('@/views/TaskPlanView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: '任务清单'
+    }
+  },
+  {
+    path: '/portfolio',
+    name: 'Portfolio',
+    component: () => import('@/views/PortfolioView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: '作品集'
+    }
+  },
+  {
+    path: '/portfolio/:id',
+    name: 'PortfolioDetail',
+    component: () => import('@/views/PortfolioDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: '作品详情'
     }
   }
 ]
@@ -111,9 +133,8 @@ const router = createRouter({
 // 路由守卫：requiresAuth 路由未登录跳 /login
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
-  if (to.meta.requiresAuth && !token) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
-  } else if (to.name === 'Login' && token && !to.query.force) {
+  // DEV: 登录验证已暂停，无 token 也放行
+  if (to.name === 'Login' && token && !to.query.force) {
     const redirect = (to.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workflow'
     sessionStorage.removeItem('redirect_after_login')
     next(redirect)

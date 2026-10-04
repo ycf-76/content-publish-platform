@@ -14,8 +14,8 @@
 - audit.py: 合规审核节点
 - final_review.py: 终审节点
 - publish.py: 发布节点
-- quality_checks.py: 3 个软语义质量检查节点
-- routing.py: 7 个路由函数 + rollback
+- smart_routing.py: 三层智能路由（替代旧 routing.py）
+- belief.py: 信念系统（每个节点维护信心分 + 判断）
 """
 
 # 共享基础设施（保持 graph.py / workflow.py / tests 的 import 链不断）
@@ -42,13 +42,20 @@ from app.agents.nodes.audit import audit_node
 from app.agents.nodes.final_review import final_review_node
 from app.agents.nodes.publish import publish_node
 
-# 路由函数
-from app.agents.nodes.routing import (
+# 后处理节点（可选，在 publish 之后执行）
+from app.agents.nodes.card_gen import card_gen_node
+from app.agents.nodes.wechat_push import wechat_push_node
+from app.agents.nodes.feishu_push import feishu_push_node
+
+# 路由函数（smart_routing 三层路由）
+from app.agents.nodes.smart_routing import (
     route_after_search,
+    route_after_analyze,
+    route_after_copywrite,
     route_after_image_gen,
     route_after_image_review,
+    route_after_audit,
     route_after_final_review,
-    rollback_to_node,
 )
 
 __all__ = [
@@ -73,10 +80,16 @@ __all__ = [
     "audit_node",
     "final_review_node",
     "publish_node",
-    # Routing
+    # Post-processing nodes
+    "card_gen_node",
+    "wechat_push_node",
+    "feishu_push_node",
+    # Routing (smart_routing)
     "route_after_search",
+    "route_after_analyze",
+    "route_after_copywrite",
     "route_after_image_gen",
     "route_after_image_review",
+    "route_after_audit",
     "route_after_final_review",
-    "rollback_to_node",
 ]

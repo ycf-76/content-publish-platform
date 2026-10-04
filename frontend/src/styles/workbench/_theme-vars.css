@@ -69,7 +69,15 @@
   --ma-severity-medium: #F59E0B;  /* 闇€鍏虫敞 鐞ョ弨 */
   --ma-severity-high: #EF4444;    /* 蹇呴』澶勭悊 绾?*/
 
-  /* 鈥斺€?鐘舵€佽涔夛紙free-explore 鍏佽鐨勮涔夌姸鎬佽壊锛夆€斺€?*/
+  /* ===== 海蓝色点缀（Ocean Accent） ===== */
+  --ocean-h: 205;                    /* 色相基准 */
+  --ocean-s: 72%;                    /* 饱和度 */
+  --ocean-l: 55%;                    /* 亮度 */
+  --ocean-glow: hsl(205, 72%, 55%);  /* 主光晕色 */
+  --ocean-deep: hsl(210, 65%, 45%);  /* 深色端 */
+  --ocean-soft: hsl(200, 60%, 70%);  /* 浅色端 */
+  --ocean-opacity: 0.12;             /* 默认透明度 */
+
   --state-success: #10B981;
   --state-warning: #F59E0B;
   --state-error: #EF4444;
@@ -193,6 +201,15 @@
   --state-warning: #FBBF24;
   --state-error: #F87171;
   --state-info: #608CFA;
+
+  /* ===== 海蓝色点缀（暗色模式） ===== */
+  --ocean-h: 210;
+  --ocean-s: 55%;
+  --ocean-l: 45%;
+  --ocean-glow: hsl(210, 55%, 45%);
+  --ocean-deep: hsl(215, 50%, 30%);
+  --ocean-soft: hsl(205, 50%, 55%);
+  --ocean-opacity: 0.08;
 
   /* 鏆楄壊闃村奖锛氱函榛?+ 鏇撮珮閫忔槑搴?*/
   --ma-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);

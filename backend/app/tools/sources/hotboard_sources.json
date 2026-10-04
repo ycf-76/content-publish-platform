@@ -1,0 +1,63 @@
+{
+  "_comment": "可插拔热榜源配置。enabled=true 的平台会在启动时注册为 ContentSource。添加新源只需加一条，删除或设 enabled=false 即移除，无需改代码。key 用 hb- 前缀避免与 Tavily Site Search 同名覆盖。primary 用国内镜像 60s.crystelf.top（60s.viki.moe 已迁移至 CF Workers，国内 403）。",
+  "hb-weibo": {
+    "label": "微博热搜",
+    "primary": "https://60s.crystelf.top/v2/weibo",
+    "backup": "https://v2.xxapi.cn/api/weibohot",
+    "enabled": true
+  },
+  "hb-douyin": {
+    "label": "抖音热搜",
+    "primary": "https://60s.crystelf.top/v2/douyin",
+    "backup": "https://v2.xxapi.cn/api/douyinhot",
+    "enabled": true
+  },
+  "hb-zhihu": {
+    "label": "知乎热榜",
+    "primary": "https://60s.crystelf.top/v2/zhihu",
+    "backup": "https://v2.xxapi.cn/api/zhihuhot",
+    "enabled": true
+  },
+  "hb-toutiao": {
+    "label": "头条热搜",
+    "primary": "https://60s.crystelf.top/v2/toutiao",
+    "backup": "https://v2.xxapi.cn/api/toutiaohot",
+    "enabled": true
+  },
+  "hb-baidu": {
+    "label": "百度热搜",
+    "primary": "https://60s.crystelf.top/v2/baidu/hot",
+    "backup": "https://v2.xxapi.cn/api/baiduhot",
+    "enabled": true
+  },
+  "hb-bilibili": {
+    "label": "B站热搜",
+    "primary": "https://60s.crystelf.top/v2/bili",
+    "backup": "https://v2.xxapi.cn/api/bilibilihot",
+    "enabled": true
+  },
+  "hb-rednote": {
+    "label": "小红书热搜",
+    "primary": "https://60s.crystelf.top/v2/rednote",
+    "backup": "https://v2.xxapi.cn/api/rednotehot",
+    "enabled": true
+  },
+  "hb-60s-news": {
+    "label": "每天60秒",
+    "primary": "https://60s.crystelf.top/v2/60s",
+    "backup": "",
+    "enabled": false
+  },
+  "hb-it-news": {
+    "label": "IT资讯",
+    "primary": "https://60s.crystelf.top/v2/it-news",
+    "backup": "",
+    "enabled": false
+  },
+  "hb-ai-news": {
+    "label": "AI资讯",
+    "primary": "https://60s.crystelf.top/v2/ai-news",
+    "backup": "",
+    "enabled": false
+  }
+}

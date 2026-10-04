@@ -23,24 +23,6 @@ logger = logging.getLogger(__name__)
 # 内置插件清单（按类别分组）
 BUILTIN_PLUGIN_REGISTRY: List[Dict[str, Any]] = [
     {
-        "plugin_id": "xiaohongshu-publish",
-        "module_path": "plugins.builtin.xiaohongshu_publish.xiaohongshu_publish",
-        "class_name": "XiaohongshuPublishPlugin",
-        "category": PluginCategory.PLATFORM,
-        "priority": 100,
-        "auto_load": True,
-        "manifest": {
-            "id": "xiaohongshu-publish",
-            "name": "小红书发布器",
-            "version": "1.0.0",
-            "category": "platform",
-            "description": "向小红书平台发布笔记内容（MCP Client架构）",
-            "display_icon": "📕",
-            "is_builtin": True,
-            "is_enabled_by_default": True,
-        }
-    },
-    {
         "plugin_id": "monitor-agent",
         "module_path": "plugins.builtin.monitor_agent.monitor_agent",
         "class_name": "MonitorAgentPlugin",
@@ -267,7 +249,7 @@ def validate_builtin_plugins_structure() -> tuple[bool, List[str]]:
     errors = []
     base_path = Path(__file__).parent
     
-    required_plugins = ["xiaohongshu_publish", "monitor_agent", "ai_copywrite"]
+    required_plugins = ["monitor_agent", "ai_copywrite"]
     
     for plugin_dir in required_plugins:
         plugin_path = base_path / plugin_dir

@@ -39,6 +39,7 @@ class BaseLLM(ABC):
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         """子类实现：实际 LLM 调用逻辑。"""
         raise NotImplementedError
@@ -48,6 +49,7 @@ class BaseLLM(ABC):
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """子类实现：实际 LLM 流式调用逻辑。"""
         raise NotImplementedError
@@ -56,6 +58,7 @@ class BaseLLM(ABC):
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         """Non-streaming chat, wrapped with concurrency semaphore.
 
@@ -66,24 +69,25 @@ class BaseLLM(ABC):
                 f"[llm_semaphore] acquired ({LLM_CONCURRENCY_LIMIT - _llm_semaphore._value}/{LLM_CONCURRENCY_LIMIT}), "
                 f"model={getattr(self, 'model_name', '?')}"
             )
-            return await self._chat_impl(messages, response_format)
+            return await self._chat_impl(messages, response_format, max_tokens=max_tokens)
 
     async def stream_chat(
         self,
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Streaming chat, wrapped with concurrency semaphore.
 
         Yields: {"content": str | None, "reasoning_content": str | None,
-                "is_final": bool, "token_usage": int | None}
+                "tool_calls": list | None, "is_final": bool, "token_usage": int | None}
         """
         async with _llm_semaphore:
             logger.debug(
                 f"[llm_semaphore] acquired ({LLM_CONCURRENCY_LIMIT - _llm_semaphore._value}/{LLM_CONCURRENCY_LIMIT}), "
                 f"model={getattr(self, 'model_name', '?')}"
             )
-            async for chunk in self._stream_chat_impl(messages, response_format):
+            async for chunk in self._stream_chat_impl(messages, response_format, tools):
                 yield chunk
 
 

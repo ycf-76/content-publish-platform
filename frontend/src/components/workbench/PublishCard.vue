@@ -5,7 +5,7 @@
         <div class="mint-wf-step">09</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="send" class="wf-node-icon"></i>
+            <Send class="wf-node-icon" :size="16" />
             发布
             <code class="wf-node-key">publish</code>
           </div>
@@ -19,19 +19,31 @@
     </div>
     <div class="wf-node-body">
       <div v-if="nodeStatus === 'idle' || nodeStatus === 'pending'" class="wf-empty-hint">
-        <i data-lucide="info" style="width:14px;height:14px;"></i>
+        <Info :size="14" />
         等待终审通过后自动发布
       </div>
       <!-- awaiting_review：auto_publish=False 时，终审通过后等待用户手动确认发布 -->
       <div v-else-if="nodeStatus === 'awaiting_review'" class="wf-publish-manual">
         <div class="wf-publish-manual-hint">
-          <i data-lucide="check-circle" style="width:16px;height:16px;color:#10B981;"></i>
-          <span>终审已通过，确认发布到小红书？</span>
+          <CheckCircle :size="16" style="color:#10B981" />
+          <span>终审已通过，选择目标平台并确认发布</span>
+        </div>
+        <div class="wf-platform-selector">
+          <button
+            v-for="p in platformOptions"
+            :key="p.id"
+            class="wf-platform-btn"
+            :class="{ active: selectedPlatform === p.id }"
+            @click="selectedPlatform = p.id"
+          >
+            <component :is="p.icon" :size="14" />
+            <span>{{ p.label }}</span>
+          </button>
         </div>
         <div v-if="result?.title" class="wf-publish-manual-title">{{ result.title }}</div>
         <div class="wf-publish-actions">
           <button class="wf-publish-btn wf-publish-confirm" @click="confirmPublish" :disabled="publishing">
-            <i data-lucide="send" style="width:14px;height:14px;"></i>
+            <Send :size="14" />
             {{ publishing ? "发布中..." : "确认发布" }}
           </button>
         </div>
@@ -43,43 +55,49 @@
         </div>
       </div>
       <div v-else-if="nodeStatus === 'error'" class="mint-search-error">
-        <i data-lucide="alert-circle" style="width:20px;height:20px;"></i>
+        <AlertCircle :size="20" />
         <span>{{ errorMessage || '发布失败' }}</span>
       </div>
       <template v-else-if="nodeStatus === 'completed' && result">
         <div class="wf-plan-summary" :style="{ background: publishBgColor }">
-          <i :data-lucide="publishIcon" style="width:16px;height:16px;" :style="{ color: publishIconColor }"></i>
+          <component :is="publishIcon" :size="16" :style="{ color: publishIconColor }" />
           <span :style="{ color: publishTextColor, fontWeight: 600, fontSize: '14px' }">{{ publishStatusLabel }}</span>
         </div>
         <div v-if="result.post_id" class="wf-copywrite-section">
-          <div class="wf-copywrite-label"><i data-lucide="link" style="width:12px;height:12px;"></i>帖子 ID</div>
+          <div class="wf-copywrite-label"><Link :size="12" />帖子 ID</div>
           <div class="wf-copywrite-content" style="max-height:none;padding:6px 10px;font-family:monospace;font-size: 14px;">{{ result.post_id }}</div>
         </div>
         <div v-if="result.message" class="wf-copywrite-section">
-          <div class="wf-copywrite-label"><i data-lucide="message-circle" style="width:12px;height:12px;"></i>发布信息</div>
+          <div class="wf-copywrite-label"><MessageCircle :size="12" />发布信息</div>
           <div class="wf-copywrite-content" style="max-height:none;">{{ result.message }}</div>
         </div>
         <div v-if="result.status === 'awaiting_manual'" class="wf-card-editor-hint" style="background:#FFFBEB;border-color:#F59E0B;color:#92400E;">
-          <i data-lucide="mouse-pointer-click" style="width:14px;height:14px;color:#D97706;"></i>
+          <MousePointerClick :size="14" style="color:#D97706" />
           <span>内容已填好，请在浏览器窗口手动点击「发布」按钮完成发布</span>
         </div>
       </template>
       <div v-else-if="nodeStatus === 'completed'" class="wf-empty-hint">
-        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        <CheckCircle :size="14" style="color:#60A5FA" />
         发布已完成（详细数据不可用）
       </div>
     </div>
     <div class="wf-node-meta" v-if="nodeMeta">
-      <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-      <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-      <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+      <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+      <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+      <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { computed, watch } from 'vue'
+import {
+  AlertCircle, AtSign, Camera, CheckCircle, Clock, Cpu,
+  GraduationCap, Heart, Info, Link, MessageCircle,
+  MessageSquare, MousePointerClick, Music, Send, XCircle, Zap,
+} from 'lucide-vue-next'
+import type { TargetPlatform } from '@/types'
+import { getAdapter, availablePlatforms } from '@/adapters'
 
 const props = defineProps<{
   nodeStatus: string
@@ -89,18 +107,36 @@ const props = defineProps<{
   workflowId?: string
 }>()
 
-watch(() => props.nodeStatus, () => nextTick(() => createIcons({ icons })))
-watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
+watch(() => props.nodeStatus, () => {})
+watch(() => props.result, () => {}, { deep: true })
 
 import { ref } from 'vue'
 import { useWorkflowStore } from '@/stores/workflow'
+
+const platformOptions = [
+  { id: 'xiaohongshu' as TargetPlatform, label: '小红书', icon: Heart },
+  { id: 'weibo' as TargetPlatform, label: '微博', icon: AtSign },
+  { id: 'wechat_mp' as TargetPlatform, label: '公众号', icon: MessageSquare },
+  { id: 'instagram' as TargetPlatform, label: 'Instagram', icon: Camera },
+  { id: 'zhihu' as TargetPlatform, label: '知乎', icon: GraduationCap },
+  { id: 'douyin' as TargetPlatform, label: '抖音', icon: Music },
+]
+
+const selectedPlatform = ref<TargetPlatform>('xiaohongshu')
+
 const publishing = ref(false)
 async function confirmPublish() {
   if (publishing.value || !props.workflowId) return
   publishing.value = true
   try {
     const store = useWorkflowStore()
-    await store.resumeWorkflow()
+    const adapter = getAdapter(selectedPlatform.value)
+    if (!adapter) {
+      console.warn(`[PublishCard] 无 ${selectedPlatform.value} 适配器，回退到默认发布流程`)
+      await store.resumeWorkflow()
+      return
+    }
+    await store.resumeWorkflow({ targetPlatform: selectedPlatform.value })
   } catch (e: any) {
     console.error('[PublishCard] confirmPublish failed:', e)
   } finally {
@@ -143,10 +179,10 @@ const publishIconColor = computed(() => {
   return '#9CA3AF'
 })
 const publishIcon = computed(() => {
-  if (publishStatus.value === 'success') return 'check-circle'
-  if (publishStatus.value === 'awaiting_manual') return 'clock'
-  if (publishStatus.value === 'failed') return 'x-circle'
-  return 'send'
+  if (publishStatus.value === 'success') return CheckCircle
+  if (publishStatus.value === 'awaiting_manual') return Clock
+  if (publishStatus.value === 'failed') return XCircle
+  return Send
 })
 const publishTextColor = computed(() => {
   if (publishStatus.value === 'success') return '#059669'
@@ -178,6 +214,35 @@ const publishTextColor = computed(() => {
   background: #F8FAFC;
   border-radius: 6px;
   border-left: 3px solid #FF2442;
+}
+.wf-platform-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wf-platform-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 8px;
+  background: #FFFFFF;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.wf-platform-btn:hover {
+  border-color: #9CA3AF;
+  color: #374151;
+}
+.wf-platform-btn.active {
+  border-color: #FF2442;
+  background: #FFF1F2;
+  color: #FF2442;
+  font-weight: 600;
 }
 .wf-publish-actions {
   display: flex;

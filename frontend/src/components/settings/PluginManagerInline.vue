@@ -2,7 +2,7 @@
   <div class="pmi-wrap">
     <div class="pmi-toolbar">
       <div class="pmi-search-box">
-        <i data-lucide="search" style="width:14px;height:14px;"></i>
+        <Search :size="14" />
         <input
           type="text"
           v-model="pluginStore.filters.q"
@@ -11,14 +11,17 @@
           class="pmi-search-input"
         />
         <button v-if="pluginStore.filters.q" @click="clearSearch" class="pmi-search-clear">
-          <i data-lucide="x" style="width:12px;height:12px;"></i>
+          <X :size="12" />
         </button>
       </div>
       <button @click="refreshPlugins" :disabled="pluginStore.loading" class="pmi-icon-btn" title="刷新">
-        <i data-lucide="refresh-cw" :class="{ spinning: pluginStore.loading }" style="width:14px;height:14px;"></i>
+        <RefreshCw :size="14" :class="{ spinning: pluginStore.loading }" />
+      </button>
+      <button @click="showGithubInstallModal = true" class="pmi-icon-btn pmi-github-btn" title="从 GitHub 安装插件">
+        <img src="/icons/github-logo.svg?v=4" alt="GitHub" style="width:18px;height:18px;filter:brightness(0) invert(1);" />
       </button>
       <button @click="triggerUpload" class="pmi-icon-btn pmi-upload-btn" title="上传第三方插件">
-        <i data-lucide="upload" style="width:14px;height:14px;"></i>
+        <Upload :size="14" />
       </button>
       <input
         ref="fileInputRef"
@@ -29,16 +32,85 @@
       />
     </div>
 
+    <!-- GitHub 安装弹窗 ⭐新增 -->
+    <div v-if="showGithubInstallModal" class="pmi-modal-overlay" @click.self="closeGithubModal">
+      <div class="pmi-modal">
+        <div class="pmi-modal-header">
+          <h3 class="pmi-modal-title"><img src="/icons/github-logo.svg?v=4" alt="GitHub" style="width:22px;height:22px;vertical-align:middle;margin-right:8px;" />从 GitHub 安装插件</h3>
+          <button @click="closeGithubModal" class="pmi-modal-close"><X :size="16" /></button>
+        </div>
+        
+        <div class="pmi-modal-body">
+          <div class="pmi-form-group">
+            <label class="pmi-form-label">GitHub 仓库 URL</label>
+            <input
+              type="url"
+              v-model="githubForm.repoUrl"
+              placeholder="https://github.com/username/plugin-repo"
+              class="pmi-form-input"
+              @keyup.enter="handleGithubInstall"
+            />
+            <p class="pmi-form-hint">支持 GitHub 公开仓库，将下载最新版本的插件</p>
+          </div>
+
+          <div class="pmi-form-group">
+            <label class="pmi-form-label">分支名（可选）</label>
+            <input
+              type="text"
+              v-model="githubForm.branch"
+              placeholder="main"
+              class="pmi-form-input"
+            />
+          </div>
+
+          <div class="pmi-form-group">
+            <label class="pmi-checkbox-wrapper">
+              <input type="checkbox" v-model="githubForm.useGitClone" class="pmi-checkbox" />
+              <span>使用 Git Clone 模式（需要本地安装 Git）</span>
+            </label>
+            <p class="pmi-form-hint">启用后可使用 git pull 快速更新，但需要系统已安装 Git</p>
+          </div>
+        </div>
+
+        <div class="pmi-modal-footer">
+          <button @click="closeGithubModal" class="pmi-btn pmi-btn-secondary">取消</button>
+          <button 
+            @click="handleGithubInstall" 
+            class="pmi-btn pmi-btn-primary"
+            :disabled="githubInstalling || !githubForm.repoUrl"
+          >
+            <Loader v-if="githubInstalling" :size="14" class="spinning" />
+            <Download v-else :size="14" />
+            {{ githubInstalling ? '安装中...' : '开始安装' }}
+          </button>
+        </div>
+
+        <!-- 安装结果 -->
+        <div v-if="githubInstallResult" class="pmi-install-result" :class="githubInstallResult.success ? 'success' : 'error'">
+          <CheckCircle v-if="githubInstallResult.success" :size="16" />
+          <AlertCircle v-else :size="16" />
+          <div>
+            <p class="pmi-result-message">{{ githubInstallResult.message }}</p>
+            <p v-if="githubInstallResult.plugin_name" class="pmi-result-details">
+              插件：{{ githubInstallResult.plugin_name }} v{{ githubInstallResult.version }}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="uploadStatus" class="pmi-upload-status" :class="uploadStatus.type">
-      <i :data-lucide="uploadStatus.type === 'success' ? 'check-circle' : uploadStatus.type === 'error' ? 'alert-circle' : 'loader'" style="width:14px;height:14px;"></i>
+      <CheckCircle v-if="uploadStatus.type === 'success'" :size="14" />
+      <AlertCircle v-else-if="uploadStatus.type === 'error'" :size="14" />
+      <Loader v-else :size="14" />
       <span>{{ uploadStatus.message }}</span>
-      <button @click="uploadStatus = null" class="pmi-error-close"><i data-lucide="x" style="width:12px;height:12px;"></i></button>
+      <button @click="uploadStatus = null" class="pmi-error-close"><X :size="12" /></button>
     </div>
 
     <div v-if="pluginStore.error" class="pmi-error">
-      <i data-lucide="alert-circle" style="width:14px;height:14px;"></i>
+      <AlertCircle :size="14" />
       <span>{{ pluginStore.error }}</span>
-      <button @click="pluginStore.clearError()" class="pmi-error-close"><i data-lucide="x" style="width:12px;height:12px;"></i></button>
+      <button @click="pluginStore.clearError()" class="pmi-error-close"><X :size="12" /></button>
     </div>
 
     <div v-if="pluginStore.loading && pluginStore.allPlugins.length === 0" class="pmi-loading">
@@ -47,7 +119,7 @@
     </div>
 
     <div v-else-if="!pluginStore.loading && pluginStore.allPlugins.length === 0" class="pmi-empty">
-      <i data-lucide="package-open" style="width:32px;height:32px;opacity:0.4;"></i>
+      <PackageOpen :size="32" style="opacity:0.4" />
       <p>暂无插件</p>
     </div>
 
@@ -58,7 +130,6 @@
         class="pmi-category"
       >
         <div class="pmi-category-header">
-          <span class="pmi-category-icon">{{ group.icon }}</span>
           <span class="pmi-category-label">{{ group.label }}</span>
         </div>
         <div class="pmi-grid">
@@ -73,14 +144,14 @@
             <div class="pmi-card-top" @click="openDetail(plugin)">
               <div class="pmi-card-icon">
                 <span v-if="plugin.display_icon" class="pmi-card-emoji">{{ plugin.display_icon }}</span>
-                <i v-else data-lucide="puzzle" style="width:18px;height:18px;"></i>
+                <Puzzle v-else :size="18" />
               </div>
               <div class="pmi-card-info">
                 <div class="pmi-card-name">{{ plugin.name }}</div>
                 <div class="pmi-card-desc">{{ plugin.description }}</div>
               </div>
               <div class="pmi-card-expand-icon">
-                <i data-lucide="chevron-right" style="width:14px;height:14px;"></i>
+                <ChevronRight :size="14" />
               </div>
             </div>
 
@@ -95,7 +166,7 @@
                   class="pmi-enable-btn pmi-enable-btn-install"
                   @click="handleInstall(plugin)"
                 >
-                  <i data-lucide="download" style="width:12px;height:12px;"></i>
+                  <Download :size="12" />
                   <span>安装</span>
                 </button>
                 <template v-else>
@@ -104,7 +175,7 @@
                     :class="pluginStore.isEnabled(plugin.id) ? 'pmi-enable-btn-on' : 'pmi-enable-btn-off'"
                     @click="handleToggleEnable(plugin, !pluginStore.isEnabled(plugin.id))"
                   >
-                    <i :data-lucide="pluginStore.isEnabled(plugin.id) ? 'power' : 'power-off'" style="width:12px;height:12px;"></i>
+                    <Power v-if="pluginStore.isEnabled(plugin.id) " :size="12" /><PowerOff v-else :size="12" />
                     <span>{{ pluginStore.isEnabled(plugin.id) ? '运行中' : '启动' }}</span>
                   </button>
                   <button
@@ -113,14 +184,14 @@
                     @click="handleUninstall(plugin)"
                     title="卸载"
                   >
-                    <i data-lucide="trash-2" style="width:13px;height:13px;"></i>
+                    <Trash2 :size="13" />
                   </button>
                   <button
                     class="pmi-card-btn"
                     @click="openConfigPanel(plugin)"
                     title="配置"
                   >
-                    <i data-lucide="settings" style="width:13px;height:13px;"></i>
+                    <Settings :size="13" />
                   </button>
                 </template>
               </div>
@@ -144,8 +215,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { ref, computed, onMounted, reactive } from 'vue'
+import {
+  AlertCircle, CheckCircle, ChevronRight, Download,
+  Github, Loader, PackageOpen, Power, PowerOff, Puzzle,
+  RefreshCw, Search, Settings, Trash2, Upload, X,
+} from 'lucide-vue-next'
 import { usePluginStore } from '@/stores/plugin'
 import type { Plugin } from '@/api/plugins'
 import pluginsApi from '@/api/plugins'
@@ -155,6 +230,24 @@ const pluginStore = usePluginStore()
 const configPlugin = ref<Plugin | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const uploadStatus = ref<{ type: 'success' | 'error' | 'loading'; message: string } | null>(null)
+
+// GitHub 安装相关状态 ⭐新增
+const showGithubInstallModal = ref(false)
+const githubInstalling = ref(false)
+const githubInstallResult = ref<{
+  success: boolean
+  plugin_id?: string
+  plugin_name?: string
+  version?: string
+  message: string
+  install_method?: string
+} | null>(null)
+
+const githubForm = reactive({
+  repoUrl: '',
+  branch: 'main',
+  useGitClone: false,
+})
 
 const emit = defineEmits<{ selectPlugin: [plugin: Plugin] }>()
 
@@ -211,7 +304,7 @@ function clearSearch() {
 async function refreshPlugins() {
   try {
     await Promise.all([pluginStore.loadPlugins(), pluginStore.loadInstalledPlugins()])
-    nextTick(() => { try { createIcons({ icons }) } catch {} })
+    
   } catch (e) { console.error('Failed to refresh:', e) }
 }
 
@@ -256,12 +349,11 @@ async function handleFileUpload(event: Event) {
 
   if (!file.name.endsWith('.zip')) {
     uploadStatus.value = { type: 'error', message: '仅支持 .zip 格式的插件包' }
-    nextTick(() => { try { createIcons({ icons }) } catch {} })
+    
     return
   }
 
   uploadStatus.value = { type: 'loading', message: `正在上传 ${file.name}...` }
-  nextTick(() => { try { createIcons({ icons }) } catch {} })
 
   try {
     const result = await pluginsApi.upload(file)
@@ -279,14 +371,73 @@ async function handleFileUpload(event: Event) {
     uploadStatus.value = { type: 'error', message: detail }
   }
 
-  nextTick(() => { try { createIcons({ icons }) } catch {} })
   setTimeout(() => { uploadStatus.value = null }, 5000)
+}
+
+// GitHub 安装相关函数 ⭐新增
+function closeGithubModal() {
+  showGithubInstallModal.value = false
+  githubForm.repoUrl = ''
+  githubForm.branch = 'main'
+  githubForm.useGitClone = false
+  githubInstallResult.value = null
+}
+
+async function handleGithubInstall() {
+  if (!githubForm.repoUrl.trim()) {
+    githubInstallResult.value = {
+      success: false,
+      message: '请输入 GitHub 仓库 URL',
+    }
+    return
+  }
+
+  // 简单的 URL 验证
+  const urlPattern = /^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/
+  if (!urlPattern.test(githubForm.repoUrl)) {
+    githubInstallResult.value = {
+      success: false,
+      message: '无效的 GitHub URL，请使用格式：https://github.com/username/repo',
+    }
+    return
+  }
+
+  githubInstalling.value = true
+  githubInstallResult.value = null
+
+  try {
+    const result = await pluginsApi.installFromGithub(
+      githubForm.repoUrl,
+      githubForm.branch || 'main',
+      githubForm.useGitClone
+    )
+
+    githubInstallResult.value = result
+
+    if (result.success) {
+      // 安装成功，刷新插件列表
+      await refreshPlugins()
+      
+      // 3秒后自动关闭弹窗
+      setTimeout(() => {
+        closeGithubModal()
+      }, 3000)
+    }
+  } catch (e: any) {
+    const detail = e.response?.data?.detail || e.message || '安装失败'
+    githubInstallResult.value = {
+      success: false,
+      message: detail,
+    }
+  } finally {
+    githubInstalling.value = false
+  }
 }
 
 onMounted(async () => {
   try {
     await Promise.all([pluginStore.loadPlugins(), pluginStore.loadInstalledPlugins()])
-    nextTick(() => { try { createIcons({ icons }) } catch {} })
+    
   } catch (e) {
     console.error('[PluginManagerInline] Failed to init plugin manager:', e)
   }
@@ -631,4 +782,242 @@ onMounted(async () => {
 
 .slide-left-enter-active, .slide-left-leave-active { transition: transform 0.3s ease; }
 .slide-left-enter-from, .slide-left-leave-to { transform: translateX(100%); }
+
+/* ===== GitHub Install Modal ⭐新增 ===== */
+
+.pmi-github-btn {
+  background: linear-gradient(135deg, #24292e 0%, #1a1e22 100%);
+  color: white !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pmi-github-btn:hover {
+  background: linear-gradient(135deg, #2f363d 0%, #24292e 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.pmi-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: pmi-fadeIn 0.2s ease;
+}
+
+@keyframes pmi-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.pmi-modal {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 560px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: pmi-slideUp 0.3s ease;
+}
+
+@keyframes pmi-slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.pmi-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--ma-border, #E5E7EB);
+}
+
+.pmi-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ma-text-primary, #111827);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pmi-modal-close {
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--ma-text-tertiary, #6B7280);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pmi-modal-close:hover {
+  background: var(--ma-bg-subtle, #F3F4F6);
+  color: var(--ma-text-primary, #111827);
+}
+
+.pmi-modal-body {
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pmi-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pmi-form-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ma-text-primary, #111827);
+}
+
+.pmi-form-input {
+  height: 42px;
+  border: 1.5px solid var(--ma-border, #E5E7EB);
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 14px;
+  color: var(--ma-text-primary, #111827);
+  background: white;
+  transition: all 0.2s;
+}
+
+.pmi-form-input:focus {
+  outline: none;
+  border-color: var(--ma-primary, #3B6CF6);
+  box-shadow: 0 0 0 3px rgba(59, 108, 246, 0.12);
+}
+
+.pmi-form-input::placeholder {
+  color: var(--ma-text-tertiary, #9CA3AF);
+}
+
+.pmi-form-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ma-text-tertiary, #6B7280);
+  line-height: 1.5;
+}
+
+.pmi-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ma-text-secondary, #374151);
+}
+
+.pmi-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--ma-primary, #3B6CF6);
+}
+
+.pmi-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 28px 24px;
+  border-top: 1px solid var(--ma-border, #E5E7EB);
+  background: var(--ma-bg-subtle, #F9FAFB);
+  border-radius: 0 0 16px 16px;
+}
+
+.pmi-btn {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.pmi-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pmi-btn-secondary {
+  background: white;
+  color: var(--ma-text-secondary, #374151);
+  border: 1.5px solid var(--ma-border, #E5E7EB);
+}
+
+.pmi-btn-secondary:hover:not(:disabled) {
+  background: var(--ma-bg-subtle, #F9FAFB);
+  border-color: var(--ma-text-tertiary, #9CA3AF);
+}
+
+.pmi-btn-primary {
+  background: linear-gradient(135deg, #3B6CF6 0%, #2563EB 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(59, 108, 246, 0.25);
+}
+
+.pmi-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  box-shadow: 0 6px 16px rgba(59, 108, 246, 0.35);
+  transform: translateY(-1px);
+}
+
+.pmi-install-result {
+  margin: 0 28px 24px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  animation: pmi-fadeIn 0.3s ease;
+}
+
+.pmi-install-result.success {
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  border: 1px solid #10B981;
+  color: #065F46;
+}
+
+.pmi-install-result.error {
+  background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+  border: 1px solid #EF4444;
+  color: #991B1B;
+}
+
+.pmi-result-message {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.pmi-result-details {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
 </style>

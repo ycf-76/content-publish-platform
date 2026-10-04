@@ -1,4 +1,7 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, _dlog, emit_node_event, logger
+from app.agents.nodes._base import (
+    NodeStatus, WorkflowState, _dlog, emit_node_event, logger,
+    build_belief_dict, build_loop_counter_update, read_upstream_belief,
+)
 
 
 async def final_review_node(state: WorkflowState) -> dict:
@@ -35,12 +38,53 @@ async def final_review_node(state: WorkflowState) -> dict:
     image_gen_output = state.get("node_outputs", {}).get("image_gen", {})
     image_review_output = state.get("node_outputs", {}).get("image_review", {})
 
-    # 候选模式下完整套装在 image_review.images_base64，旧模式在 image_gen.images_base64
-    final_images = (
-        image_review_output.get("images_base64")
-        or image_gen_output.get("images_base64")
-        or []
-    )
+    # 读取双方信念，做仲裁决策
+    audit_belief = read_upstream_belief(state, "audit")
+    copywrite_belief = read_upstream_belief(state, "copywrite")
+    arbitration = None
+
+    # 检查 audit 是否被跳过（LLM 不可用）
+    audit_output = state.get("node_outputs", {}).get("audit", {})
+    audit_skipped = audit_output.get("_skipped", False)
+
+    if audit_skipped:
+        arbitration = {
+            "conflict": False,
+            "audit_skipped": True,
+            "resolution": "audit_skipped_needs_human_confirm",
+        }
+        logger.warning(
+            f"[{workflow_id}] {node_id} 审核被跳过（LLM 不可用），"
+            f"需人工确认后发布"
+        )
+    elif audit_belief and copywrite_belief:
+        audit_verdict = audit_belief.get("verdict", "sufficient")
+        cw_verdict = copywrite_belief.get("verdict", "sufficient")
+        audit_conf = audit_belief.get("confidence", 1.0)
+        cw_conf = copywrite_belief.get("confidence", 1.0)
+
+        # audit 和 copywrite 意见冲突时，final_review 做仲裁
+        if audit_verdict in ("needs_revision", "rejected") and cw_verdict == "sufficient":
+            arbitration = {
+                "conflict": True,
+                "audit_verdict": audit_verdict,
+                "copywrite_verdict": cw_verdict,
+                "audit_confidence": audit_conf,
+                "copywrite_confidence": cw_conf,
+                "resolution": "audit_wins" if audit_conf > cw_conf else "copywrite_wins",
+            }
+            logger.info(
+                f"[{workflow_id}] {node_id} 信念冲突仲裁: "
+                f"audit={audit_verdict}({audit_conf}) vs "
+                f"copywrite={cw_verdict}({cw_conf}) → "
+                f"{arbitration['resolution']}"
+            )
+        elif audit_verdict == cw_verdict:
+            arbitration = {"conflict": False, "consensus": audit_verdict}
+            logger.info(
+                f"[{workflow_id}] {node_id} 双方一致: verdict={audit_verdict}"
+            )
+
     final_image_urls = (
         image_review_output.get("image_urls")
         or image_gen_output.get("image_urls")
@@ -51,10 +95,10 @@ async def final_review_node(state: WorkflowState) -> dict:
         "title": copywrite_output.get("title", ""),
         "content": copywrite_output.get("content", ""),
         "tags": copywrite_output.get("tags", []),
-        "images_base64": final_images,
         "image_urls": final_image_urls,
         "review_status": "rejected" if is_rejected else "passed",
         "feedback": "",
+        "arbitration": arbitration,
     }
 
     await emit_node_event(workflow_id, node_id, "node_completed", review_data)
@@ -74,4 +118,11 @@ async def final_review_node(state: WorkflowState) -> dict:
         "current_node": node_id,
         "node_statuses": {node_id: node_status},
         "node_outputs": {node_id: review_data},
+        "agent_beliefs": build_belief_dict(node_id, review_data),
+        "loop_counters": build_loop_counter_update(state, node_id),
     }
+
+
+def _build_belief(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，写入 state.agent_beliefs。"""
+    return build_belief_dict(node_id, output)

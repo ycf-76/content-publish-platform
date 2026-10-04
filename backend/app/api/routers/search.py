@@ -1,12 +1,11 @@
-﻿"""Search router — 独立的全网搜接口（不走工作流）。
+"""Search router — 独立的全网搜接口（不走工作流）。
 
 用途：
 - 用户在工作台搜索卡片选择平台后，先预览搜索结果，再决定是否启动工作流
 - 支持全网搜（platform=空）和指定平台搜（platform=hackernews/builtin/...）
 
 权限控制：
-- 邮箱登录用户：可搜索除小红书外的所有平台（tavily/知乎/微博/HackerNews/Reddit/热门话题）
-- 小红书扫码登录用户：额外解锁小红书搜索（需小红书登录态 cookies）
+- 邮箱登录用户：可搜索所有平台
 
 与 workflow router 的区别：
 - workflow router 启动完整工作流（8 个节点），搜索只是第一个节点
@@ -22,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.api.schemas.common import StandardResponse
-from app.db.models import XhsAccount
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -61,22 +59,12 @@ async def search(
     platform: str = Query("", description="平台名（空=全网搜）：tavily / builtin / hackernews / reddit / xiaohongshu"),
     limit: int = Query(20, ge=1, le=50, description="返回条数上限"),
     user_id: str = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ) -> StandardResponse[SearchResponse]:
     """全网搜接口（不走工作流，立即返回结果）。
 
     权限控制：
-    - 邮箱登录用户可搜索除小红书外的所有平台
-    - 小红书搜索需要用户已通过小红书扫码登录（有有效的 XhsAccount）
-    - 尝试搜索小红书但无权限时返回 403
+    - 所有登录用户可搜索所有平台
     """
-    if platform == "xiaohongshu":
-        if not await _has_xhs_auth(user_id, db):
-            raise HTTPException(
-                status_code=403,
-                detail="XHS_AUTH_REQUIRED:小红书搜索需要先通过小红书扫码登录授权，请在账号中心绑定小红书账号",
-            )
-
     import logging
     _logger = logging.getLogger(__name__)
 
@@ -118,18 +106,14 @@ async def search(
 @router.get("/platforms")
 async def list_platforms(
     user_id: str = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ) -> StandardResponse[list[dict]]:
     """列出所有可用的搜索平台（供前端渲染平台选择器）。
 
-    权限控制：
-    - 邮箱登录用户：可看到除小红书外的所有平台
-    - 小红书扫码登录用户：额外看到小红书平台
-    - 小红书平台始终列出但标记 requires_auth=true，前端据此显示锁定状态
+    列出所有可用的搜索平台（供前端渲染平台选择器）。
     """
     from app.tools.sources.manager import source_manager
 
-    has_xhs = await _has_xhs_auth(user_id, db)
+    has_xhs = False  # QR login removed
 
     platform_meta = {
         "tavily": {
@@ -164,6 +148,30 @@ async def list_platforms(
             "label": "Instagram",
             "desc": "海外生活方式灵感（基于 Tavily 站内搜索，零风控）",
         },
+        "twitter": {
+            "label": "Twitter/X",
+            "desc": "全球热点风向标（基于 Tavily 站内搜索，零风控）",
+        },
+        "youtube": {
+            "label": "YouTube",
+            "desc": "全球视频趋势（YouTube Data API v3，需 API Key）",
+        },
+        "tiktok": {
+            "label": "TikTok",
+            "desc": "短视频趋势灵感（基于 Tavily 站内搜索，零风控）",
+        },
+        "medium": {
+            "label": "Medium",
+            "desc": "海外深度长文（基于 Tavily 站内搜索，零风控）",
+        },
+        "devto": {
+            "label": "Dev.to",
+            "desc": "技术圈热门文章（免费 API，零风控）",
+        },
+        "github": {
+            "label": "GitHub",
+            "desc": "开源项目/技术工具热点（免费 API，零风控）",
+        },
         "builtin": {
             "label": "热门话题",
             "desc": "内置中文话题库（穿搭/美妆/美食等，零网络依赖）",
@@ -180,7 +188,60 @@ async def list_platforms(
             "label": "小红书",
             "desc": "小红书真实笔记（需扫码登录，有风控风险，默认关闭）",
         },
+        "toutiao": {
+            "label": "头条",
+            "desc": "今日头条热搜（Tavily 站内搜索，零风控）",
+        },
+        "hb-weibo": {
+            "label": "微博热搜",
+            "desc": "微博实时热搜榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
+        "hb-douyin": {
+            "label": "抖音热搜",
+            "desc": "抖音实时热搜榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
+        "hb-zhihu": {
+            "label": "知乎热榜",
+            "desc": "知乎实时热榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
+        "hb-toutiao": {
+            "label": "头条热搜",
+            "desc": "头条实时热搜榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
+        "hb-baidu": {
+            "label": "百度热搜",
+            "desc": "百度实时热搜榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
+        "hb-bilibili": {
+            "label": "B站热搜",
+            "desc": "B站实时热搜榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
+        "hb-rednote": {
+            "label": "小红书热搜",
+            "desc": "小红书实时热搜榜（公益 API，零风控）",
+            "is_hotboard": True,
+        },
     }
+
+    try:
+        from app.tools.sources.hotboard_source import load_hotboard_config
+        for _key, _cfg in load_hotboard_config().items():
+            if _key not in platform_meta:
+                platform_meta[_key] = {
+                    "label": _cfg.get("label", _key),
+                    "desc": f"{_cfg.get('label', _key)}实时热搜（公益 API，零风控）",
+                    "is_hotboard": True,
+                }
+            else:
+                platform_meta[_key]["is_hotboard"] = True
+    except Exception:
+        pass
 
     registered = source_manager.list_platforms()
     default_platform = source_manager._default_platform
@@ -196,23 +257,10 @@ async def list_platforms(
             "is_default": name == default_platform,
             "requires_auth": is_xhs,
             "auth_met": has_xhs if is_xhs else True,
+            "is_hotboard": meta.get("is_hotboard", False),
         }
         if is_xhs and not has_xhs:
             p["locked"] = True
         platforms.append(p)
 
     return StandardResponse(data=platforms)
-
-
-async def _has_xhs_auth(user_id: str, db: AsyncSession) -> bool:
-    """检查用户是否有小红书授权（扫码登录过，有有效的 XhsAccount）。"""
-    acc_stmt = (
-        select(XhsAccount)
-        .where(XhsAccount.user_id == user_id)
-        .order_by(XhsAccount.last_used_at.desc())
-        .limit(1)
-    )
-    account = await db.scalar(acc_stmt)
-    if account and account.xhs_user_id and not account.xhs_user_id.startswith("manual_"):
-        return True
-    return False

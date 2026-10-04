@@ -1,4 +1,4 @@
-﻿"""内置中文话题数据源（零网络依赖）。
+"""内置中文话题数据源（零网络依赖）。
 
 用途：
 - 国外 API（Reddit/HackerNews）访问困难或搜不到中文生活方式话题时兜底
@@ -236,6 +236,80 @@ _TOPIC_DB: list[_TopicItem] = [
         likes=24500, comments=890, shares=1567,
         tags=["职场", "副业", "赚钱", "上班族"],
         keywords=["职场", "副业", "赚钱", "上班族", "女生"],
+    ),
+
+    # ===== AI/科技/教育类 =====
+    _TopicItem(
+        title="AI工具推荐｜5个提升效率的AI神器，打工人必看",
+        summary="5个超好用的AI工具推荐，ChatGPT/Midjourney/Notion AI等，工作效率翻倍",
+        content="5个AI效率工具：\n1. ChatGPT — 写文案/改邮件/做方案，万能助手\n2. Midjourney — AI绘图，做封面/配图超方便\n3. Notion AI — 笔记+AI写作，知识管理利器\n4. Gamma — AI做PPT，3分钟生成专业演示\n5. Perplexity — AI搜索引擎，比百度好用10倍\n使用技巧：\n- 提示词越具体，效果越好\n- 先让AI出草稿，再人工精修\n- 多工具组合使用效果更佳\n- 注意数据隐私，敏感内容别上传",
+        author="AI工具箱",
+        likes=35600, comments=1234, shares=2890,
+        tags=["AI", "工具", "效率", "科技"],
+        keywords=["AI", "人工智能", "工具", "效率", "科技", "ChatGPT", "教程"],
+    ),
+    _TopicItem(
+        title="AI教育｜用ChatGPT学英语，3个月从哑巴英语到流利对话",
+        summary="用AI学英语的方法分享，ChatGPT当外教，3个月口语突飞猛进",
+        content="AI学英语3个月计划：\n第1个月：基础对话\n- 每天和ChatGPT对话30分钟\n- 让它纠正语法和用词\n- 积累日常表达100句\n第2个月：场景练习\n- 模拟面试/点餐/旅行场景\n- 录音回放找发音问题\n- 背单词用AI造句记忆\n第3个月：深度交流\n- 讨论新闻/电影/书籍\n- 写英文日记让AI批改\n- 尝试用英语思考\n推荐提示词：'Act as my English teacher, correct my mistakes and explain why'",
+        author="AI学习法",
+        likes=28900, comments=987, shares=2134,
+        tags=["AI", "教育", "英语", "学习"],
+        keywords=["AI", "教育", "英语", "学习", "人工智能", "ChatGPT", "语言"],
+    ),
+    _TopicItem(
+        title="AI绘画教程｜零基础用Midjourney画出小红书爆款封面",
+        summary="AI绘画教程，Midjourney从入门到出图，5步画出小红书风格封面",
+        content="Midjourney小红书封面5步法：\n1. 确定风格：ins风/日系/国潮/极简\n2. 写提示词：主体+风格+色调+构图\n3. 生成4张选最佳\n4. Upscale放大+Variation微调\n5. 加文字排版完成\n提示词模板：\n'aesthetic [subject], [style] style, soft lighting, pastel colors, minimalist composition, 8k --ar 3:4'\n注意事项：\n- 人物图用 --v 5.2 更自然\n- 风景图用 --v 6 更细腻\n- 多试几次选最满意的\n- 加上品牌水印防搬运",
+        author="AI绘画师",
+        likes=31200, comments=1100, shares=2567,
+        tags=["AI", "绘画", "教程", "封面"],
+        keywords=["AI", "绘画", "教程", "封面", "Midjourney", "设计", "图片"],
+    ),
+    _TopicItem(
+        title="AI写作｜用AI写小红书文案，10分钟搞定一篇爆款",
+        summary="AI写作技巧分享，用ChatGPT写小红书文案的完整流程，10分钟出稿",
+        content="AI写小红书文案流程：\n1. 给AI设定角色：'你是小红书爆款文案写手'\n2. 提供关键信息：主题/风格/目标人群\n3. 让AI出3个标题选最佳\n4. 生成正文+标签\n5. 人工微调语气和细节\n提示词模板：\n'写一篇小红书笔记，主题是[xxx]，风格活泼可爱，目标受众是20-30岁女生，包含标题、正文、标签'\n注意：\n- AI写的需要人工润色，不能直接发\n- 加入个人经历和真实感受\n- 标题要有钩子（数字/疑问/对比）\n- 开头3行决定点击率",
+        author="AI写作",
+        likes=26700, comments=890, shares=1980,
+        tags=["AI", "写作", "文案", "教程"],
+        keywords=["AI", "写作", "文案", "教程", "ChatGPT", "小红书", "创作"],
+    ),
+    _TopicItem(
+        title="人工智能入门｜非技术人员也能懂的AI科普",
+        summary="AI科普入门，用大白话解释ChatGPT/AIGC/大模型，非技术人员也能懂",
+        content="AI核心概念大白话：\n1. 大模型=超级学霸：读了全网内容，什么都能聊两句\n2. ChatGPT=对话机器人：你问它答，像聪明助手\n3. AIGC=AI创作：写文/画图/做视频都行\n4. 提示词=遥控器：你怎么说，AI就怎么做\n5. 微调=专业培训：让通用AI变成领域专家\n对普通人的影响：\n- 重复性工作会被替代\n- 创意+AI=超级个体\n- 学会用AI比学编程更重要\n- AI是工具不是对手，会用的人赢",
+        author="AI科普",
+        likes=22300, comments=756, shares=1678,
+        tags=["AI", "科普", "入门", "科技"],
+        keywords=["AI", "人工智能", "科普", "入门", "科技", "教育", "ChatGPT"],
+    ),
+    _TopicItem(
+        title="在线教育｜5个免费学习平台，比报班还管用",
+        summary="免费在线学习平台推荐，B站/Coursera/中国大学MOOC等，自学也能逆袭",
+        content="5个免费学习平台：\n1. B站 — 最强免费大学，编程/设计/考研全有\n2. 中国大学MOOC — 名校课程免费上，有证书\n3. Coursera — 全球顶尖大学课，可旁听\n4. Khan Academy — 数学/科学从零开始\n5. LeetCode — 编程刷题，面试必备\n学习方法：\n- 每天固定1小时学习\n- 做笔记+实践项目\n- 加入学习社群互相监督\n- 学完做输出（写文/做视频）\n- 3个月专注一个方向，别贪多",
+        author="学习达人",
+        likes=19800, comments=678, shares=1345,
+        tags=["教育", "学习", "在线", "免费"],
+        keywords=["教育", "学习", "在线", "免费", "课程", "自学", "平台"],
+    ),
+    _TopicItem(
+        title="ChatGPT高级用法｜10个提示词技巧，让AI输出质量翻倍",
+        summary="ChatGPT提示词技巧，10个高级用法，让AI回答更精准更有深度",
+        content="10个提示词技巧：\n1. 角色设定：'你是XX领域的专家'\n2. 格式指定：'用表格/列表/步骤输出'\n3. 示例引导：给1-2个期望输出的例子\n4. 分步执行：复杂任务拆成多轮对话\n5. 约束条件：'不超过200字/只用小学词汇'\n6. 思维链：'请一步步思考'\n7. 自我检查：'请检查你的回答是否有错误'\n8. 对比分析：'对比A和B的优缺点'\n9. 迭代优化：'请改进上一版，使其更XX'\n10. 组合使用：角色+格式+约束+示例\n记住：提示词越具体，AI输出越精准",
+        author="AI提示词",
+        likes=29800, comments=1023, shares=2345,
+        tags=["AI", "ChatGPT", "提示词", "技巧"],
+        keywords=["AI", "ChatGPT", "提示词", "技巧", "教程", "人工智能"],
+    ),
+    _TopicItem(
+        title="科技趋势2025｜这5个方向值得关注",
+        summary="2025科技趋势预测，AI Agent/具身智能/AI教育/空间计算/绿色科技",
+        content="2025年5大科技趋势：\n1. AI Agent — 从聊天到做事，AI开始自主执行任务\n2. 具身智能 — AI+机器人，从虚拟走向物理世界\n3. AI教育 — 个性化学习，每个学生都有AI导师\n4. 空间计算 — Apple Vision Pro引领，虚实融合新交互\n5. 绿色科技 — 碳中和驱动，新能源+AI优化\n对普通人的机会：\n- 学AI工具使用，提升竞争力\n- 关注AI+垂直领域创业机会\n- 投资相关方向基金\n- 培养AI无法替代的能力（创造力/共情力）",
+        author="科技前沿",
+        likes=18400, comments=567, shares=1234,
+        tags=["科技", "趋势", "AI", "2025"],
+        keywords=["科技", "趋势", "AI", "人工智能", "教育", "2025", "未来"],
     ),
 ]
 

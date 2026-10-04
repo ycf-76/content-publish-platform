@@ -1,8 +1,11 @@
-﻿from app.agents.nodes._base import NodeStatus, WorkflowState, _dlog, emit_node_event, logger
+from app.agents.nodes._base import (
+    NodeStatus, WorkflowState, _dlog, emit_node_event, logger,
+    build_belief_dict, build_loop_counter_update,
+)
 
 
 async def publish_node(state: WorkflowState) -> dict:
-    """Publish node: LoopExecutor + XhsPublishSkill via MCP."""
+    """Publish node: publish step (xhs_publish removed, returns success)."""
     workflow_id = state["workflow_id"]
     node_id = "publish"
 
@@ -52,7 +55,7 @@ async def publish_node(state: WorkflowState) -> dict:
         "title": (
             final_review.get("title")
             or copywrite.get("title")
-            or (topic if topic else "")
+            or (state.get("topic") or "")
         ),
         "content": (
             final_review.get("content")
@@ -61,10 +64,31 @@ async def publish_node(state: WorkflowState) -> dict:
         ),
         "images_base64": images_for_publish,
         "account_id": state.get("account_id", ""),
+        # 发布策略：manual（默认，半自动）| auto（实验性自动点击）。
+        # 定时任务流水线经 model_settings 下发；普通工作流缺省 manual，行为不变。
+        "publish_strategy": (
+            state.get("model_settings", {}).get("publish_strategy", "manual")
+        ),
     }
 
     _dlog(f"[{workflow_id}] publish_node harness_input: title={harness_input['title'][:30]!r}, "
           f"content_len={len(harness_input['content'])}, images={len(harness_input['images_base64'])}")
+
+    # ── 平台限制检查（多平台适配） ──
+    _platform = state.get("platform", "xiaohongshu")
+    try:
+        from app.services.platform_adapter import check_platform_limits
+        _platform_check = check_platform_limits(
+            harness_input["title"], harness_input["content"], _platform,
+        )
+        if not _platform_check["ok"]:
+            logger.warning(
+                f"[{workflow_id}] {node_id} platform limits exceeded: "
+                f"{_platform_check['issues']}"
+            )
+        harness_input["_platform_check"] = _platform_check
+    except Exception as _perr:
+        logger.warning(f"[{workflow_id}] {node_id} platform check failed: {_perr}")
 
     # 参数校验：title 和 content 不能为空
     if not harness_input["title"] or not harness_input["content"]:
@@ -78,24 +102,55 @@ async def publish_node(state: WorkflowState) -> dict:
             "message": "发布失败：缺少标题或正文（请检查 copywrite / final_review 节点输出）",
         }
     else:
-        # 发布进度提示：发布流程涉及 Playwright 操作发布页，耗时 15-30s
+        # 发布进度提示：发布流程涉及 Scrapling StealthyFetcher 操作发布页，耗时 15-30s
         img_count = len(harness_input["images_base64"])
         await emit_node_event(workflow_id, node_id, "progress_update", {
             "progress": 10,
             "step": "publish_starting",
-            "message": f"正在连接小红书发布页（{img_count} 张图片）...",
+            "message": f"正在连接{_platform}发布页（{img_count} 张图片）...",
         })
 
-        # 直接调用 XhsPublishSkill，不走 LLM Loop
-        # 红线：发布是确定性动作（调 MCP → Worker Playwright），不需要 LLM 推理
-        # LLM Loop 会导致 LLM 误判参数为占位符，拒绝调用工具
-        from app.tools.xhs_publish import XhsPublishSkill
+        publish_strategy = harness_input.get("publish_strategy", "manual")
+        auto_submit = publish_strategy == "auto"
 
-        skill = XhsPublishSkill()
-        _dlog(f"[{workflow_id}] publish_node calling XhsPublishSkill.execute()...")
         try:
-            output = await skill.execute(harness_input)
-            _dlog(f"[{workflow_id}] publish_node skill result: status={output.get('status')}, "
+            from app.services.platform_publisher import publish_to_platform
+            from app.services.platform_adapter import adapt_tags
+
+            _tags = adapt_tags(
+                copywrite.get("tags", []),
+                _platform,
+            )
+
+            publish_result = await publish_to_platform(
+                platform=_platform,
+                title=harness_input["title"],
+                content=harness_input["content"],
+                tags=_tags,
+                images_base64=harness_input["images_base64"],
+                auto_submit=auto_submit,
+            )
+
+            output = {
+                "post_id": "",
+                "status": publish_result.get("status", "failed"),
+                "message": publish_result.get("message", ""),
+                "platform": _platform,
+                "url": publish_result.get("url", ""),
+            }
+
+            if publish_result.get("ok"):
+                output["status"] = publish_result.get("status", "awaiting_manual")
+                await emit_node_event(workflow_id, node_id, "progress_update", {
+                    "progress": 80,
+                    "step": "publish_content_filled",
+                    "message": publish_result.get("message", "内容已填写"),
+                })
+            else:
+                output["status"] = "failed"
+                output["message"] = publish_result.get("message", "发布失败")
+
+            _dlog(f"[{workflow_id}] publish_node result: status={output.get('status')}, "
                   f"message={output.get('message', '')[:100]}")
         except Exception as e:
             logger.exception(f"[{workflow_id}] {node_id} publish skill failed: {e}")
@@ -124,6 +179,8 @@ async def publish_node(state: WorkflowState) -> dict:
             # 不标 COMPLETED，保持 RUNNING，等 check API 更新
             "node_statuses": {node_id: NodeStatus.RUNNING.value},
             "node_outputs": {node_id: output},
+            "agent_beliefs": build_belief_dict(node_id, output),
+            "loop_counters": build_loop_counter_update(state, node_id),
         }
 
     await emit_node_event(workflow_id, node_id, "node_completed", output)
@@ -145,8 +202,56 @@ async def publish_node(state: WorkflowState) -> dict:
                 f"[{workflow_id}] record_publish failed: {mem_err}"
             )
 
+        # 新增：同时调 performance_collector.record_publication()
+        # 写 published_content_performance 表，供 T+7 回采 + 预测校准
+        # 与上面的 agent_memory.record_publish() 是互补关系（写不同表）
+        try:
+            from app.services.performance_collector import record_publication
+
+            analyze_output = state.get("node_outputs", {}).get("analyze", {})
+            copywrite_output = state.get("node_outputs", {}).get("copywrite", {})
+            final_review_output = state.get("node_outputs", {}).get("final_review", {})
+            image_gen_output = state.get("node_outputs", {}).get("image_gen", {})
+
+            await record_publication(
+                user_id=state.get("user_id", ""),
+                workflow_id=workflow_id,
+                topic=state.get("topic", ""),
+                selected_pattern=analyze_output.get("patterns"),
+                selected_direction=(
+                    analyze_output.get("insights", {}).get("recommendations")
+                ),
+                published_note_id=str(output.get("post_id", "")),
+                platform=_platform,
+                predicted_viral_score=analyze_output.get("predicted_viral_score"),
+                title=(
+                    final_review_output.get("title")
+                    or copywrite_output.get("title")
+                    or harness_input.get("title", "")
+                ),
+                content_text=(
+                    final_review_output.get("content")
+                    or copywrite_output.get("content")
+                    or harness_input.get("content", "")
+                ),
+                tags=copywrite_output.get("tags", []),
+                images=image_gen_output.get("image_urls") or [],
+                card_draft=state.get("node_outputs", {}).get("image_plan", {}).get("_draft"),
+            )
+        except Exception as perf_err:
+            logger.warning(
+                f"[{workflow_id}] record_publication failed: {perf_err}"
+            )
+
     return {
         "current_node": node_id,
         "node_statuses": {node_id: NodeStatus.COMPLETED.value},
         "node_outputs": {node_id: output},
+        "agent_beliefs": build_belief_dict(node_id, output),
+        "loop_counters": build_loop_counter_update(state, node_id),
     }
+
+
+def _build_belief(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，写入 state.agent_beliefs。"""
+    return build_belief_dict(node_id, output)

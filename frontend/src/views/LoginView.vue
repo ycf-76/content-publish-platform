@@ -40,13 +40,6 @@
       </div>
 
       <div v-if="activeTab === 'home' || activeTab === 'email'" class="login-main">
-        <button class="login-option" @click="activeTab = 'qrcode'; initQRCode()" type="button">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/></svg>
-          <span>小红书二维码登录</span>
-        </button>
-
-        <div class="login-divider"><span>或</span></div>
-
         <div class="login-email-section">
           <template v-if="emailStep === 'input'">
             <div class="login-input-wrapper">
@@ -60,6 +53,13 @@
                 @blur="isInputFocused = false"
               />
             </div>
+            <div class="login-privacy">
+              <label class="login-checkbox-label">
+                <input v-model="agreedPrivacy" type="checkbox" class="login-checkbox" />
+                <span>同意<span class="login-link" @click.stop="showPolicy = 'privacy'">隐私政策</span>和<span class="login-link" @click.stop="showPolicy = 'terms'">服务条款</span></span>
+              </label>
+            </div>
+            <div v-if="errorMsg" class="login-error-msg">{{ errorMsg }}</div>
             <button
               class="login-btn"
               :disabled="!emailForm.email || !agreedPrivacy || sendingCode"
@@ -68,12 +68,6 @@
             >
               {{ sendingCode ? '发送中...' : '发送验证码' }}
             </button>
-            <div class="login-privacy">
-              <label class="login-checkbox-label">
-                <input v-model="agreedPrivacy" type="checkbox" class="login-checkbox" />
-                <span>同意<span class="login-link" @click.stop="showPolicy = 'privacy'">隐私政策</span>和<span class="login-link" @click.stop="showPolicy = 'terms'">服务条款</span></span>
-              </label>
-            </div>
           </template>
           <template v-else>
             <div class="code-sent-to">验证码已发送至 {{ emailForm.email }}</div>
@@ -94,6 +88,7 @@
                 />
               </div>
             </div>
+            <div v-if="errorMsg" class="login-error-msg">{{ errorMsg }}</div>
             <button
               class="login-btn"
               :disabled="codeDigits.join('').length < 6 || emailLoading"
@@ -117,51 +112,7 @@
         </div>
       </div>
 
-      <div v-else class="login-qrcode">
-        <div v-if="workerOffline" class="qr-offline">
-          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-          <p class="qr-offline-text">扫码服务未启动</p>
-          <p class="qr-offline-hint">请在终端运行以下命令启动 Worker：</p>
-          <code class="qr-offline-cmd">python -m app.account.qr_http_worker 9010</code>
-          <button class="login-btn login-btn-outline" style="margin-top: 12px;" @click="generateQRCode" type="button">重试连接</button>
-        </div>
-        <div v-else-if="!qrCode" class="qr-placeholder">
-          <div class="qr-loading">
-            <svg class="qr-spin" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            <span style="margin-top: 8px; font-size: 13px; color: #94a3b8;">加载二维码中...</span>
-          </div>
-        </div>
-        <div v-else class="qr-display">
-          <img :src="qrCode.qrcode_base64" alt="小红书二维码登录" class="qr-image" />
-          <div class="qr-status">
-            <span v-if="qrStatus === 'pending'" class="qr-hint">打开小红书 APP 扫描二维码</span>
-            <span v-else-if="qrStatus === 'scanned'" class="qr-hint qr-hint-scanned">已扫码，请在手机确认</span>
-            <span v-else-if="qrStatus === 'confirmed'" class="qr-hint qr-hint-done">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M20 6 9 17l-5-5"/></svg>
-              登录成功
-            </span>
-            <span v-else-if="qrStatus === 'expired'" class="qr-hint qr-hint-expired">
-              二维码已过期
-              <button class="login-link" @click="generateQRCode" type="button">刷新</button>
-            </span>
-          </div>
-        </div>
-        <div v-if="qrStatus === 'confirmed' && showManualInput" class="manual-input">
-          <input v-model="manualNickname" type="text" class="login-input" placeholder="小红书昵称" @focus="isInputFocused = true" @blur="isInputFocused = false" />
-          <input v-model="manualRedId" type="text" class="login-input" placeholder="小红书号（选填）" @focus="isInputFocused = true" @blur="isInputFocused = false" />
-          <button class="login-btn" @click="bindManual" :disabled="!manualNickname || binding" type="button">
-            {{ binding ? '绑定中...' : '确认绑定' }}
-          </button>
-        </div>
-        <div class="login-back">
-          <button class="login-link" @click="activeTab = 'home'; stopPolling()" type="button">返回</button>
-        </div>
-      </div>
-
-      <div v-if="errorMsg" class="login-error">{{ errorMsg }}</div>
-    </div>
-
-    <Transition name="policy-fade">
+      <Transition name="policy-fade">
       <div v-if="showPolicy" class="policy-overlay" @click.self="showPolicy = ''">
         <div class="policy-card">
           <div class="policy-header">
@@ -193,7 +144,7 @@
               <p>更新日期：2025年1月1日</p>
               <p>欢迎使用脉冲工作室。请仔细阅读以下服务条款。</p>
               <h4>一、服务内容</h4>
-              <p>脉冲工作室为您提供小红书内容创作与发布辅助服务，包括但不限于：热点搜索、文案生成、标题优化、自动发布等功能。</p>
+              <p>脉冲工作室为您提供内容创作与发布辅助服务，包括但不限于：热点搜索、文案生成、标题优化、自动发布等功能。</p>
               <h4>二、用户行为规范</h4>
               <p>您承诺：遵守中华人民共和国相关法律法规；不利用本服务发布违法、违规或侵权内容；不利用本服务进行任何恶意行为，包括但不限于刷量、恶意营销等。</p>
               <h4>三、知识产权</h4>
@@ -213,12 +164,12 @@
       </div>
     </Transition>
   </div>
+</div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { accountApi, type QRCodeResponse } from '@/api/account'
 import { authApi, saveLogin } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
@@ -229,15 +180,14 @@ const authStore = useAuthStore()
 const SK_HAS_LOGGED_IN = 'mint_has_logged_in_before'
 const SK_FIRST_LOGIN = 'mint_first_login_session'
 
-function saveLoginAndSync(data: { token: string; refresh_token?: string; user_id: string; xhs_user_id: string; nickname: string; avatar_url: string; has_xhs_auth?: boolean; login_method?: string }) {
+function saveLoginAndSync(data: { token: string; refresh_token?: string; user_id: string; nickname: string; avatar_url: string; has_xhs_auth?: boolean; login_method?: string }) {
   saveLogin(data)
   authStore.token = data.token
   authStore.user = {
     user_id: data.user_id,
-    xhs_user_id: data.xhs_user_id,
     nickname: data.nickname,
     avatar_url: data.avatar_url,
-    has_xhs_auth: data.has_xhs_auth ?? !!data.xhs_user_id,
+    has_xhs_auth: data.has_xhs_auth ?? false,
     login_method: data.login_method || '',
   }
 }
@@ -252,7 +202,7 @@ function markFirstLoginAndPush() {
   router.push(redirect)
 }
 
-const activeTab = ref<'home' | 'email' | 'qrcode'>('home')
+const activeTab = ref<'home' | 'email'>('home')
 const errorMsg = ref('')
 const isInputFocused = ref(false)
 const floatStyle = ref<Record<string, string>>({})
@@ -301,128 +251,6 @@ function onCodePaste(e: ClipboardEvent) {
     }
   }
   e.preventDefault()
-}
-
-const qrCode = ref<QRCodeResponse | null>(null)
-const qrStatus = ref<'pending' | 'scanned' | 'confirmed' | 'expired'>('pending')
-const qrLoading = ref(false)
-const workerOffline = ref(false)
-const pollTimer = ref<number | null>(null)
-const showManualInput = ref(false)
-const manualNickname = ref('')
-const manualRedId = ref('')
-const binding = ref(false)
-
-function initQRCode() {
-  if (!qrCode.value && !qrLoading.value) {
-    generateQRCode()
-  }
-}
-
-async function generateQRCode() {
-  qrLoading.value = true
-  errorMsg.value = ''
-  qrCode.value = null
-  qrStatus.value = 'pending'
-  showManualInput.value = false
-  workerOffline.value = false
-
-  try {
-    const response = await accountApi.generateQRCode()
-    if (response && response.data) {
-      qrCode.value = response.data
-      startPolling()
-    }
-  } catch (e: any) {
-    const detail = e.response?.data?.detail || e.message || '获取二维码失败'
-    if (detail.includes('QR_WORKER_OFFLINE')) {
-      workerOffline.value = true
-    } else {
-      errorMsg.value = detail
-    }
-  } finally {
-    qrLoading.value = false
-  }
-}
-
-function startPolling() {
-  stopPolling()
-  pollTimer.value = window.setInterval(async () => {
-    if (!qrCode.value) return
-    try {
-      const response = await accountApi.pollQRCode(qrCode.value.qr_id)
-      if (response && response.data) {
-        const data = response.data
-        qrStatus.value = data.status
-
-        if (data.qrcode_base64 && qrCode.value) {
-          qrCode.value.qrcode_base64 = data.qrcode_base64
-        }
-
-        if (qrStatus.value === 'confirmed') {
-          stopPolling()
-          await bindAccount()
-        } else if (qrStatus.value === 'expired') {
-          stopPolling()
-        }
-      }
-    } catch (_e) {
-      // silent
-    }
-  }, 2000)
-}
-
-function stopPolling() {
-  if (pollTimer.value) {
-    clearInterval(pollTimer.value)
-    pollTimer.value = null
-  }
-}
-
-async function bindAccount() {
-  if (!qrCode.value) return
-  binding.value = true
-  errorMsg.value = ''
-  try {
-    const response = await authApi.qrLogin(qrCode.value.qr_id)
-    if (response && response.data) {
-      saveLoginAndSync(response.data)
-      markFirstLoginAndPush()
-    } else {
-      errorMsg.value = '登录返回数据异常'
-    }
-  } catch (e: any) {
-    const detail = e.response?.data?.detail || ''
-    if (detail.includes('need_manual')) {
-      showManualInput.value = true
-      errorMsg.value = '请手动输入昵称'
-    } else {
-      errorMsg.value = detail || e.message || '登录失败'
-    }
-  } finally {
-    binding.value = false
-  }
-}
-
-async function bindManual() {
-  if (!qrCode.value || !manualNickname.value) return
-  binding.value = true
-  errorMsg.value = ''
-  try {
-    const response = await authApi.qrLoginManual(
-      qrCode.value.qr_id,
-      manualNickname.value,
-      manualRedId.value
-    )
-    if (response && response.data) {
-      saveLoginAndSync(response.data)
-      markFirstLoginAndPush()
-    }
-  } catch (e: any) {
-    errorMsg.value = e.response?.data?.detail || e.message || '绑定失败'
-  } finally {
-    binding.value = false
-  }
 }
 
 async function handleSendCode() {
@@ -476,10 +304,9 @@ async function handleEmailLogin() {
       authStore.token = response.data.token
       authStore.user = {
         user_id: response.data.user_id,
-        xhs_user_id: response.data.xhs_user_id,
         nickname: response.data.nickname,
         avatar_url: response.data.avatar_url,
-        has_xhs_auth: response.data.has_xhs_auth ?? !!response.data.xhs_user_id,
+        has_xhs_auth: response.data.has_xhs_auth ?? false,
         login_method: response.data.login_method || 'email',
       }
       markFirstLoginAndPush()
@@ -538,7 +365,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stopPolling()
   if (countdownTimer) {
     clearInterval(countdownTimer)
     countdownTimer = null
@@ -552,7 +378,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(160deg, #fff7ed 0%, #ffedd5 35%, #fecdd3 100%);
+  background: #ffffff;
   padding: 20px;
 }
 
@@ -764,6 +590,26 @@ onUnmounted(() => {
 
 .login-input:focus {
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+}
+
+.login-error-msg {
+  width: 100%;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: #FEF2F2;
+  color: #DC2626;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid #FECACA;
+  animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
 }
 
 .login-btn {

@@ -415,6 +415,55 @@ export const pluginsApi = {
   async healthCheck(): Promise<HealthCheckResponse> {
     const response = await apiClient.get('/plugins/health')
     return unpack(response)
+  },
+
+  // ==================== GitHub Integration ⭐新增 ====================
+
+  /**
+   * 从 GitHub 仓库安装插件
+   * @param repoUrl GitHub 仓库 URL (如 https://github.com/user/plugin-repo)
+   * @param branch 分支名（默认 main）
+   * @param useGitClone 是否使用 git clone（需要本地安装 git）
+   */
+  async installFromGithub(
+    repoUrl: string,
+    branch: string = 'main',
+    useGitClone: boolean = false
+  ): Promise<{
+    success: boolean
+    plugin_id?: string
+    plugin_name?: string
+    version?: string
+    message: string
+    install_method: 'git' | 'zip' | 'error'
+  }> {
+    const response = await apiClient.post('/plugins/install-from-github', {
+      repo_url: repoUrl,
+      branch,
+      use_git_clone: useGitClone,
+    })
+    return unpack(response)
+  },
+
+  /**
+   * 从 GitHub 更新已安装的插件
+   * @param pluginId 插件 ID
+   * @param useGitPull 是否使用 git pull（仅限 git clone 安装的插件）
+   */
+  async updateFromGithub(
+    pluginId: string,
+    useGitPull: boolean = false
+  ): Promise<{
+    success: boolean
+    message: string
+    details?: string
+  }> {
+    const response = await apiClient.post(
+      `/plugins/${pluginId}/update-from-github`,
+      null,
+      { params: { use_git_pull: useGitPull } }
+    )
+    return unpack(response)
   }
 }
 

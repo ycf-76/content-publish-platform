@@ -1,4 +1,4 @@
-﻿"""SourceManager — 多平台内容源注册表。
+"""SourceManager — 多平台内容源注册表。
 
 职责：
 1. 按 platform 名分发到对应的 ContentSource
@@ -142,11 +142,21 @@ async def init_sources() -> None:
             bilibili = TavilySiteSource("bilibili", "bilibili.com", tavily_instance)
             source_manager.register(bilibili)
 
-            # --- 小红书替代：搜全网穿搭/美妆内容，AI 改写为小红书风格 ---
+            # --- 小红书替代：搜高质量中文平台的全品类内容，AI 改写为小红书风格 ---
             #     xiaohongshu.com 对搜索引擎屏蔽，site: 搜不到笔记
-            #     改搜 163.com / sohu.com / sina.com.cn 等新闻门户的生活方式频道
-            #     这些站点有大量穿搭/美妆/家居内容，且搜索引擎索引完整
-            xhs_alt = TavilySiteSource("xiaohongshu_web", "163.com sohu.com sina.com.cn", tavily_instance)
+            #     改搜搜索引擎可索引的中文平台（覆盖全品类）：
+            #     - zhihu.com: 穿搭/美妆/学习/职场/读书/健身（真实用户长文回答）
+            #     - bilibili.com: 穿搭/美妆/美食/旅行/学习/健身（视频文案+弹幕讨论）
+            #     - weibo.com: 全品类热点+小红书博主跨平台分发
+            #     - douban.com: 读书/电影/旅行/生活（高质量长评）
+            #     - 36kr.com: 职场/副业/AI/科技（深度文章）
+            #     比旧方案（163/sohu/sina 新闻门户）质量高得多：
+            #     新闻门户只有编辑稿，这些平台有真实用户 UGC 内容
+            xhs_alt = TavilySiteSource(
+                "xiaohongshu_web",
+                "zhihu.com bilibili.com weibo.com douban.com 36kr.com",
+                tavily_instance,
+            )
             source_manager.register(xhs_alt)
 
             # --- 抖音替代：搜 36kr.com / ifanr.com 等科技媒体的短视频/热点报道 ---
@@ -161,12 +171,50 @@ async def init_sources() -> None:
             insta_alt = TavilySiteSource("instagram", "vogue.com elle.com cosmopolitan.com", tavily_instance)
             source_manager.register(insta_alt)
 
+            # --- 海外社媒（Tavily 站搜，零风控）---
+            twitter = TavilySiteSource("twitter", "x.com twitter.com", tavily_instance)
+            source_manager.register(twitter)
+
+            tiktok = TavilySiteSource("tiktok", "tiktok.com news.tiktok.com", tavily_instance)
+            source_manager.register(tiktok)
+
+            medium = TavilySiteSource("medium", "medium.com", tavily_instance)
+            source_manager.register(medium)
+
             logger.info(
                 f"[sources] Tavily site search platforms registered: "
-                f"zhihu, weibo, bilibili, xiaohongshu_web(alt), douyin(alt), pinterest, instagram(alt)"
+                f"zhihu, weibo, bilibili, xiaohongshu_web(alt), douyin(alt), "
+                f"pinterest, instagram(alt), twitter, tiktok, medium"
             )
         except Exception as e:
             logger.error(f"[sources] init TavilySiteSource platforms failed: {e}")
+
+    # 1.5 Serper 全网搜索（Google SERP，Tavily 降级备选 + 小红书全品类搜索）
+    #     2,500 次免费，无需信用卡，https://serper.dev/
+    #     返回 Google 原始搜索结果，支持 site: 站内搜索
+    #     用途：Tavily 额度耗尽时降级 + 搜 "小红书 + 关键词" 获取被转载的小红书内容
+    if settings.serper_api_key:
+        try:
+            from app.tools.sources.serper_source import SerperSource
+
+            serper_instance = SerperSource(api_key=settings.serper_api_key)
+            source_manager.register(serper_instance)
+        except Exception as e:
+            logger.error(f"[sources] init SerperSource failed: {e}")
+    else:
+        logger.info("[sources] Serper disabled (SERPER_API_KEY not set)")
+
+    # 1.6 头条搜索 so.toutiao.com（免费，无需 API Key，国内直连，中文分词优秀）
+    #     反爬宽松，服务器端请求即可正常获取，零成本降级方案
+    #     中文分词质量远优于 Bing 中国版，适合小红书风格关键词
+    #     注意：类名叫 SogouSource（历史原因），实际使用头条搜索
+    try:
+        from app.tools.sources.sogou_source import SogouSource
+
+        sogou = SogouSource()
+        source_manager.register(sogou)
+    except Exception as e:
+        logger.error(f"[sources] init SogouSource failed: {e}")
 
     # 2. Reddit（需 client_id + client_secret）
     if settings.reddit_client_id and settings.reddit_client_secret:
@@ -203,6 +251,27 @@ async def init_sources() -> None:
     except Exception as e:
         logger.error(f"[sources] init GitHubSource failed: {e}")
 
+    # 4.5 YouTube（Data API v3，需 API Key，视频趋势对标小红书视频笔记）
+    if settings.youtube_api_key:
+        try:
+            from app.tools.sources.youtube_source import YouTubeSource
+
+            yt = YouTubeSource(api_key=settings.youtube_api_key)
+            source_manager.register(yt)
+        except Exception as e:
+            logger.error(f"[sources] init YouTubeSource failed: {e}")
+    else:
+        logger.info("[sources] YouTube disabled (YOUTUBE_API_KEY not set)")
+
+    # 4.6 Dev.to（零认证，技术圈热门文章，适合职场/副业/编程类目）
+    try:
+        from app.tools.sources.devto_source import DevToSource
+
+        devto = DevToSource()
+        source_manager.register(devto)
+    except Exception as e:
+        logger.error(f"[sources] init DevToSource failed: {e}")
+
     # 5. 内置中文话题库（零网络依赖，覆盖小红书常见类目）
     #    作为兜底数据源，确保中文生活方式关键词总能搜到内容
     try:
@@ -223,6 +292,32 @@ async def init_sources() -> None:
         except Exception as e:
             logger.error(f"[sources] init XhsSource failed: {e}")
 
+    # 7. 可插拔热榜源（读 hotboard_sources.json，按需注册）
+    #    每个热榜平台（微博/抖音/知乎/头条/百度/B站/小红书）独立注册为 ContentSource
+    #    添加/删除/禁用源只需改 JSON，无需改代码
+    if settings.hotboard_enabled:
+        try:
+            from app.tools.sources.hotboard_source import HotboardSource, load_hotboard_config
+
+            hotboard_cfg = load_hotboard_config()
+            for platform_key, cfg in hotboard_cfg.items():
+                src = HotboardSource(
+                    platform_key=platform_key,
+                    label=cfg.get("label", platform_key),
+                    primary_url=cfg["primary"],
+                    backup_url=cfg.get("backup", ""),
+                )
+                source_manager.register(src)
+            if hotboard_cfg:
+                logger.info(
+                    f"[sources] hotboard sources registered: "
+                    f"{list(hotboard_cfg.keys())}"
+                )
+        except Exception as e:
+            logger.error(f"[sources] init HotboardSource failed: {e}")
+    else:
+        logger.info("[sources] hotboard disabled (HOTBOARD_ENABLED=false)")
+
     # 设置默认平台
     # 优先用配置的 default_source_platform
     # 没配置时优先 tavily（全网搜索覆盖面最广）→ builtin（中文话题）
@@ -231,6 +326,8 @@ async def init_sources() -> None:
         source_manager.set_default(default)
     elif source_manager.is_available("tavily"):
         source_manager.set_default("tavily")
+    elif source_manager.is_available("sogou"):
+        source_manager.set_default("sogou")
     elif source_manager.is_available("builtin"):
         source_manager.set_default("builtin")
     elif source_manager.is_available("hackernews"):

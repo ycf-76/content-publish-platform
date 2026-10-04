@@ -1,5 +1,15 @@
-﻿from app.adapters.llm_base import BaseLLM
+from app.adapters.llm_base import BaseLLM
 from app.agents.registry import AgentRegistry
+
+# Harness-level collaboration tools are dynamically injected when
+# collab_mode != DISABLED (see app/engine/harness/runtime.py).
+_COLLAB_TOOL_NAMES = [
+    "spawn_agent",
+    "send_message",
+    "wait_agent",
+    "interrupt_agent",
+    "list_agents",
+]
 
 
 class _FakeSettings:
@@ -17,7 +27,7 @@ def _patch_settings(monkeypatch):
 
 def test_registry_has_all_builtin_agents():
     registry = AgentRegistry()
-    assert len(registry.list_agents()) == 10
+    assert len(registry.list_agents()) == 11
     assert registry.get("search").llm_model == "deepseek-v3"
     assert registry.get("copywrite").llm_model == "deepseek-r1"
 
@@ -39,10 +49,13 @@ def test_build_harness_assembles_skills(monkeypatch):
     registry = AgentRegistry()
 
     search_harness = registry.build_harness("search")
-    assert [skill.name for skill in search_harness.skills] == ["trending_search"]
+    search_skills = [skill.name for skill in search_harness.skills]
+    assert search_skills[:1] == ["trending_search"]
+    assert search_skills[1:] == _COLLAB_TOOL_NAMES
 
     publish_harness = registry.build_harness("publish")
-    assert [skill.name for skill in publish_harness.skills] == ["xhs_publish"]
+    publish_skills = [skill.name for skill in publish_harness.skills]
+    assert publish_skills == _COLLAB_TOOL_NAMES
 
 
 def test_build_harness_explore_agent(monkeypatch):
@@ -51,11 +64,13 @@ def test_build_harness_explore_agent(monkeypatch):
 
     assert registry.get("explore") is not None
     explore_harness = registry.build_harness("explore")
-    assert [skill.name for skill in explore_harness.skills] == [
+    explore_skills = [skill.name for skill in explore_harness.skills]
+    assert explore_skills[:3] == [
         "trending_search",
         "vl_analyze",
         "lively_girl",
     ]
+    assert explore_skills[3:] == _COLLAB_TOOL_NAMES
 
 
 def test_build_harness_has_prompt_template(monkeypatch):

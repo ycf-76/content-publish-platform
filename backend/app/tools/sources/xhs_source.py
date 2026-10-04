@@ -1,4 +1,6 @@
-﻿"""小红书内容源（包装现有 mcp_manager）。
+"""小红书内容源（包装现有 mcp_manager）。
+except ImportError:
+    mcp_manager = None
 
 保留小红书爬取能力，但不作为默认数据源（风控风险）。
 后续用户配置 + 桥接页面就绪时可用。
@@ -42,7 +44,10 @@ class XhsSource(ContentSource):
 
     def _get_manager(self):
         if self._mcp_manager is None:
-            from app.tools.mcp.xhs_client import mcp_manager
+            try:
+                from app.tools.mcp.xhs_client import mcp_manager
+            except ImportError:
+                mcp_manager = None
             self._mcp_manager = mcp_manager
         return self._mcp_manager
 

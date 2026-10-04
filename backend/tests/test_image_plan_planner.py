@@ -28,7 +28,7 @@ def test_template_matcher_returns_registered_template():
     matcher = TemplateMatcher(TemplateRegistry())
 
     template_id = matcher.match_template("AI 编程入门", "教程型")
-    assert template_id in {"esther_brand", "dark_tech", "minimal_white"}
+    assert template_id in {"dark_tech", "minimal_white"}
 
     decoration = matcher.match_decoration(template_id, "教程型")
     assert decoration["type"]
@@ -117,22 +117,21 @@ def test_structured_draft_follows_template_page_fields():
     assert "highlight" not in minimal["pages"][0]
     assert all(page["type"] != "end_page" for page in minimal["pages"])
 
-    esther = _build_structured_draft(
+    dark = _build_structured_draft(
         registry=registry,
         topic="知识清单",
         title="标题",
         structured_items=structured_items,
-        suggested_template="esther_brand",
+        suggested_template="dark_tech",
     )
-    assert esther["pages"][0].get("highlight") == ""
-    assert any(page["type"] == "end_page" for page in esther["pages"])
+    assert dark["pages"][0].get("highlight", "") == "" or "highlight" not in dark["pages"][0]
 
 
 def test_format_plan_uses_platform_profile():
     matcher = TemplateMatcher(TemplateRegistry())
     format_plan = matcher.build_format_plan(
         page_count=3,
-        template_id="esther_brand",
+        template_id="dark_tech",
         platform="douyin",
         format_name="9:16",
     )

@@ -1,0 +1,92 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1080,initial-scale=1">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  .xhs-card {
+    width: 1080px; height: 1440px; overflow: hidden; position: relative;
+    display: flex; flex-direction: column;
+    padding: 96px 80px 80px 80px;
+    background: #fafaf8;
+    font-family: 'Helvetica Neue', 'PingFang SC', 'Noto Sans SC', sans-serif;
+    color: #0a0a0a;
+  }
+  .method-head { display: flex; align-items: baseline; gap: 28px; }
+  .method-num {
+    font-size: 96px; font-weight: 200; color: #002FA7;
+    line-height: 1; letter-spacing: -0.03em;
+  }
+  .method-tag {
+    font-size: 24px; font-weight: 400; letter-spacing: 0.18em;
+    color: #737373; text-transform: uppercase;
+  }
+  .method-title {
+    font-size: 72px; font-weight: 300; line-height: 1.15;
+    margin-top: 40px; letter-spacing: -0.01em;
+  }
+  .method-title .hl { border-bottom: 6px solid #002FA7; padding-bottom: 4px; }
+  .divider { height: 1px; background: #d4d4d2; margin: 56px 0; }
+  .lede { font-size: 32px; font-weight: 400; line-height: 1.75; color: #262626; }
+  .lede strong { font-weight: 600; color: #0a0a0a; }
+  .timer-box {
+    margin-top: 56px;
+    border: 1.5px solid #0a0a0a;
+    padding: 48px 48px;
+    display: flex; flex-direction: column; gap: 24px;
+  }
+  .timer-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .timer-label { font-size: 30px; font-weight: 500; }
+  .timer-val { font-size: 30px; color: #002FA7; font-variant-numeric: tabular-nums; font-weight: 500; }
+  .timer-note { font-size: 24px; color: #737373; line-height: 1.6; }
+  .spacer { flex: 1; }
+  .info-bar {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-top: 1px solid #d4d4d2; padding-top: 28px;
+  }
+  .info-left { font-size: 24px; color: #737373; }
+  .info-right { font-size: 24px; color: #737373; font-variant-numeric: tabular-nums; }
+  .watermark {
+    position: absolute; bottom: 32px; right: 80px;
+    font-size: 20px; color: #b0b0ae; letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+<div class="xhs-card">
+  <div class="method-head">
+    <div class="method-num">02</div>
+    <div class="method-tag">Method · 方法</div>
+  </div>
+  <div class="method-title">用<span class="hl">时间块</span><br>给注意力设边界</div>
+  <div class="divider"></div>
+  <div class="lede">
+    大脑讨厌「无限期地专注」，但能接受「<strong>只专注 25 分钟</strong>」。给注意力一个明确的开始和结束，它才愿意全力跑。
+  </div>
+  <div class="timer-box">
+    <div class="timer-row">
+      <div class="timer-label">专注时长</div>
+      <div class="timer-val">25 min</div>
+    </div>
+    <div class="timer-note">经典番茄钟节奏，适合大多数任务</div>
+    <div class="timer-row">
+      <div class="timer-label">休息时长</div>
+      <div class="timer-val">5 min</div>
+    </div>
+    <div class="timer-note">起身走动、远眺，不看手机</div>
+    <div class="timer-row">
+      <div class="timer-label">长休息</div>
+      <div class="timer-val">15–30 min</div>
+    </div>
+    <div class="timer-note">每完成 4 个时间块后安排一次</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="info-bar">
+    <div class="info-left">方法二 · 时间块 / 番茄钟</div>
+    <div class="info-right">03 / 07</div>
+  </div>
+  <div class="watermark">@专注力笔记</div>
+</div>
+</body>
+</html>

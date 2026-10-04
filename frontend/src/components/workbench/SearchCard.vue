@@ -5,7 +5,7 @@
         <div class="mint-wf-step">01</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="search" class="wf-node-icon"></i>
+            <Search class="wf-node-icon" :size="16" />
             搜索热点
             <code class="wf-node-key">search</code>
           </div>
@@ -27,13 +27,13 @@
         <input
           type="text"
           class="mint-input"
-          :placeholder="hasXhsAccount ? '输入关键词，回车或点击搜索启动工作流...' : '输入关键词，回车或点击搜索...'"
+          :placeholder="'输入关键词，回车或点击搜索...'"
           v-model="keyword"
           :disabled="workflowStore.isStreaming || workflowStore.isLoading"
           @keydown.enter="$emit('start-flow')"
         >
         <button class="mint-btn mint-btn-primary" :disabled="workflowStore.isStreaming || workflowStore.isLoading" @click="$emit('start-flow')">
-          <i :data-lucide="hasXhsAccount ? 'play' : 'search'" style="width:14px; height:14px;"></i>
+          <Search :size="14" />
           {{ actionLabel }}
         </button>
       </div>
@@ -43,7 +43,7 @@
         type="button"
         @click="showAdvanced = !showAdvanced"
       >
-        <i :data-lucide="showAdvanced ? 'chevron-up' : 'chevron-down'" style="width:14px;height:14px;"></i>
+        <ChevronUp v-if="showAdvanced " :size="14" /><ChevronDown v-else :size="14" />
         高级选项
       </button>
 
@@ -51,7 +51,7 @@
       <div class="wf-creative-brief-row">
         <textarea
           class="mint-textarea wf-creative-brief-textarea"
-          :placeholder="hasXhsAccount ? '想写的内容（可选）：例如选题方向、正文结构、风格要求' : '想写的内容（可选）'"
+          :placeholder="'想写的内容（可选）'"
           v-model="creativeBrief"
           :disabled="workflowStore.isStreaming || workflowStore.isLoading"
           rows="2"
@@ -62,7 +62,7 @@
       <!-- 平台选择器 -->
       <div class="wf-platform-selector">
         <span class="wf-platform-label">
-          <i data-lucide="globe" style="width:12px; height:12px;"></i>
+          <Globe :size="12" />
           数据源
         </span>
         <button
@@ -70,7 +70,7 @@
           :key="p.name || 'all'"
           class="wf-platform-chip"
           :class="{ 'is-active': selectedPlatform === p.name, 'is-locked': p.locked }"
-          :title="p.locked ? '需要小红书扫码登录授权' : p.desc"
+          :title="p.locked ? '该平台暂未开放' : p.desc"
           :disabled="workflowStore.isStreaming || workflowStore.isLoading || !!p.locked"
           @click="!p.locked && $emit('select-platform', p.name)"
         >
@@ -83,7 +83,7 @@
       <!-- 搜索结果区 -->
       <div class="search-results">
         <div v-if="searchStatus === 'idle'" class="wf-empty-hint">
-          <i data-lucide="info" style="width:14px; height:14px;"></i>
+          <Info :size="14" />
           输入关键词并启动，将顺序执行 8 个节点
         </div>
 
@@ -95,7 +95,7 @@
         </div>
 
         <div v-else-if="searchStatus === 'error'" class="mint-search-error">
-          <i data-lucide="alert-circle" style="width:20px; height:20px;"></i>
+          <AlertCircle :size="20" />
           <span>{{ searchError }}</span>
         </div>
 
@@ -134,18 +134,18 @@
               <div v-if="note.summary" class="mint-note-summary">{{ note.summary }}</div>
               <div class="mint-note-meta">
                 <span v-if="note.author" class="mint-note-author">
-                  <i data-lucide="user" style="width:12px; height:12px;"></i>{{ note.author }}
+                  <User :size="12" />{{ note.author }}
                 </span>
                 <span class="mint-note-likes">
-                  <i data-lucide="heart" style="width:12px; height:12px;"></i>{{ note.likes || 0 }}
+                  <Heart :size="12" />{{ note.likes || 0 }}
                 </span>
                 <div class="mint-note-actions">
                   <button class="mint-note-action-btn mint-note-action-analyze" @click.stop="$emit('start-from-result', note)" title="以此内容为参考发起工作流分析">
-                    <i data-lucide="zap" style="width:11px; height:11px;"></i>
+                    <Zap :size="11" />
                     发起分析
                   </button>
                   <button class="mint-note-action-btn mint-note-action-search" @click.stop="$emit('search-similar', note.title || note.summary || '')" title="搜索同类内容">
-                    <i data-lucide="search" style="width:11px; height:11px;"></i>
+                    <Search :size="11" />
                     搜索同款
                   </button>
                 </div>
@@ -158,9 +158,9 @@
 
     <div class="wf-node-bottom-row" v-if="nodeMeta || searchStatus === 'completed' || searchStatus === 'error' || workflowStore.isStreaming">
       <div class="wf-node-meta" v-if="nodeMeta">
-        <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-        <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-        <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+        <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+        <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+        <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
       </div>
       <div class="mint-wf-footer">
         <!-- 进入分析按钮 -->
@@ -169,7 +169,7 @@
           class="sc-analyze-btn"
           @click="$emit('enter-analyze')"
         >
-          <i data-lucide="arrow-right" style="width:14px; height:14px;"></i>
+          <ArrowRight :size="14" />
           进入分析
         </button>
         <button
@@ -177,7 +177,7 @@
           :disabled="workflowStore.isLoading"
           @click="handleRefresh"
         >
-          <i data-lucide="refresh-cw" style="width:14px; height:14px;"></i>
+          <RefreshCw :size="14" />
           {{ workflowStore.isStreaming ? '取消并重新搜索' : '重新搜索' }}
         </button>
       </div>
@@ -186,21 +186,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { computed, ref, watch } from 'vue'
+import {
+  AlertCircle, ArrowRight, ChevronDown, ChevronUp, Clock,
+  Cpu, Globe, Heart, Info, Play, RefreshCw, Search, User, Zap,
+} from 'lucide-vue-next'
 import { useWorkflowStore } from '@/stores/workflow'
-import { useAccountStore } from '@/stores/account'
 import type { SearchNote, SearchStatus } from '@/composables/useSearchFlow'
 
 const workflowStore = useWorkflowStore()
-const accountStore = useAccountStore()
 
 const showAdvanced = ref(false)
 
-const hasXhsAccount = computed(() => !!accountStore.currentAccountId)
 const actionLabel = computed(() => {
   if (workflowStore.isStreaming) return '执行中...'
-  return hasXhsAccount.value ? '启动工作流' : '搜索'
+  return '搜索'
 })
 
 const props = defineProps<{
@@ -273,10 +273,15 @@ const statusBadgeStyle = computed(() => {
   return {}
 })
 
+const _CDN_HOSTS = ['xhscdn.com', 'xiaohongshu.com', 'picasso-static']
+
 function coverSrc(cover: string): string {
   if (!cover) return ''
   if (cover.startsWith('/uploads/')) return cover
   if (cover.startsWith('data:')) return cover
+  if (_CDN_HOSTS.some(h => cover.includes(h))) {
+    return '/api/proxy/image?url=' + encodeURIComponent(cover)
+  }
   return cover
 }
 
@@ -292,6 +297,12 @@ function letterColor(platform: string) {
     douyin: { bg: '#000000', fg: '#FFFFFF' },
     pinterest: { bg: '#E60023', fg: '#FFFFFF' },
     instagram: { bg: '#E4405F', fg: '#FFFFFF' },
+    twitter: { bg: '#1DA1F2', fg: '#FFFFFF' },
+    youtube: { bg: '#FF0000', fg: '#FFFFFF' },
+    tiktok: { bg: '#000000', fg: '#FFFFFF' },
+    medium: { bg: '#000000', fg: '#FFFFFF' },
+    devto: { bg: '#0A0A0A', fg: '#FFFFFF' },
+    github: { bg: '#24292F', fg: '#FFFFFF' },
     builtin: { bg: '#FF2442', fg: '#FFFFFF' },
   }
   return palette[platform] || { bg: '#6B7280', fg: '#FFFFFF' }
@@ -309,6 +320,12 @@ function letterLabel(note: SearchNote): string {
     douyin: '抖',
     pinterest: 'Pi',
     instagram: 'IG',
+    twitter: 'X',
+    youtube: 'YT',
+    tiktok: 'TT',
+    medium: 'Me',
+    devto: 'Dev',
+    github: 'GH',
     builtin: '热门',
   }
   if (palette[note.platform]) return palette[note.platform]
@@ -349,15 +366,15 @@ function onCoverError(e: Event, note: SearchNote) {
 }
 
 watch(() => props.searchResults, () => {
-  nextTick(() => createIcons({ icons }))
+  
 }, { deep: true })
 
 watch(() => props.searchStatus, () => {
-  nextTick(() => createIcons({ icons }))
+  
 })
 
 watch(showAdvanced, () => {
-  nextTick(() => createIcons({ icons }))
+  
 })
 </script>
 

@@ -25,12 +25,6 @@
           </div>
         </div>
         <div class="ws-header-right">
-          <div v-if="brandConfig" class="ws-brand">
-            <span class="ws-brand-name">{{ brandConfig.brand_name || '品牌 Kit' }}</span>
-            <span class="ws-brand-dot" :style="{ background: brandConfig.primary }"></span>
-            <span class="ws-brand-dot" :style="{ background: brandConfig.accent }"></span>
-            <span class="ws-brand-dot" :style="{ background: brandConfig.spot }"></span>
-          </div>
           <button type="button" class="ws-close" @click="$emit('close')" title="关闭">✕</button>
         </div>
       </header>
@@ -53,17 +47,7 @@
               >{{ tab.label }}</button>
             </div>
             <div class="ws-tab-content">
-              <PageList
-                v-if="leftTab === 'pages'"
-                :pages="editor.pages.value"
-                :selected-page-id="editor.selectedPageId.value"
-                @select="editor.selectPage"
-                @move="editor.movePage"
-                @delete="editor.deletePage"
-                @duplicate="editor.duplicatePage"
-                @add="editor.addPage"
-                @reorder="editor.movePageByIndex"
-              />
+              <p v-if="leftTab === 'pages'" class="ws-degraded-hint">页面列表编辑已移除</p>
               <TemplateGallery
                 v-else-if="leftTab === 'templates'"
                 :current-template-id="editor.currentTemplateId.value"
@@ -84,22 +68,12 @@
           <div class="ws-mode-switch">
             <button :class="{ active: workspaceMode === 'template' }" @click="workspaceMode = 'template'">模板卡片</button>
             <button :class="{ active: workspaceMode === 'asset' }" @click="workspaceMode = 'asset'">本地图片</button>
+            <button :class="{ active: workspaceMode === 'direct' }" @click="workspaceMode = 'direct'">图+文直编</button>
           </div>
 
           <div class="ws-canvas-area">
             <template v-if="workspaceMode === 'template'">
-              <CanvasPreview
-                :pages="editor.pages.value"
-                :selected-page-id="editor.selectedPageId.value"
-                :current-template-id="editor.currentTemplateId.value"
-                :effective-theme="editor.effectiveTheme.value"
-                :current-decoration="editor.currentDecoration.value"
-                :preview-scale="editor.previewScale.value"
-                :box-width="editor.boxWidth.value"
-                :box-height="editor.boxHeight.value"
-                :set-grid-ref="setPreviewGrid"
-                @select="editor.selectPage"
-              />
+              <p class="ws-degraded-hint">卡片画布预览已移除，请使用"本地图片"或"图+文直编"模式</p>
             </template>
 
             <template v-else>
@@ -110,14 +84,63 @@
                     {{ uploadingAssets ? '上传中...' : '点击上传本地图片' }}
                   </label>
                 </div>
-                <div v-if="assetImages.length > 0" class="ws-asset-grid">
+                <!-- 上传后自动创建 image_page，用画布预览（支持叠加模板） -->
+                <div v-if="assetImagePages.length > 0" class="ws-asset-canvas-list">
+                  <div
+                    v-for="page in assetImagePages"
+                    :key="page.id"
+                    class="ws-asset-canvas-item"
+                    :class="{ selected: editor.selectedPageId.value === page.id }"
+                    @click="editor.selectPage(page.id)"
+                  >
+                    <div class="ws-degraded-hint">卡片预览已移除</div>
+                  </div>
+                </div>
+                <div v-else-if="assetImages.length > 0" class="ws-asset-grid">
                   <div v-for="(asset, i) in assetImages" :key="asset.asset_id" class="ws-asset-card">
-                    <img :src="asset.thumbnail_url" :alt="asset.filename" />
+                    <img :src="resolveImgUrl(asset.thumbnail_url)" :alt="asset.filename" />
                     <span class="ws-asset-idx">{{ i + 1 }}</span>
                   </div>
                 </div>
               </div>
             </template>
+
+            <!-- 图+文直编模式 -->
+            <div v-if="workspaceMode === 'direct'" class="ws-direct-mode">
+              <div class="ws-direct-upload">
+                <input id="ws-direct-input" type="file" accept="image/*" multiple @change="handleDirectFiles" />
+                <label for="ws-direct-input">
+                  {{ directUploading ? '上传中...' : '上传图片' }}
+                </label>
+              </div>
+              <div v-if="directImages.length > 0" class="ws-direct-images">
+                <div v-for="(img, i) in directImages" :key="i" class="ws-direct-img-card">
+                  <img :src="img.preview" alt="" />
+                  <button class="ws-direct-img-remove" @click="directImages.splice(i, 1)">✕</button>
+                </div>
+              </div>
+              <div class="ws-direct-copy">
+                <input v-model="directCopy.title" class="ws-direct-input" placeholder="标题" />
+                <textarea v-model="directCopy.body" class="ws-direct-textarea" placeholder="正文内容..." rows="6"></textarea>
+                <input v-model="directCopy.tagsStr" class="ws-direct-input" placeholder="标签（空格分隔，如：旅行 摄影 生活）" />
+              </div>
+              <div class="ws-direct-platforms">
+                <span class="ws-direct-platforms-label">发布到</span>
+                <button
+                  v-for="p in directPlatformOptions"
+                  :key="p.id"
+                  class="ws-direct-platform-btn"
+                  :class="{ active: directSelectedPlatforms.includes(p.id) }"
+                  @click="toggleDirectPlatform(p.id)"
+                >
+                  <component :is="p.icon" :size="14" />
+                  <span>{{ p.label }}</span>
+                </button>
+              </div>
+              <button class="ws-direct-publish-btn" @click="handleDirectPublish" :disabled="directPublishing || directImages.length === 0">
+                {{ directPublishing ? '发布中...' : '直接发布' }}
+              </button>
+            </div>
           </div>
         </main>
 
@@ -127,30 +150,7 @@
             {{ rightCollapsed ? '◂' : '▸' }}
           </button>
           <div v-if="!rightCollapsed" class="ws-right-content">
-            <PropertyPanel
-              :selected-page="editor.selectedPage.value"
-              :current-template-id="editor.currentTemplateId.value"
-              :current-template="editor.currentTemplate.value"
-              :effective-theme="editor.effectiveTheme.value"
-              :current-decoration="editor.currentDecoration.value"
-              :custom-font-size="editor.customFontSize.value"
-              :custom-bg="editor.customBg.value"
-              :custom-accent="editor.customAccent.value"
-              :filtered-deco-presets="editor.filteredDecoPresets.value"
-              :card-draft="cardDraft"
-              @change-page-type="editor.changePageType"
-              @update:custom-font-size="editor.customFontSize.value = $event"
-              @update:custom-bg="editor.customBg.value = $event"
-              @update:custom-accent="editor.customAccent.value = $event"
-              @update:decoration-type="editor.currentDecoration.value.type = $event; if ($event === 'none') editor.setDecorationNone()"
-              @select-decoration="editor.selectDecoration"
-              @decoration-none="editor.setDecorationNone"
-              @reset-style="editor.resetCustomStyle"
-              @redistribute="editor.redistributeContent"
-              @add-list-item="editor.addListItem"
-              @delete-list-item="editor.deleteListItem"
-              @fill-copywrite="editor.fillPageFromCopywrite"
-            />
+            <p class="ws-degraded-hint">属性面板已移除</p>
           </div>
         </aside>
       </div>
@@ -175,12 +175,8 @@
         </button>
       </footer>
 
-      <!-- 隐藏的导出容器 -->
+      <!-- 隐藏的导出容器（placeholder only） -->
       <div :ref="setExportContainer" class="ws-export-container" aria-hidden="true">
-        <template v-for="page in editor.pages.value" :key="page.id">
-          <EstherCardRenderer v-if="isEstherTemplate(editor.currentTemplateId.value)" :page="page" :theme="editor.effectiveTheme.value" :decoration="editor.currentDecoration.value" />
-          <CardRenderer v-else :page="page as CardPage" :theme="editor.effectiveTheme.value" :decoration="editor.currentDecoration.value" />
-        </template>
       </div>
     </div>
   </div>
@@ -188,25 +184,21 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import CardRenderer from '@/components/CardRenderer.vue'
-import EstherCardRenderer from '@/components/EstherCardRenderer.vue'
 import { type CardPage, type DecorationConfig } from '@/card-editor/templates'
-import { isEstherTemplate } from '@/card-editor/esther-templates'
-import PageList from '@/components/card-editor/PageList.vue'
-import CanvasPreview from '@/components/card-editor/CanvasPreview.vue'
-import PropertyPanel from '@/components/card-editor/PropertyPanel.vue'
+
 import TemplateGallery from '@/components/card-editor/TemplateGallery.vue'
 import AssetGallery from '@/components/card-editor/AssetGallery.vue'
 import { useCardEditor, type CardDraft } from '@/composables/useCardEditor'
 import { workflowApi } from '@/api/workflow'
 import { useWorkflowStore } from '@/stores/workflow'
 import { listPlatformProfiles, type PlatformProfile } from '@/api/templates'
-import { estherFactoryApi, type BrandConfig } from '@/api/esther_factory'
 import { uploadAssets, type ImageAsset } from '@/api/assets'
 
 const props = defineProps<{
   cardDraft: CardDraft
   workflowId: string
+  /** 挂载后自动生成并注入（工作流 interrupt 等待图片时自动触发） */
+  autoInject?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -225,14 +217,27 @@ function setPreviewGrid(el: any) {
 }
 
 const injecting = ref(false)
-const workspaceMode = ref<'template' | 'asset'>('template')
+const workspaceMode = ref<'template' | 'asset' | 'direct'>('template')
 const uploadingAssets = ref(false)
 const assetImages = ref<ImageAsset[]>([])
 const platformProfiles = ref<PlatformProfile[]>([])
 const selectedPlatform = ref('xiaohongshu')
 const selectedFormat = ref('3:4')
-const brandConfig = ref<BrandConfig | null>(null)
 const leftCollapsed = ref(false)
+
+const _CDN_HOSTS = ['xhscdn.com', 'xiaohongshu.com', 'picasso-static']
+function resolveImgUrl(url: string): string {
+  if (!url) return ''
+  if (url.startsWith('/uploads/') || url.startsWith('data:')) return url
+  if (_CDN_HOSTS.some(h => url.includes(h))) {
+    return '/api/proxy/image?url=' + encodeURIComponent(url)
+  }
+  return url
+}
+
+const assetImagePages = computed(() => {
+  return editor.pages.value.filter(p => p.type === 'image_page' && p.imageUrl)
+})
 const rightCollapsed = ref(false)
 const leftTab = ref<'pages' | 'templates' | 'assets'>('pages')
 
@@ -256,12 +261,22 @@ onMounted(async () => {
       selectedPlatform.value = first.platform
       selectedFormat.value = Object.keys(first.formats)[0] || '3:4'
     }
-    brandConfig.value = await estherFactoryApi.getBrandConfig()
   } catch (e) {
     console.error('[ImageWorkspace] failed to load workspace config:', e)
   }
   editor.initPreviewResize()
   window.addEventListener('keydown', handleKeyboard)
+
+  // 自动注入：工作流 interrupt 等待图片时，挂载后自动生成并注入
+  if (props.autoInject && props.workflowId) {
+    // 等待 DOM 渲染完成（html2canvas 需要渲染好的 DOM）
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 500))
+    if (!injecting.value && editor.pages.value.length > 0) {
+      console.log('[ImageWorkspace] autoInject: auto generating and injecting images')
+      handleGenerateAndInject()
+    }
+  }
 })
 
 onBeforeUnmount(() => {
@@ -307,12 +322,132 @@ async function handleAssetFiles(event: Event) {
   try {
     const uploaded = await uploadAssets(files)
     assetImages.value = [...assetImages.value, ...uploaded]
+    for (const asset of uploaded) {
+      const imageUrl = asset.original_url || asset.thumbnail_url
+      if (imageUrl) {
+        editor.addImagePage(imageUrl)
+      }
+    }
   } catch (e) {
     console.error('[ImageWorkspace] asset upload failed:', e)
     alert('图片上传失败')
   } finally {
     uploadingAssets.value = false
     input.value = ''
+  }
+}
+
+import { buildContentPack } from '@/adapters/pack-builder'
+import { getAdapter } from '@/adapters'
+import type { TargetPlatform } from '@/types'
+import { AtSign, Camera, GraduationCap, Heart, MessageSquare, Music } from 'lucide-vue-next'
+
+interface DirectImageItem {
+  preview: string
+  base64: string
+}
+
+const directImages = ref<DirectImageItem[]>([])
+const directUploading = ref(false)
+const directPublishing = ref(false)
+const directCopy = ref({ title: '', body: '', tagsStr: '' })
+const directSelectedPlatforms = ref<TargetPlatform[]>(['xiaohongshu'])
+
+const directPlatformOptions = [
+  { id: 'xiaohongshu' as TargetPlatform, label: '小红书', icon: Heart },
+  { id: 'weibo' as TargetPlatform, label: '微博', icon: AtSign },
+  { id: 'wechat_mp' as TargetPlatform, label: '公众号', icon: MessageSquare },
+  { id: 'instagram' as TargetPlatform, label: 'Instagram', icon: Camera },
+  { id: 'zhihu' as TargetPlatform, label: '知乎', icon: GraduationCap },
+  { id: 'douyin' as TargetPlatform, label: '抖音', icon: Music },
+]
+
+function toggleDirectPlatform(id: TargetPlatform) {
+  const idx = directSelectedPlatforms.value.indexOf(id)
+  if (idx >= 0) {
+    directSelectedPlatforms.value.splice(idx, 1)
+  } else {
+    directSelectedPlatforms.value.push(id)
+  }
+}
+
+async function handleDirectFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  if (!files.length) return
+
+  directUploading.value = true
+  try {
+    const readPromises = files.map(file => new Promise<DirectImageItem>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = String(reader.result)
+        const base64 = dataUrl.split(',')[1] || ''
+        resolve({ preview: dataUrl, base64 })
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    }))
+    const items = await Promise.all(readPromises)
+    directImages.value.push(...items)
+  } catch (e) {
+    console.error('[ImageWorkspace] direct file read failed:', e)
+  } finally {
+    directUploading.value = false
+    input.value = ''
+  }
+}
+
+async function handleDirectPublish() {
+  if (directPublishing.value || directImages.value.length === 0) return
+  directPublishing.value = true
+  try {
+    const tags = directCopy.value.tagsStr
+      .split(/\s+/)
+      .map(t => t.trim())
+      .filter(Boolean)
+
+    const pack = buildContentPack({
+      images: directImages.value.map(img => ({ base64: img.base64, url: '' })),
+      title: directCopy.value.title,
+      body: directCopy.value.body,
+      tags,
+      mode: 'direct',
+      targetPlatforms: directSelectedPlatforms.value,
+    })
+
+    const results: Array<{ platform: string; success: boolean; message?: string }> = []
+    for (const platform of directSelectedPlatforms.value) {
+      const adapter = getAdapter(platform)
+      if (!adapter) {
+        results.push({ platform, success: false, message: '暂不支持该平台' })
+        continue
+      }
+      try {
+        const payload = await adapter.transform(pack)
+        const res = await adapter.publish(payload, '')
+        results.push({ platform, success: res.success, message: res.message })
+      } catch (e: any) {
+        results.push({ platform, success: false, message: e.message || '发布失败' })
+      }
+    }
+
+    const allOk = results.every(r => r.success)
+    if (allOk) {
+      workflowStore.pushNotification?.({
+        type: 'workflow_info',
+        message: `已发布到 ${results.length} 个平台`,
+      })
+      emit('close')
+    } else {
+      const failed = results.filter(r => !r.success).map(r => `${r.platform}: ${r.message}`).join('\n')
+      alert('部分平台发布失败：\n' + failed)
+    }
+  } catch (e: any) {
+    console.error('[ImageWorkspace] direct publish failed:', e)
+    alert('发布失败：' + (e.message || '未知错误'))
+  } finally {
+    directPublishing.value = false
   }
 }
 
@@ -352,7 +487,6 @@ async function injectToWorkflow(images: string[], planContext: Record<string, an
         ...planContext,
         platform: selectedPlatform.value,
         format: selectedFormat.value,
-        brand: brandConfig.value || undefined,
       },
     )
     const ok = resp?.success || resp?.data?.success
@@ -748,6 +882,163 @@ async function handleSaveDraft() {
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+/* ===== 本地图片叠加画布预览 ===== */
+.ws-asset-canvas-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  overflow-y: auto;
+  max-height: 100%;
+}
+.ws-asset-canvas-item {
+  width: 200px;
+  height: 267px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  flex-shrink: 0;
+}
+.ws-asset-canvas-item:hover { border-color: rgba(147,197,253,0.4); }
+.ws-asset-canvas-item.selected { border-color: #3b82f6; }
+.ws-asset-canvas-item > * {
+  transform: scale(0.185);
+  transform-origin: top left;
+}
+
+/* ===== 图+文直编模式 ===== */
+.ws-direct-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 12px 0;
+}
+.ws-direct-upload input { display: none; }
+.ws-direct-upload label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: rgba(37,99,235,0.15);
+  color: #93c5fd;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px dashed rgba(37,99,235,0.3);
+  transition: all 0.15s;
+}
+.ws-direct-upload label:hover { background: rgba(37,99,235,0.25); }
+.ws-direct-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ws-direct-img-card {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
+}
+.ws-direct-img-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ws-direct-img-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #f87171;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ws-direct-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ws-direct-copy .ws-direct-input,
+.ws-direct-copy .ws-direct-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 13px;
+  resize: vertical;
+}
+.ws-direct-copy .ws-direct-input::placeholder,
+.ws-direct-copy .ws-direct-textarea::placeholder {
+  color: #64748b;
+}
+.ws-direct-copy .ws-direct-textarea {
+  min-height: 100px;
+}
+.ws-direct-platforms {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ws-direct-platforms-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-right: 4px;
+}
+.ws-direct-platform-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.ws-direct-platform-btn:hover {
+  border-color: rgba(255,255,255,0.2);
+  color: #94a3b8;
+}
+.ws-direct-platform-btn.active {
+  border-color: #3b82f6;
+  background: rgba(59,130,246,0.15);
+  color: #93c5fd;
+}
+.ws-direct-publish-btn {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ws-direct-publish-btn:hover:not(:disabled) { background: #1d4ed8; }
+.ws-direct-publish-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ===== 导出容器 ===== */
 .ws-export-container { position: absolute; clip: rect(0, 0, 0, 0); width: 1080px; pointer-events: none; }

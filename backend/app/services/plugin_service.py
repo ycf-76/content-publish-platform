@@ -10,7 +10,7 @@ from sqlalchemy import select, func, desc, and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-sys.path.insert(0, "D:/My_Project/多智能体小红书发布平台/backend")
+sys.path.insert(0, "D:/My_Project/多智能体内容运营创作平台/backend")
 
 from app.db.plugin_models import (
     Plugin,

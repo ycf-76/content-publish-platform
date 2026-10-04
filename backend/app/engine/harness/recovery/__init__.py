@@ -1,4 +1,4 @@
-﻿"""Recovery 子系统（架构文档 4.4 + PRD D15 + 红线 4）。
+"""Recovery 子系统（架构文档 4.4 + PRD D15 + 红线 4）。
 
 红线：
 - max_attempts=3 + 智能退避 + 熔断

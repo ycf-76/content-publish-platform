@@ -1,4 +1,4 @@
-﻿"""文案生成 Skill 集合：基于分析洞察 + 图片描述生成小红书文案。
+"""文案生成 Skill 集合：基于分析洞察 + 图片描述生成小红书文案。
 
 可插拔架构（v2）：
 - CopywriteSkillBase：基类，封装 LLM 调用 + JSON 解析 + 降级逻辑
@@ -20,12 +20,38 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from app.tools.base import Skill
 from app.tools.registry import register
+from app.agents.clarification_schema import ClarifyFieldMeta, ClarifyOption, ClarifyWhen, ClarifyDepends
 
 logger = logging.getLogger(__name__)
+
+_CN_TZ = timezone(timedelta(hours=8))
+
+
+def _current_date_label() -> str:
+    """当前真实日期（Asia/Shanghai），用于压制模型自行编造日期。"""
+    return datetime.now(_CN_TZ).strftime("%Y-%m-%d")
+
+
+def _date_guard() -> str:
+    return (
+        f"【当前真实日期】{_current_date_label()}（Asia/Shanghai）\n"
+        "涉及新闻/热点/今日等时间敏感内容时，必须使用这个真实日期，"
+        "不得把训练数据里的旧新闻写成“今天”。\n\n"
+    )
+
+
+class CopywriteInput(BaseModel):
+    topic: str = Field(description="The topic/keyword for the copywrite, e.g. 'AI教育'")
+    analysis: dict | None = Field(default=None, description="Viral analysis results from viral_analysis tool (optional, enriches copywriting)")
+    style: str | None = Field(default=None, description="Writing style hint, e.g. '活泼可爱', '知性优雅'")
+    target_audience: str | None = Field(default=None, description="Target audience description, e.g. '20-30岁女性'")
 
 
 # ============================================================================
@@ -56,6 +82,45 @@ class CopywriteSkillBase(Skill):
     style_instruction: str = ""
     fallback_template: str = ""
 
+    clarify_meta: dict[str, ClarifyFieldMeta] = {
+        "topic": ClarifyFieldMeta(
+            hint="这篇图文的核心主题是什么？",
+            when=ClarifyWhen.missing,
+            default="skill_share",
+            auto_default=True,
+            options=[
+                ClarifyOption(label="技能/干货分享", value="skill_share"),
+                ClarifyOption(label="产品种草推荐", value="product_recommend"),
+                ClarifyOption(label="生活经验/避坑", value="life_experience"),
+                ClarifyOption(label="情感/观点表达", value="emotion_opinion"),
+            ],
+        ),
+        "style": ClarifyFieldMeta(
+            hint="文案风格偏好？",
+            when=ClarifyWhen.ambiguous,
+            default="casual",
+            auto_default=True,
+            options=[
+                ClarifyOption(label="口语化闺蜜感", value="casual"),
+                ClarifyOption(label="专业干货感", value="professional"),
+                ClarifyOption(label="故事叙事感", value="narrative"),
+                ClarifyOption(label="清单攻略体", value="listicle"),
+            ],
+        ),
+        "target_audience": ClarifyFieldMeta(
+            hint="目标受众是？",
+            when=ClarifyWhen.missing,
+            default="general",
+            auto_default=True,
+            options=[
+                ClarifyOption(label="学生党", value="student"),
+                ClarifyOption(label="职场新人", value="junior_worker"),
+                ClarifyOption(label="宝妈", value="mom"),
+                ClarifyOption(label="通用", value="general"),
+            ],
+        ),
+    }
+
     # 公共 prompt 模板（子类一般不需要改）
     # v3：主题类型感知——知识型/清单型主题生成结构化干货，而非种草文案
     # v4：注入用户级长期记忆（偏好文风/历史选题/历史文案摘要）
@@ -78,7 +143,7 @@ class CopywriteSkillBase(Skill):
 
 **图片描述**（image_gen 节点生成的图片信息）:
 {images_json}
-{reference_section}{memory_section}
+{reference_section}{memory_section}{my_patterns_section}{my_avoid_section}{profile_section}
 **创作要求**:
 
 1. 内容类型：严格按照执行指令的 content_type 产出，不要自行判断主题类型
@@ -132,7 +197,7 @@ class CopywriteSkillBase(Skill):
 
 **深度分析**:
 {insights_json}
-{reference_section}{memory_section}
+{reference_section}{memory_section}{my_patterns_section}{my_avoid_section}{profile_section}
 
 **要求**:
 - 内容类型：{content_type_hint}
@@ -173,6 +238,9 @@ class CopywriteSkillBase(Skill):
         - user_memory: 用户级长期记忆（可选 dict），字段：
             writing_style / image_style / preferred_topics / avoided_topics
             / recent_topics / recent_copywrites
+        - user_profile: D18 创作者画像（可选 dict），字段：
+            primary_domain / sub_domain / tone / visual_style
+            / taboo_topics / taboo_words
         """
         llm = inputs.get("llm")
         topic = inputs.get("topic", "")
@@ -199,14 +267,27 @@ class CopywriteSkillBase(Skill):
             content_length=content_length,
             auto_emoji=auto_emoji,
             auto_tags=auto_tags,
+            my_patterns=inputs.get("my_patterns", {}),
+            my_avoid=inputs.get("my_avoid", []),
+            user_profile=inputs.get("user_profile", {}),
         )
 
         try:
+            from app.engine.governance.skill_hooks import skill_governance
+            await skill_governance.pre_llm_call(estimated_tokens=2000)
+
             resp = await llm.chat(
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
             )
             raw = resp.get("content", "")
+
+            skill_governance.post_llm_call(tokens_used=len(raw) * 2)
+
+            safety_warnings = skill_governance.content_safety_check(raw)
+            if safety_warnings:
+                logger.warning(f"[{self.__class__.__name__}] content safety: {safety_warnings}")
+
             result = self.parse_response(raw)
             if result is None:
                 logger.warning(
@@ -255,9 +336,15 @@ class CopywriteSkillBase(Skill):
             content_length=content_length,
             auto_emoji=auto_emoji,
             auto_tags=auto_tags,
+            my_patterns=inputs.get("my_patterns", {}),
+            my_avoid=inputs.get("my_avoid", []),
+            user_profile=inputs.get("user_profile", {}),
         )
 
         try:
+            from app.engine.governance.skill_hooks import skill_governance
+            await skill_governance.pre_llm_call(estimated_tokens=2000)
+
             raw_parts: list[str] = []
             async for chunk in llm.stream_chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -270,8 +357,17 @@ class CopywriteSkillBase(Skill):
                             "node_id": node_id,
                             "chunk": {"content": content},
                         })
+                    _observer = inputs.get("_observer")
+                    if _observer and hasattr(_observer, "emit_agent_message_delta"):
+                        await _observer.emit_agent_message_delta(node_id, content)
 
             full_text = "".join(raw_parts)
+            skill_governance.post_llm_call(tokens_used=len(full_text) * 2)
+
+            safety_warnings = skill_governance.content_safety_check(full_text)
+            if safety_warnings:
+                logger.warning(f"[{self.__class__.__name__}] content safety: {safety_warnings}")
+
             result = self._parse_streaming_response(full_text)
             return result
         except Exception as e:
@@ -291,6 +387,9 @@ class CopywriteSkillBase(Skill):
         content_length: int | None = None,
         auto_emoji: bool = True,
         auto_tags: bool = True,
+        my_patterns: dict | None = None,
+        my_avoid: list | None = None,
+        user_profile: dict | None = None,
     ) -> str:
         """构造流式输出的纯文本prompt。"""
         execution_brief_section = _build_execution_brief_section(execution_brief)
@@ -298,6 +397,9 @@ class CopywriteSkillBase(Skill):
         insights_summary = _build_insights_summary(insights)
         reference_section = _build_reference_summary(reference or {})
         memory_section = _build_memory_summary(user_memory or {})
+        my_patterns_section = _build_my_patterns_section(my_patterns or {})
+        my_avoid_section = _build_my_avoid_section(my_avoid or [])
+        profile_section = _build_profile_section(user_profile or {})
         length_instruction = _build_length_instruction(content_length)
         emoji_clause = _build_emoji_clause(auto_emoji)
         tag_instruction = _build_tag_instruction(auto_tags)
@@ -307,13 +409,16 @@ class CopywriteSkillBase(Skill):
         title_style_hint = execution_brief.get("title_style", "利益型") or "利益型"
         tone_hint = execution_brief.get("tone", "自然口语化") or "自然口语化"
 
-        return self.STREAMING_PROMPT_TEMPLATE.format(
+        prompt = self.STREAMING_PROMPT_TEMPLATE.format(
             topic=topic,
             execution_brief_section=execution_brief_section,
             patterns_json=patterns_summary[:1500],
             insights_json=insights_summary[:1000],
             reference_section=reference_section,
             memory_section=memory_section,
+            my_patterns_section=my_patterns_section,
+            my_avoid_section=my_avoid_section,
+            profile_section=profile_section,
             style_instruction=self.style_instruction,
             length_instruction=length_instruction,
             emoji_clause=emoji_clause,
@@ -323,6 +428,7 @@ class CopywriteSkillBase(Skill):
             title_style_hint=title_style_hint,
             tone_hint=tone_hint,
         )
+        return _date_guard() + prompt
 
     def _parse_streaming_response(self, text: str) -> dict[str, Any]:
         """从流式纯文本中解析出结构化字段。
@@ -388,6 +494,9 @@ class CopywriteSkillBase(Skill):
         content_length: int | None = None,
         auto_emoji: bool = True,
         auto_tags: bool = True,
+        my_patterns: dict | None = None,
+        my_avoid: list | None = None,
+        user_profile: dict | None = None,
     ) -> str:
         """构造 LLM prompt。子类可覆盖以自定义 prompt 结构。"""
         execution_brief_section = _build_execution_brief_section(execution_brief)
@@ -396,11 +505,14 @@ class CopywriteSkillBase(Skill):
         images_summary = _build_images_summary(image_details, image_style)
         reference_section = _build_reference_summary(reference or {})
         memory_section = _build_memory_summary(user_memory or {})
+        my_patterns_section = _build_my_patterns_section(my_patterns or {})
+        my_avoid_section = _build_my_avoid_section(my_avoid or [])
+        profile_section = _build_profile_section(user_profile or {})
         # 根据开关构造动态指令片段
         length_instruction = _build_length_instruction(content_length)
         emoji_clause = _build_emoji_clause(auto_emoji)
         tag_instruction = _build_tag_instruction(auto_tags)
-        return self.PROMPT_TEMPLATE.format(
+        prompt = self.PROMPT_TEMPLATE.format(
             topic=topic,
             execution_brief_section=execution_brief_section,
             patterns_json=patterns_summary,
@@ -408,11 +520,15 @@ class CopywriteSkillBase(Skill):
             images_json=images_summary,
             reference_section=reference_section,
             memory_section=memory_section,
+            my_patterns_section=my_patterns_section,
+            my_avoid_section=my_avoid_section,
+            profile_section=profile_section,
             style_instruction=self.style_instruction,
             length_instruction=length_instruction,
             emoji_clause=emoji_clause,
             tag_instruction=tag_instruction,
         )
+        return _date_guard() + prompt
 
     def parse_response(self, raw: str) -> dict | None:
         """解析 LLM 输出的 JSON。三级降级（直接/去 fence/提取首个对象）。"""
@@ -495,7 +611,8 @@ class LivelyGirlCopywriteSkill(CopywriteSkillBase):
 
     name = "lively_girl"
     display_name = "活泼少女风"
-    description = "语气可爱俏皮，多用感叹号和 emoji，像闺蜜聊天"
+    description = "生成文案。仅在用户明确要求写/生成文案时调用。不要在分析/追问/闲聊场景调用。如果用户已有参考文案且要求基于它写，可以调用但不要先搜热点"
+    input_schema = CopywriteInput
     style_instruction = (
         "活泼少女风：语气可爱俏皮，多用感叹号和 emoji（2-3个），"
         "有少女感，像闺蜜聊天"
@@ -518,6 +635,7 @@ class ElegantCopywriteSkill(CopywriteSkillBase):
     name = "elegant"
     display_name = "知性优雅风"
     description = "语气从容得体，措辞考究，像杂志专栏"
+    input_schema = CopywriteInput
     style_instruction = (
         "知性优雅风：语气从容得体，措辞考究，少用 emoji（最多1个），"
         "有沉淀感，像杂志专栏"
@@ -540,6 +658,7 @@ class ProfessionalCopywriteSkill(CopywriteSkillBase):
     name = "professional"
     display_name = "专业干货风"
     description = "语气专业克制，逻辑清晰，分点论述，像行业分享"
+    input_schema = CopywriteInput
     style_instruction = (
         "专业干货风：语气专业克制，逻辑清晰，分点论述，"
         "几乎不用 emoji，像行业分享"
@@ -562,6 +681,7 @@ class CasualCopywriteSkill(CopywriteSkillBase):
     name = "casual"
     display_name = "慵懒随性风"
     description = "语气松弛随性，口语化，偶尔吐槽，像周末下午的闲聊"
+    input_schema = CopywriteInput
     style_instruction = (
         "慵懒随性风：语气松弛随性，口语化，偶尔吐槽，"
         "像周末下午的闲聊"
@@ -757,41 +877,64 @@ def _build_images_summary(image_details: list[dict], style: str) -> str:
     return "\n".join(parts)
 
 
-def _build_reference_summary(reference: dict) -> str:
-    """把选题池参考素材压缩成 prompt 用的段落。
+def _load_copywriting_knowledge() -> str:
+    """Load copywriting knowledge from references/ directory.
 
-    无参考素材时返回空字符串（prompt 中该段落消失，不影响原有流程）。
-    有参考素材时返回格式化的段落，明确告知 LLM "参考"而非"抄袭"。
+    Falls back to inline content if file not found (e.g. during tests).
     """
-    if not reference:
-        return ""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent.parent / "agents" / "prompts" / "references" / "copy-frameworks.md"
+    if p.exists():
+        return p.read_text(encoding="utf-8").strip()
+    logger.warning(f"[copywrite] copy-frameworks.md not found at {p}, using inline fallback")
+    return (
+        "**文案框架参考**（按内容类型选择）:\n"
+        "- 种草文: 钩子首行(痛点/反差) → 场景代入 → 转折发现 → 亲测体验 → 卖点自然带出 → 打消顾虑 → 软性引导\n"
+        "- 信息流: 首行钩子(利益前置) → 放大相关性 → 核心卖点(1-3个) → 信任信号 → 明确CTA\n"
+        "**去AI感规则**（必须遵守）:\n"
+        "- 禁用: 说白了/值得注意的是/综上所述/不难发现\n"
+        "- 句式: 拆长句(≤20字)、删过渡词堆叠\n"
+    )
 
-    parts: list[str] = ["", "**参考素材**（来自选题池，请参考其角度/结构，切勿直接抄袭）:"]
 
-    title = (reference.get("title") or "").strip()
-    if title:
-        parts.append(f"  参考标题: {title[:200]}")
+_COPYWRITING_KNOWLEDGE: str = ""
 
-    summary = (reference.get("summary") or "").strip()
-    if summary:
-        parts.append(f"  参考摘要: {summary[:500]}")
 
-    platform = (reference.get("platform") or "").strip()
-    if platform:
-        parts.append(f"  来源平台: {platform}")
+def _build_reference_summary(reference: dict) -> str:
+    """把选题池参考素材 + 领域知识压缩成 prompt 用的段落。
 
-    # 互动数据（帮助 LLM 判断参考内容的受欢迎程度）
-    likes = reference.get("likes") or 0
-    comments = reference.get("comments") or 0
-    collects = reference.get("collects") or 0
-    if likes or comments or collects:
-        parts.append(f"  互动数据: 点赞{likes} 评论{comments} 收藏{collects}")
+    始终注入文案框架/标题公式/去AI感等领域知识（来自 Easel references）。
+    有外部参考素材时，额外追加选题池参考段落。
+    """
+    parts: list[str] = ["", f"**领域知识参考**:\n{_COPYWRITING_KNOWLEDGE or _load_copywriting_knowledge()}"]
 
-    source_keyword = (reference.get("source_keyword") or "").strip()
-    if source_keyword:
-        parts.append(f"  来源关键词: {source_keyword}")
+    if reference:
+        parts.append("")
+        parts.append("**参考素材**（来自选题池，请参考其角度/结构，切勿直接抄袭）:")
 
-    parts.append("")  # 末尾空行，与后续"文案要求"分隔
+        title = (reference.get("title") or "").strip()
+        if title:
+            parts.append(f"  参考标题: {title[:200]}")
+
+        summary = (reference.get("summary") or "").strip()
+        if summary:
+            parts.append(f"  参考摘要: {summary[:500]}")
+
+        platform = (reference.get("platform") or "").strip()
+        if platform:
+            parts.append(f"  来源平台: {platform}")
+
+        likes = reference.get("likes") or 0
+        comments = reference.get("comments") or 0
+        collects = reference.get("collects") or 0
+        if likes or comments or collects:
+            parts.append(f"  互动数据: 点赞{likes} 评论{comments} 收藏{collects}")
+
+        source_keyword = (reference.get("source_keyword") or "").strip()
+        if source_keyword:
+            parts.append(f"  来源关键词: {source_keyword}")
+
+    parts.append("")
     return "\n".join(parts)
 
 
@@ -838,6 +981,111 @@ def _build_memory_summary(user_memory: dict) -> str:
 
     parts.append("")  # 末尾空行，与后续分隔
     return "\n".join(parts)
+
+
+def _build_my_patterns_section(my_patterns: dict) -> str:
+    """把我的归因处方压缩成 prompt 段落。
+
+    来自 SelfAttributionEngine 的分析结果，描述什么标题模式/情绪触发/内容结构对我有效。
+    """
+    if not my_patterns:
+        return ""
+
+    parts: list[str] = ["", "**我的爆款因子**（基于我历史作品的归因分析，权重最高）:"]
+    has_any = False
+
+    what_works = my_patterns.get("what_works") or []
+    if what_works:
+        has_any = True
+        parts.append("  对我有效的模式:")
+        for item in what_works[:8]:
+            if isinstance(item, dict):
+                parts.append(f"    - {item.get('pattern', '')}: {item.get('evidence', '')}")
+            elif isinstance(item, str):
+                parts.append(f"    - {item}")
+
+    best_title = my_patterns.get("best_title_pattern")
+    if best_title:
+        has_any = True
+        parts.append(f"  最佳标题模式: {best_title}")
+
+    best_emotion = my_patterns.get("best_emotion_trigger")
+    if best_emotion:
+        has_any = True
+        parts.append(f"  最佳情绪触发: {best_emotion}")
+
+    best_structure = my_patterns.get("best_content_structure")
+    if best_structure:
+        has_any = True
+        parts.append(f"  最佳内容结构: {best_structure}")
+
+    if not has_any:
+        return ""
+
+    parts.append("")
+    return "\n".join(parts)
+
+
+def _build_my_avoid_section(my_avoid: list) -> str:
+    """把我的避坑清单压缩成 prompt 段落。
+
+    我试过但效果差的模式，必须避免。
+    """
+    if not my_avoid:
+        return ""
+
+    parts: list[str] = ["", "**我的避坑清单**（我试过但效果差的模式，必须避免）:"]
+    for item in my_avoid[:8]:
+        if isinstance(item, dict):
+            parts.append(f"  - {item.get('pattern', '')}: {item.get('reason', '')}")
+        elif isinstance(item, str):
+            parts.append(f"  - {item}")
+
+    parts.append("")
+    return "\n".join(parts)
+
+
+def _build_profile_section(user_profile: dict) -> str:
+    """把 D18 创作者画像压缩成 prompt 段落（文案 Agent 全量注入）。
+
+    画像字段：primary_domain / sub_domain / tone / visual_style
+              / taboo_topics / taboo_words
+
+    优先复用 app.api.schemas.profile.UserProfile.to_prompt_context()（单一
+    渲染逻辑来源）；校验失败（字段缺失/非法值）时降级为原始键值渲染，
+    保证注入永不因画像数据问题而中断文案生成。
+    空画像返回空串（prompt 中段落消失，不影响老工作流回放）。
+    """
+    if not user_profile or not isinstance(user_profile, dict):
+        return ""
+
+    lines: list[str] = []
+    try:
+        from app.api.schemas.profile import UserProfile as UserProfileSchema
+
+        profile = UserProfileSchema.model_validate(user_profile)
+        lines = profile.to_prompt_context().splitlines()
+    except Exception:
+        # 降级：原始键值渲染（缺字段也能出段落）
+        domain = str(user_profile.get("primary_domain") or "").strip()
+        if not domain:
+            return ""
+        lines = ["【创作者画像】", f"主领域: {domain}"]
+        if user_profile.get("sub_domain"):
+            sub = str(user_profile.get("sub_domain")).strip()
+            lines[1] += f" ({sub})"
+        if user_profile.get("tone"):
+            lines.append(f"调性: {str(user_profile.get('tone')).strip()}")
+        if user_profile.get("visual_style"):
+            lines.append(f"视觉风格: {str(user_profile.get('visual_style')).strip()}")
+        taboo_topics = [str(t) for t in (user_profile.get("taboo_topics") or []) if str(t).strip()]
+        if taboo_topics:
+            lines.append(f"禁忌话题: {', '.join(taboo_topics[:10])}")
+        taboo_words = [str(w) for w in (user_profile.get("taboo_words") or []) if str(w).strip()]
+        if taboo_words:
+            lines.append(f"禁忌用词: {', '.join(taboo_words[:10])}")
+
+    return "\n**" + "\n".join(lines) + "**\n\n"
 
 
 def _validate_copywrite_json(parsed: dict) -> dict | None:

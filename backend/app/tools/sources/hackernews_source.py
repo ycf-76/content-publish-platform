@@ -1,4 +1,4 @@
-﻿"""Hacker News 内容数据源。
+"""Hacker News 内容数据源。
 
 Hacker News API 由 Firebase 托管，完全免费、无需认证。
 - 端点：https://hacker-news.firebaseio.com/v0/
@@ -93,9 +93,12 @@ class HackerNewsSource(ContentSource):
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            from app.tools.sources.base import get_proxy_url
+            proxy = get_proxy_url()
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0),
                 headers={"User-Agent": "multi-agent-xhs-platform/1.0"},
+                proxy=proxy or None,
             )
         return self._client
 

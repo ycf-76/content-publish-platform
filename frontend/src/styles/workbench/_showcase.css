@@ -3,7 +3,6 @@
 /* ---- Page Shell (inside mint-main) ---- */
 .ws-page {
   position: relative;
-  background: var(--ma-bg-base, #F5F5F7);
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
@@ -11,7 +10,7 @@
   flex-direction: column;
   align-items: stretch;
   overflow: hidden;
-  padding: 56px 20px 16px;
+  padding: 8px 24px 16px 18px;
 }
 
 /* ---- Fixed Content Card (fills entire page, same as tp-content-card) ---- */
@@ -19,10 +18,10 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
-  background: #FFFFFF;
-  border-radius: 16px;
-  border: 1px solid var(--ma-border-default);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -34,10 +33,10 @@
   max-width: none;
   width: 100%;
   margin: 0;
-  padding: 20px 24px 16px;
+  padding: 16px 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -48,18 +47,18 @@
 /* ---- Hero (inside card) ---- */
 .ws-hero {
   text-align: center;
-  padding: 8px 20px 16px;
+  padding: 4px 16px 12px;
   position: relative;
   flex-shrink: 0;
 }
 
 .ws-hero-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--ma-text-primary, #1A1A1A);
   line-height: 1.3;
   letter-spacing: -0.02em;
-  margin: 0 0 10px;
+  margin: 0 0 6px;
 }
 
 .ws-hero-line {
@@ -74,28 +73,28 @@
 }
 
 .ws-hero-desc {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--ma-text-secondary, #4B4B4B);
-  max-width: 440px;
+  max-width: 400px;
   margin: 0 auto;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 /* ---- Entry Cards ---- */
 .ws-entry-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 8px;
+  gap: 12px;
+  margin-top: 4px;
   flex-shrink: 0;
 }
 
 .ws-entry-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px 24px;
-  border-radius: 14px;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
@@ -127,9 +126,9 @@
 
 .ws-entry-icon {
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -151,14 +150,14 @@
 }
 
 .ws-entry-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--ma-text-primary, #1A1A1A);
-  margin: 0 0 4px;
+  margin: 0 0 2px;
 }
 
 .ws-entry-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ma-text-tertiary, #9A9A9A);
   margin: 0;
   line-height: 1.4;
@@ -185,11 +184,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .ws-section-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--ma-text-primary, #1A1A1A);
   margin: 0;
@@ -215,7 +214,7 @@
 
 /* ---- Showcase Section ---- */
 .ws-showcase-section {
-  margin-top: 16px;
+  margin-top: 8px;
   flex-shrink: 0;
 }
 
@@ -224,9 +223,9 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 60px 0;
+  padding: 40px 0;
   color: var(--ma-text-tertiary, #9A9A9A);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .ws-showcase-spinner {
@@ -247,33 +246,33 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 20px;
-  gap: 8px;
+  padding: 36px 16px;
+  gap: 6px;
   text-align: center;
 }
 
 .ws-empty-icon {
   color: var(--ma-text-tertiary, #9A9A9A);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .ws-empty-text {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--ma-text-primary, #1A1A1A);
   margin: 0;
 }
 
 .ws-empty-hint {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ma-text-tertiary, #9A9A9A);
   margin: 0;
-  max-width: 280px;
+  max-width: 260px;
   line-height: 1.5;
 }
 
 .ws-empty-btn {
-  margin-top: 16px;
+  margin-top: 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -284,10 +283,10 @@
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 14px;
   justify-content: center;
-  padding: 20px 0;
-  min-height: 280px;
+  padding: 12px 0;
+  min-height: 200px;
 }
 
 .scattered-desk::before {
@@ -303,24 +302,24 @@
 
 .scatter-card {
   position: relative;
-  width: 190px;
-  border-radius: 12px;
+  width: 150px;
+  border-radius: 10px;
   background: var(--ma-card, #FFFFFF);
   border: 1px solid var(--ma-border, #EDEDED);
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.03);
+    0 2px 6px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.02);
   cursor: pointer;
   z-index: var(--scatter-z, 1);
-  animation: scatterDeal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: scatterDeal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: var(--scatter-delay, 0ms);
   transform:
     rotate(var(--scatter-rotate, 0deg))
     translateY(var(--scatter-y, 0px))
     translate(var(--push-x, 0px), var(--push-y, 0px));
   transition:
-    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.3s ease;
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s ease;
 }
 
 @keyframes scatterDeal {
@@ -361,14 +360,14 @@
 
 .scatter-card-pin {
   position: absolute;
-  top: -5px;
+  top: -4px;
   left: 50%;
   transform: translateX(-50%);
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: radial-gradient(circle at 40% 40%, #FF6B6B, #FF2442);
-  box-shadow: 0 2px 4px rgba(255, 36, 66, 0.3);
+  box-shadow: 0 1px 3px rgba(255, 36, 66, 0.3);
   z-index: 2;
 }
 
@@ -397,11 +396,11 @@
 }
 
 .scatter-card-info {
-  padding: 10px 12px 12px;
+  padding: 8px 10px 10px;
 }
 
 .scatter-card-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ma-text-primary, #1A1A1A);
   line-height: 1.35;
@@ -412,10 +411,10 @@
 }
 
 .scatter-card-snippet {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ma-text-tertiary, #9A9A9A);
   line-height: 1.4;
-  margin-top: 4px;
+  margin-top: 3px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -426,9 +425,9 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ma-text-tertiary, #9A9A9A);
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 .scatter-card-status {
@@ -504,9 +503,9 @@
 
 /* ---- Outcome River (Conveyor Belt) ---- */
 .ws-river-section {
-  margin-top: 12px;
-  margin-left: -24px;
-  margin-right: -24px;
+  margin-top: 8px;
+  margin-left: -20px;
+  margin-right: -20px;
   flex-shrink: 0;
 }
 
@@ -530,9 +529,9 @@
 
 .ws-river-item {
   flex-shrink: 0;
-  width: 160px;
-  height: 200px;
-  border-radius: 10px;
+  width: 130px;
+  height: 170px;
+  border-radius: 8px;
   background-size: cover;
   background-position: center;
   background-color: var(--ma-bg-subtle, #EEEEEF);
@@ -552,7 +551,7 @@
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 10px 10px 8px;
+  padding: 8px 8px 6px;
   background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.3) 60%, transparent 100%);
   display: flex;
   flex-direction: column;
@@ -560,7 +559,7 @@
 }
 
 .ws-river-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #FFFFFF;
   line-height: 1.3;
@@ -571,7 +570,7 @@
 }
 
 .ws-river-snippet {
-  font-size: 10px;
+  font-size: 9px;
   color: rgba(255,255,255,0.7);
   line-height: 1.3;
   display: -webkit-box;
@@ -587,11 +586,11 @@
 /* ---- Stats Section (top-right corner) ---- */
 .ws-stats-section {
   position: absolute;
-  top: 16px;
-  right: 24px;
+  top: 10px;
+  right: 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   z-index: 2;
 }
 
@@ -621,10 +620,13 @@
 
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
-  .ws-hero-title { font-size: 26px; }
-  .ws-entry-section { grid-template-columns: 1fr; }
+  .ws-page { padding: 8px 16px 12px 14px; }
+  .ws-container { padding: 12px 16px 16px; }
+  .ws-hero-title { font-size: 20px; }
+  .ws-entry-section { grid-template-columns: 1fr; gap: 10px; }
   .ws-hero-orch { display: none; }
-  .scatter-card { width: 150px; }
-  .ws-stats-section { top: 12px; right: 16px; gap: 8px; }
-  .ws-stat-value { font-size: 14px; }
+  .scatter-card { width: 120px; }
+  .ws-stats-section { top: 8px; right: 16px; gap: 6px; }
+  .ws-stat-value { font-size: 13px; }
+  .ws-section-title { font-size: 16px; }
 }

@@ -443,6 +443,38 @@ async def create_workflow_definition(
 
 
 @router.get(
+    "/builtin/templates",
+    response_model=List[WorkflowDefinitionResponse],
+    summary="获取内置模板列表",
+    description="""
+    获取系统提供的内置工作流模板。
+    
+    这些模板经过优化，适合大多数使用场景，
+    用户可以基于这些模板快速开始。
+    """,
+)
+async def list_builtin_templates(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    列出内置模板
+    """
+    result = await db.execute(
+        select(WorkflowDefinition)
+        .where(WorkflowDefinition.is_builtin == True)
+        .where(WorkflowDefinition.status == WorkflowDefinitionStatus.ACTIVE)
+        .order_by(WorkflowDefinition.usage_count.desc())
+    )
+    
+    templates = result.scalars().all()
+    
+    return [
+        WorkflowDefinitionResponse.model_validate(t)
+        for t in templates
+    ]
+
+
+@router.get(
     "/{definition_id}",
     response_model=WorkflowDefinitionResponse,
     summary="获取工作流定义详情",
@@ -663,38 +695,6 @@ async def duplicate_workflow_definition(
     return WorkflowDefinitionResponse.model_validate(copy)
 
 
-@router.get(
-    "/builtin/templates",
-    response_model=List[WorkflowDefinitionResponse],
-    summary="获取内置模板列表",
-    description="""
-    获取系统提供的内置工作流模板。
-    
-    这些模板经过优化，适合大多数使用场景，
-    用户可以基于这些模板快速开始。
-    """,
-)
-async def list_builtin_templates(
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    列出内置模板
-    """
-    result = await db.execute(
-        select(WorkflowDefinition)
-        .where(WorkflowDefinition.is_builtin == True)
-        .where(WorkflowDefinition.status == WorkflowDefinitionStatus.ACTIVE)
-        .order_by(WorkflowDefinition.usage_count.desc())
-    )
-    
-    templates = result.scalars().all()
-    
-    return [
-        WorkflowDefinitionResponse.model_validate(t)
-        for t in templates
-    ]
-
-
 @router.post(
     "/{definition_id}/run",
     summary="基于工作流定义启动执行",
@@ -748,6 +748,7 @@ async def run_workflow_from_definition(
             topic=topic,
             model_settings=model_settings,
             definition_id=definition_id,
+            source="gui",
         )
         
         logger.info(f"🚀 已基于定义启动工作流: {definition_id} -> {workflow.id}")
@@ -759,6 +760,15 @@ async def run_workflow_from_definition(
             "message": "工作流已成功启动",
         }
         
+    except HTTPException:
+        # 业务错误（如 400 PROFILE_NOT_FOUND）原样透传，禁止包装成 500
+        try:
+            await db.refresh(definition)
+            definition.usage_count = max(0, definition.usage_count - 1)
+            await db.commit()
+        except Exception as rollback_err:
+            logger.warning(f"回滚 usage_count 失败: {rollback_err}")
+        raise
     except Exception as e:
         logger.exception(f"❌ 启动工作流失败: {e}")
         
@@ -800,7 +810,7 @@ async def health_check():
             "total_nodes_registered": stats["current_total"],
             "builtin_count": stats["builtin_count"],
             "plugin_count": stats["plugin_count"],
-            "categories": len(stats["categories"]),
+            "category_count": stats["category_count"],
         },
-        "database": "connected",  # 简化版，实际应检查DB连接
+        "database": "connected",
     }

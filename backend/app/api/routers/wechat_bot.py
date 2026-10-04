@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
 from app.rpa.wechat_bot_engine import WeChatBotEngine, BotStatus, get_wechat_engine
+from app.rpa.wechat_agent_bridge import get_or_create_bridge, remove_bridge, _bridge_registry
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,15 @@ class PushContentRequest(BaseModel):
     image_urls: list[str] = Field(default_factory=list, description="图片URL列表(可选)")
     images_base64: list[str] = Field(default_factory=list, description="图片base64列表(可选)")
     context_token: str = Field("", description="会话令牌(可选)")
+
+
+class SendFileRequest(BaseModel):
+    """发送文件请求"""
+    to_user_id: str = Field(..., description="目标微信用户ID", min_length=1)
+    file_base64: str = Field(..., description="文件base64编码", min_length=1)
+    file_ext: str = Field("mp4", description="文件扩展名(mp4/pdf/docx等)")
+    file_name: str = Field("video.mp4", description="文件名")
+    context_token: str = Field("", description="会话令牌(可选，不传则从缓存获取)")
 
 
 # ==================== RESTful API 接口 ====================
@@ -129,6 +139,16 @@ async def get_status(user_id: str = Depends(get_current_user)):
         state_data = engine.state.to_dict()
         state_data["is_running"] = engine.is_running
 
+        if engine._client:
+            sessions_info = {}
+            for uid, sess in engine._client._user_sessions.items():
+                sessions_info[uid] = {
+                    "has_context_token": bool(sess.context_token),
+                    "has_typing_ticket": bool(sess.typing_ticket),
+                }
+            state_data["cached_sessions"] = sessions_info
+            state_data["ilink_user_id"] = engine._client._credentials.ilink_user_id if engine._client._credentials else None
+
         return {
             "success": True,
             "data": state_data
@@ -185,11 +205,11 @@ async def send_message(
             raise HTTPException(status_code=400, detail="机器人未登录，无法发送消息")
 
         context_token = request.context_token
-        if not context_token:
-            context_token = engine._client.get_context_token(request.to_user_id) if engine._client else None
+        if not context_token and engine._client:
+            context_token = await engine._client.ensure_context_token(request.to_user_id)
 
         if not context_token:
-            raise HTTPException(status_code=400, detail="缺少 context_token，请先让对方发一条消息")
+            raise HTTPException(status_code=400, detail="无法获取 context_token（getconfig 也未返回），可能需要对方先发一条消息")
 
         success = await engine.send_text(
             to_user_id=request.to_user_id.strip(),
@@ -250,10 +270,10 @@ async def push_content(
 
         context_token = request.context_token
         if not context_token and engine._client:
-            context_token = engine._client.get_context_token(request.to_user_id)
+            context_token = await engine._client.ensure_context_token(request.to_user_id)
 
         if not context_token:
-            raise HTTPException(status_code=400, detail="缺少 context_token，请先让对方发一条消息")
+            raise HTTPException(status_code=400, detail="无法获取 context_token（getconfig 也未返回），可能需要对方先发一条消息")
 
         results = {"text_sent": False, "images_sent": 0, "images_failed": 0}
 
@@ -281,42 +301,59 @@ async def push_content(
 
         # 2. 发送 URL 图片
         if request.image_urls:
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                for url in request.image_urls:
-                    try:
-                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                            if resp.status != 200:
-                                logger.warning(f"[API] 下载图片失败: {url}, status={resp.status}")
-                                results["images_failed"] += 1
-                                continue
+            for url in request.image_urls:
+                try:
+                    image_data: bytes | None = None
+                    ext = "png"
 
-                            image_data = await resp.read()
-
-                            ct = resp.headers.get("Content-Type", "")
-                            if "jpeg" in ct or "jpg" in ct:
+                    if url.startswith("/uploads/"):
+                        from pathlib import Path
+                        import os as _os
+                        _base = Path(_os.environ.get("UPLOAD_DIR", "uploads"))
+                        rel = url[len("/uploads/"):]
+                        fp = _base / rel
+                        if fp.exists():
+                            image_data = fp.read_bytes()
+                            if image_data[:3] == b"\xff\xd8\xff":
                                 ext = "jpg"
-                            elif "gif" in ct:
-                                ext = "gif"
-                            else:
-                                ext = "png"
+                            elif image_data[:4] == b"RIFF" and image_data[8:12] == b"WEBP":
+                                ext = "webp"
+                        else:
+                            logger.warning(f"[API] 本地图片不存在: {fp}")
+                            results["images_failed"] += 1
+                            continue
+                    else:
+                        import aiohttp
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                                if resp.status != 200:
+                                    logger.warning(f"[API] 下载图片失败: {url}, status={resp.status}")
+                                    results["images_failed"] += 1
+                                    continue
+                                image_data = await resp.read()
+                                ct = resp.headers.get("Content-Type", "")
+                                if "jpeg" in ct or "jpg" in ct:
+                                    ext = "jpg"
+                                elif "gif" in ct:
+                                    ext = "gif"
 
-                            img_success = await engine.send_image(
-                                to_user_id=request.to_user_id,
-                                context_token=context_token,
-                                image_data=image_data,
-                                file_ext=ext
-                            )
-                            if img_success:
-                                results["images_sent"] += 1
-                            else:
-                                results["images_failed"] += 1
+                    if image_data:
+                        img_success = await engine.send_image(
+                            to_user_id=request.to_user_id,
+                            context_token=context_token,
+                            image_data=image_data,
+                            file_ext=ext
+                        )
+                        if img_success:
+                            results["images_sent"] += 1
+                        else:
+                            results["images_failed"] += 1
 
-                            await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.5)
 
-                    except Exception as e:
-                        logger.error(f"[API] 发送图片异常: {url}, {e}")
-                        results["images_failed"] += 1
+                except Exception as e:
+                    logger.error(f"[API] 发送图片异常: {url}, {e}")
+                    results["images_failed"] += 1
 
         # 3. 发送 base64 图片
         if request.images_base64:
@@ -367,6 +404,55 @@ async def push_content(
         raise
     except Exception as e:
         logger.error(f"[API] 推送内容失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/send-file")
+async def send_file(
+    request: SendFileRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """发送文件到微信用户（视频/文档等）"""
+    try:
+        engine = get_wechat_engine(user_id)
+
+        if not engine.is_logged_in:
+            raise HTTPException(status_code=400, detail="机器人未登录，无法发送文件")
+
+        context_token = request.context_token
+        if not context_token and engine._client:
+            context_token = await engine._client.ensure_context_token(request.to_user_id)
+
+        if not context_token:
+            raise HTTPException(status_code=400, detail="无法获取 context_token（getconfig 也未返回），可能需要对方先发一条消息")
+
+        raw = request.file_base64
+        if "," in raw:
+            raw = raw.split(",", 1)[1]
+
+        file_data = base64.b64decode(raw)
+
+        success = await engine.send_file(
+            to_user_id=request.to_user_id,
+            context_token=context_token,
+            file_data=file_data,
+            file_ext=request.file_ext,
+            file_name=request.file_name,
+        )
+
+        if success:
+            return {
+                "success": True,
+                "data": {"sent": True, "file_name": request.file_name, "size": len(file_data)},
+                "message": f"文件 {request.file_name} 发送成功"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="文件发送失败")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[API] 发送文件失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -461,6 +547,57 @@ async def health_check(user_id: str = Depends(get_current_user)):
             "status": "error",
             "error": str(e)
         }
+
+
+# ==================== 智能体融合接口 ====================
+
+class AgentBridgeRequest(BaseModel):
+    """智能体桥开关请求"""
+    enabled: bool = Field(..., description="是否启用智能体融合")
+
+
+@router.post("/agent-bridge")
+async def toggle_agent_bridge(
+    request: AgentBridgeRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """开启/关闭微信机器人与智能体的融合。
+
+    开启后，微信收到的消息会自动进行意图识别并路由到：
+    - 链接采集（检测到作品链接时）
+    - ChatAgent 智能体对话（搜索/写文/分析等）
+    """
+    try:
+        if request.enabled:
+            bridge = get_or_create_bridge(user_id)
+            return {
+                "success": True,
+                "data": {"enabled": True},
+                "message": "智能体融合已开启，微信消息将自动路由到智能体",
+            }
+        else:
+            remove_bridge(user_id)
+            return {
+                "success": True,
+                "data": {"enabled": False},
+                "message": "智能体融合已关闭",
+            }
+
+    except Exception as e:
+        logger.error(f"[API] 切换智能体融合失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agent-bridge")
+async def get_agent_bridge_status(
+    user_id: str = Depends(get_current_user),
+):
+    """查询智能体融合状态"""
+    enabled = user_id in _bridge_registry
+    return {
+        "success": True,
+        "data": {"enabled": enabled},
+    }
 
 
 # ==================== 注册路由到应用 ====================

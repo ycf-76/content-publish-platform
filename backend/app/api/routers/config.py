@@ -1,5 +1,6 @@
 """Config routers."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_current_user
 from app.api.schemas.common import StandardResponse
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agents", tags=["config"])
 
@@ -60,6 +63,15 @@ def _update_env_file(updates: dict[str, str]) -> None:
     with open(env_path, "w", encoding="utf-8") as f:
         for line in raw_lines:
             f.write(line + "\n")
+
+    # 沙箱凭据保护：重打 No-Read-Up 标签。
+    # 当前是原地写（truncate），SACL 理论上不丢；但一旦重构为 os.replace
+    # 原子写（更抗崩溃），标签会静默丢失 —— 这里幂等重打，防御未来重构。
+    try:
+        from app.sandbox.win_native import label_file_no_read_up
+        label_file_no_read_up(env_path)
+    except Exception:  # pragma: no cover - 非 Windows / pywin32 缺失时不阻断配置保存
+        logger.debug("sandbox relabel skipped for %s", env_path)
 
     for key, value in updates.items():
         if value:

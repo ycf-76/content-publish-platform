@@ -13,14 +13,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import logging
 import socket
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,144 @@ _XHS_HOSTS = {
 }
 
 _MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+def _maybe_cache_image_background(url: str, data: bytes, content_type: str) -> None:
+    """CDN 图片本地化：后台异步保存到本地 + 更新数据库。
+
+    当 proxy 成功代理到图片后触发。下次请求直接走本地路径，
+    不再依赖 CDN 签名（小红书 CDN 链接约 2 天过期）。
+    """
+    import asyncio
+
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+
+    # 仅对小红书 CDN 域名触发本地化
+    if hostname not in _XHS_HOSTS:
+        return
+
+    async def _cache_and_update():
+        try:
+            from app.services.image_store import _ensure_dirs, _TOPIC_COVERS_DIR, _ext_from_content_type, is_local_url
+            from app.db.session import AsyncSessionLocal
+            from app.db.models import TopicPoolItem, PublishedContentPerformance
+            from sqlalchemy import select, update as sa_update
+
+            # 直接写文件（data 已经在内存中，无需再下载）
+            _ensure_dirs()
+            import hashlib
+            content_id = hashlib.md5(url.encode()).hexdigest()[:16]
+            ext = _ext_from_content_type(content_type)
+            filename = f"{content_id}{ext}"
+            filepath = _TOPIC_COVERS_DIR / filename
+            filepath.write_bytes(data)
+            local_url = f"/uploads/topic_covers/{filename}"
+
+            async with AsyncSessionLocal() as db:
+                # 更新选题池中所有匹配的记录
+                stmt = (
+                    sa_update(TopicPoolItem)
+                    .where(TopicPoolItem.cover_img == url)
+                    .values(cover_img=local_url)
+                )
+                result = await db.execute(stmt)
+                if result.rowcount > 0:
+                    logger.info(
+                        f"proxy_image: cached {url[:60]} -> {local_url}, "
+                        f"updated {result.rowcount} pool items"
+                    )
+
+                # 更新作品表中所有匹配的记录
+                stmt3 = (
+                    sa_update(PublishedContentPerformance)
+                    .where(PublishedContentPerformance.cover_img_url == url)
+                    .values(cover_img_url=local_url)
+                )
+                result3 = await db.execute(stmt3)
+                if result3.rowcount > 0:
+                    logger.info(
+                        f"proxy_image: cached {url[:60]} -> {local_url}, "
+                        f"updated {result3.rowcount} work records"
+                    )
+
+                # 也更新 images JSON 数组中的匹配 URL
+                stmt2 = select(TopicPoolItem).where(
+                    TopicPoolItem.images.contains([url])
+                )
+                rows = await db.scalars(stmt2)
+                for row in rows:
+                    if row.images and isinstance(row.images, list):
+                        row.images = [
+                            local_url if img == url else img
+                            for img in row.images
+                        ]
+
+                # 作品表 images 也更新
+                stmt4 = select(PublishedContentPerformance).where(
+                    PublishedContentPerformance.images.contains([url])
+                )
+                rows4 = await db.scalars(stmt4)
+                for row in rows4:
+                    if row.images and isinstance(row.images, list):
+                        row.images = [
+                            local_url if img == url else img
+                            for img in row.images
+                        ]
+
+                await db.commit()
+
+        except Exception as e:
+            logger.warning(f"proxy_image background cache failed: {e}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_cache_and_update())
+    except RuntimeError:
+        pass
+
+
+async def _try_local_fallback(url: str) -> FileResponse | None:
+    """CDN 请求失败时，尝试从数据库查找已本地化的图片文件。
+
+    查找策略：
+    1. 先查数据库中 cover_img / cover_img_url 是否已更新为 /uploads/... 路径
+    2. 再按 URL 的 MD5 哈希直接在 uploads/ 目录下找文件
+    """
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.db.models import TopicPoolItem, PublishedContentPerformance
+        from sqlalchemy import select
+
+        async with AsyncSessionLocal() as db:
+            stmt = select(TopicPoolItem.cover_img).where(TopicPoolItem.cover_img == url).limit(1)
+            row = await db.scalar(stmt)
+            if row and row.startswith("/uploads/"):
+                local_path = Path(row.lstrip("/"))
+                if local_path.exists():
+                    return FileResponse(local_path, media_type="image/webp")
+
+            stmt2 = select(PublishedContentPerformance.cover_img_url).where(
+                PublishedContentPerformance.cover_img_url == url
+            ).limit(1)
+            row2 = await db.scalar(stmt2)
+            if row2 and row2.startswith("/uploads/"):
+                local_path = Path(row2.lstrip("/"))
+                if local_path.exists():
+                    return FileResponse(local_path, media_type="image/webp")
+
+        content_id = hashlib.md5(url.encode()).hexdigest()[:16]
+        covers_dir = Path("uploads/topic_covers")
+        for ext in (".webp", ".jpg", ".png", ".gif"):
+            candidate = covers_dir / f"{content_id}{ext}"
+            if candidate.exists():
+                media = f"image/{ext.lstrip('.')}" if ext != ".jpg" else "image/jpeg"
+                return FileResponse(candidate, media_type=media)
+
+    except Exception as e:
+        logger.warning(f"proxy_image local fallback failed: {e}")
+
+    return None
 
 
 def _is_private_host(hostname: str) -> bool:
@@ -114,11 +254,15 @@ async def proxy_image(request: Request) -> StreamingResponse:
         headers["Sec-Fetch-Site"] = "same-site"
 
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
 
         if resp.status_code != 200:
-            logger.warning(f"proxy_image upstream {resp.status_code} for {url[:80]}")
+            logger.warning(f"proxy_image upstream {resp.status_code} for {url[:80]}, trying local fallback")
+            fallback = await _try_local_fallback(url)
+            if fallback:
+                logger.info(f"proxy_image: served from local cache for {url[:80]}")
+                return fallback
             raise HTTPException(status_code=502, detail=f"upstream returned {resp.status_code}")
 
         content_type = resp.headers.get("content-type", "")
@@ -131,6 +275,10 @@ async def proxy_image(request: Request) -> StreamingResponse:
         if len(resp.content) > _MAX_IMAGE_SIZE:
             raise HTTPException(status_code=413, detail="image too large (max 5MB)")
 
+        # 后台异步：CDN 图片本地化（下次请求直接走本地，不再依赖 CDN 签名）
+        # 仅对小红书 CDN 域名触发，避免无关 URL 的下载开销
+        _maybe_cache_image_background(url, resp.content, content_type)
+
         return StreamingResponse(
             iter([resp.content]),
             media_type=content_type,
@@ -139,5 +287,9 @@ async def proxy_image(request: Request) -> StreamingResponse:
             },
         )
     except httpx.HTTPError as e:
-        logger.warning(f"proxy_image fetch failed: {e}")
+        logger.warning(f"proxy_image fetch failed: {e}, trying local fallback")
+        fallback = await _try_local_fallback(url)
+        if fallback:
+            logger.info(f"proxy_image: served from local cache (after fetch error) for {url[:80]}")
+            return fallback
         raise HTTPException(status_code=502, detail=f"fetch failed: {e}")

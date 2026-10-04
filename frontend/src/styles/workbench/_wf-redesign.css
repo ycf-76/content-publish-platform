@@ -1,12 +1,14 @@
 /* ===== Workflow Redesign: Timeline + Card Shell ===== */
 
 /* ---- Timeline container ---- */
-.wf-nodes-container {
+.wf-nodes-container,
+.wf-nodes-column {
   position: relative;
   padding-left: 36px;
 }
 
-.wf-nodes-container::before {
+.wf-nodes-container::before,
+.wf-nodes-column::before {
   content: '';
   position: absolute;
   left: 15px;
@@ -375,7 +377,8 @@
 }
 
 /* ---- Dark theme ---- */
-.mint-shell.dark-theme .wf-nodes-container::before {
+.mint-shell.dark-theme .wf-nodes-container::before,
+.mint-shell.dark-theme .wf-nodes-column::before {
   background: rgba(80, 80, 80, 0.4);
 }
 

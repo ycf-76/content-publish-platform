@@ -1,4 +1,4 @@
-﻿"""权限门控系统。
+"""权限门控系统。
 
 红线（来自项目记忆）：
 - Skill 在 execute() 之前必须经过权限门控。
@@ -32,7 +32,6 @@ _DEFAULT_LOW_RISK: frozenset[Permission] = frozenset(
         Permission.FILE_READ,
         Permission.NET_HTTP_GET,
         Permission.XHS_SEARCH,
-        Permission.XHS_ACCOUNT_READ,
     }
 )
 
@@ -42,7 +41,8 @@ _HIGH_RISK_ALL: frozenset[Permission] = frozenset(
         Permission.FILE_WRITE,
         Permission.BASH_EXEC,
         Permission.NET_HTTP_POST,
-        Permission.XHS_PUBLISH,
+        Permission.SKILL_IMPORT,
+        Permission.BROWSER_AUTOMATE,
     }
 )
 
@@ -84,6 +84,12 @@ class _PermissionGate:
     @staticmethod
     def _load_env_allowed() -> frozenset[Permission]:
         raw = os.environ.get("PERMISSIONS_ALLOW", "") or ""
+        if not raw:
+            try:
+                from app.config import get_settings
+                raw = (get_settings().permissions_allow or "").strip()
+            except Exception:
+                raw = ""
         out: set[Permission] = set()
         for tok in raw.split(","):
             tok = tok.strip().lower()

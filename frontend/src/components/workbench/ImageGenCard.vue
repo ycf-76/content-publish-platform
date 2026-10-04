@@ -5,7 +5,7 @@
         <div class="mint-wf-step">05</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="image" class="wf-node-icon"></i>
+            <Image class="wf-node-icon" :size="16" />
             卡片编辑器
             <code class="wf-node-key">image_gen</code>
           </div>
@@ -25,14 +25,14 @@
     <div class="wf-node-body">
       <!-- idle/pending 状态：等待 image_plan 完成 -->
       <div v-if="(nodeStatus === 'idle' || nodeStatus === 'pending') && !cardDraft" class="wf-empty-hint">
-        <i data-lucide="info" style="width:14px;height:14px;"></i>
+        <Info :size="14" />
         等待图片规划完成后，在卡片编辑器中调整并生成图片
       </div>
 
       <!-- idle/pending/awaiting_review 状态 + cardDraft 可用：显示卡片编辑器（工作流在 image_gen 前 interrupt 暂停） -->
       <div v-else-if="(nodeStatus === 'idle' || nodeStatus === 'pending' || nodeStatus === 'awaiting_review') && cardDraft" class="wf-card-editor-wrapper">
         <button type="button" class="wf-open-image-workspace" @click="$emit('open-workspace')">
-          <i data-lucide="layout-template" style="width:16px;height:16px;"></i>
+          <LayoutTemplate :size="16" />
           在图片工作区编辑
         </button>
       </div>
@@ -40,7 +40,7 @@
       <!-- running 状态 + cardDraft 可用：从历史恢复时后端可能暂时返回 running，但实际在等用户编辑 -->
       <div v-else-if="nodeStatus === 'running' && cardDraft" class="wf-card-editor-wrapper">
         <button type="button" class="wf-open-image-workspace" @click="$emit('open-workspace')">
-          <i data-lucide="layout-template" style="width:16px;height:16px;"></i>
+          <LayoutTemplate :size="16" />
           在图片工作区编辑
         </button>
       </div>
@@ -53,30 +53,38 @@
 
       <!-- error 状态 -->
       <div v-else-if="nodeStatus === 'error'" class="mint-search-error">
-        <i data-lucide="alert-circle" style="width:20px;height:20px;"></i>
+        <AlertCircle :size="20" />
         <span>{{ errorMessage || '图片生成失败' }}</span>
       </div>
 
       <!-- completed 状态 -->
       <div v-else-if="nodeStatus === 'completed'" class="wf-inject-success">
-        <i data-lucide="check-circle" style="width:18px;height:18px;color:#059669;flex-shrink:0;"></i>
+        <CheckCircle :size="18" style="color:#059669" />
         <span>图片注入成功，已进入下一环节</span>
       </div>
     </div>
 
     <div class="wf-node-meta" v-if="nodeMeta">
-      <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-      <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-      <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+      <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+      <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+      <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
     </div>
 
-    
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Cpu,
+  Image,
+  Info,
+  LayoutTemplate,
+  Zap,
+} from 'lucide-vue-next'
 const props = defineProps<{
   nodeStatus: string
   nodeMeta: { duration: string; model: string; tokens: string } | null
@@ -93,10 +101,10 @@ defineEmits<{
 }>()
 
 watch(() => props.nodeStatus, () => {
-  nextTick(() => createIcons({ icons }))
+  
 })
-watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
-watch(() => props.cardDraft, () => nextTick(() => createIcons({ icons })), { deep: true })
+watch(() => props.result, () => {}, { deep: true })
+watch(() => props.cardDraft, () => {}, { deep: true })
 
 const statusColor = computed(() => {
   const map: Record<string, string> = { idle: '#9CA3AF', pending: '#9CA3AF', awaiting_review: '#F59E0B', running: '#FF2442', completed: '#60A5FA', error: '#EF4444' }

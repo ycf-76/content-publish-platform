@@ -61,47 +61,57 @@ def _ext_from_content_type(ct: str) -> str:
     return ".webp"
 
 
-async def download_image(url: str, timeout: float = 15.0) -> tuple[bytes, str] | None:
-    """从 URL 下载图片，返回 (data, content_type) 或 None。"""
+async def download_image(url: str, timeout: float = 30.0) -> tuple[bytes, str] | None:
+    """从 URL 下载图片，返回 (data, content_type) 或 None。
+
+    timeout 默认 30s（原 15s 在小红书 CDN 环境下经常超时，
+    sns-img.xhscdn.com 首次连接 + TLS 握手 + 重定向可能需要 10-20s）。
+    首次失败自动重试一次（CDN 偶发超时/503 常见）。
+    """
     if not url or not url.startswith(("http://", "https://")):
         return None
-    try:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        }
-        parsed_host = url.split("/")[2] if "/" in url[8:] else ""
-        xhs_hosts = {
-            "sns-img.xhscdn.com",
-            "ci.xiaohongshu.com",
-            "picasso-static.xiaohongshu.com",
-            "sns-webpic-qc.xhscdn.com",
-            "sns-img-bd.xhscdn.com",
-            "sns-img-hw.xhscdn.com",
-        }
-        if parsed_host in xhs_hosts:
-            headers["Referer"] = "https://www.xiaohongshu.com/"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    }
+    parsed_host = url.split("/")[2] if "/" in url[8:] else ""
+    xhs_hosts = {
+        "sns-img.xhscdn.com",
+        "ci.xiaohongshu.com",
+        "picasso-static.xiaohongshu.com",
+        "sns-webpic-qc.xhscdn.com",
+        "sns-img-bd.xhscdn.com",
+        "sns-img-hw.xhscdn.com",
+    }
+    if parsed_host in xhs_hosts:
+        headers["Referer"] = "https://www.xiaohongshu.com/"
 
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code != 200:
-                logger.warning(f"download_image failed: status={resp.status_code} url={url[:80]}")
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    logger.warning(f"download_image failed: status={resp.status_code} url={url[:80]} attempt={attempt+1}")
+                    if attempt == 0:
+                        continue
+                    return None
+                content_type = resp.headers.get("content-type", "image/webp")
+                if not content_type.startswith("image/"):
+                    logger.warning(f"download_image non-image: {content_type} url={url[:80]}")
+                    return None
+                if len(resp.content) > 5 * 1024 * 1024:
+                    logger.warning(f"download_image too large: {len(resp.content)} url={url[:80]}")
+                    return None
+                return resp.content, content_type
+        except Exception as e:
+            logger.warning(f"download_image error: {e} url={url[:80]} attempt={attempt+1}")
+            if attempt == 1:
                 return None
-            content_type = resp.headers.get("content-type", "image/webp")
-            if not content_type.startswith("image/"):
-                logger.warning(f"download_image non-image: {content_type} url={url[:80]}")
-                return None
-            if len(resp.content) > 5 * 1024 * 1024:
-                logger.warning(f"download_image too large: {len(resp.content)} url={url[:80]}")
-                return None
-            return resp.content, content_type
-    except Exception as e:
-        logger.warning(f"download_image error: {e} url={url[:80]}")
-        return None
+    return None
 
 
 async def save_topic_cover(
@@ -302,3 +312,22 @@ def read_workflow_images_as_base64(urls: list[str]) -> list[str]:
         if b64:
             result.append(b64)
     return result
+
+
+def get_workflow_image_urls(workflow_id: str) -> list[str] | None:
+    """检查工作流图片是否已存在于文件系统，返回 URL 列表或 None。
+
+    用于 showcase 等接口的懒迁移：如果文件已存在，直接返回 URL，
+    避免重复解码 base64 和写入文件。
+    """
+    wf_dir = _WORKFLOW_IMAGES_DIR / workflow_id
+    if not wf_dir.exists():
+        return None
+    files = sorted(wf_dir.iterdir())
+    if not files:
+        return None
+    urls: list[str] = []
+    for f in files:
+        if f.is_file() and f.suffix in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+            urls.append(f"/uploads/workflow_images/{workflow_id}/{f.name}")
+    return urls if urls else None

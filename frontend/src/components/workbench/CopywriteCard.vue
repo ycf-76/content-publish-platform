@@ -5,7 +5,7 @@
         <div class="mint-wf-step">03</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="pen-tool" class="wf-node-icon"></i>
+            <PenTool class="wf-node-icon" :size="16" />
             文案撰写
             <code class="wf-node-key">copywrite</code>
           </div>
@@ -25,7 +25,7 @@
     <div class="wf-node-body">
       <!-- idle：显示提示但不强调"等待" -->
       <div v-if="nodeStatus === 'idle'" class="cw-empty">
-        <i data-lucide="pen-tool" style="width:14px;height:14px;color:#FF2442;"></i>
+        <PenTool :size="14" style="color:#FF2442" />
         <span>文案撰写节点就绪</span>
         <div v-if="targetLength" class="cw-config-hint">
           目标字数：{{ targetLength }} 字
@@ -57,14 +57,14 @@
 
       <!-- error -->
       <div v-else-if="nodeStatus === 'error'" class="cw-error">
-        <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+        <AlertCircle :size="16" />
         <span>{{ errorMessage || '文案生成失败' }}</span>
       </div>
 
       <!-- awaiting_review：人工审核状态（主要状态） -->
       <div v-else-if="nodeStatus === 'awaiting_review' && result" class="cw-body">
         <div class="cw-review-badge">
-          <i data-lucide="eye" style="width:16px;height:16px;"></i>
+          <Eye :size="16" />
           <span>请审核文案</span>
         </div>
 
@@ -77,19 +77,13 @@
           />
           <div class="cw-title-count">{{ editTitle.length }}/20</div>
           <div class="cw-hr"></div>
-          <textarea
-            ref="textareaRef"
+          <TipTapEditor
             v-model="editContent"
-            class="cw-textarea"
-            placeholder="添加正文"
-            @input="autoResize"
-          ></textarea>
-          <div class="cw-counter">
-            {{ editContent.length }} 字
-            <span v-if="targetLength && Math.abs(editContent.length - targetLength) > 50" class="cw-length-warning">
-              （目标 {{ targetLength }} 字）
-            </span>
-          </div>
+            :placeholder="'添加正文，支持富文本格式...'"
+            :max-length="targetLength || 2000"
+            :show-toolbar="true"
+            :show-char-count="true"
+          />
           <div v-if="suggestedTopics.length" class="cw-topics">
             <span class="cw-topics-label">话题标签</span>
             <button
@@ -103,15 +97,15 @@
         </div>
 
         <div v-if="displayData.review_feedback" class="cw-msg cw-msg-warn">
-          <i data-lucide="message-square-warning" style="width:12px;height:12px;"></i>
+          <MessageSquareWarning :size="12" />
           <span>上游反馈：{{ result.review_feedback }}</span>
         </div>
         <div v-if="saveError" class="cw-msg cw-msg-err">
-          <i data-lucide="alert-circle" style="width:12px;height:12px;"></i>
+          <AlertCircle :size="12" />
           <span>{{ saveError }}</span>
         </div>
         <div v-if="regenerateError" class="cw-msg cw-msg-err">
-          <i data-lucide="alert-circle" style="width:12px;height:12px;"></i>
+          <AlertCircle :size="12" />
           <span>{{ regenerateError }}</span>
         </div>
       </div>
@@ -119,40 +113,44 @@
       <!-- completed：已确认状态 -->
       <div v-else-if="nodeStatus === 'completed' && result" class="cw-body">
         <div class="cw-completed-badge">
-          <i data-lucide="check-circle" style="width:16px;height:16px;"></i>
+          <CheckCircle :size="16" />
           <span>文案已确认</span>
         </div>
 
         <div class="cw-editor cw-editor-readonly">
           <div class="cw-title cw-title-readonly">{{ editTitle || '（无标题）' }}</div>
           <div class="cw-hr"></div>
-          <pre class="cw-textarea cw-textarea-readonly">{{ editContent || '（无内容）' }}</pre>
-          <div class="cw-counter">{{ editContent.length }} 字</div>
+          <TipTapEditor
+            v-model="editContent"
+            :editable="false"
+            :show-toolbar="false"
+            :show-char-count="false"
+          />
         </div>
       </div>
 
       <!-- 无数据显示 -->
       <div v-else class="cw-empty">
-        <i data-lucide="check-circle" style="width:14px;height:14px;color:#60A5FA;"></i>
+        <CheckCircle :size="14" style="color:#60A5FA" />
         文案已处理（详细数据不可用）
       </div>
     </div>
 
     <div class="mint-wf-footer" v-if="showFooter">
       <div class="wf-node-meta" v-if="nodeMeta">
-        <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-        <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-        <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+        <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+        <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+        <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
       </div>
       <div class="cw-actions">
         <!-- awaiting_review 状态的操作按钮 -->
         <template v-if="nodeStatus === 'awaiting_review'">
           <button class="cw-btn cw-btn-ghost" @click="regenerateCopy" :disabled="regenerating">
-            <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i>
+            <RefreshCw :size="14" />
             {{ regenerating ? '生成中...' : '重新生成' }}
           </button>
           <button class="cw-btn cw-btn-outline" @click="approveAndContinue">
-            <i data-lucide="check" style="width:14px;height:14px;"></i>
+            <Check :size="14" />
             确认并继续
           </button>
         </template>
@@ -160,11 +158,11 @@
         <!-- completed 状态的编辑按钮 -->
         <template v-else-if="nodeStatus === 'completed'">
           <button class="cw-btn cw-btn-ghost" @click="regenerateCopy" :disabled="regenerating">
-            <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i>
+            <RefreshCw :size="14" />
             {{ regenerating ? '生成中...' : '重新生成' }}
           </button>
           <button class="cw-btn cw-btn-outline" @click="reEdit">
-            <i data-lucide="edit-3" style="width:14px;height:14px;"></i>
+            <Edit3 :size="14" />
             重新编辑
           </button>
         </template>
@@ -175,7 +173,20 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import {
+  AlertCircle,
+  Check,
+  CheckCircle,
+  Clock,
+  Cpu,
+  Edit3,
+  Eye,
+  MessageSquareWarning,
+  PenTool,
+  RefreshCw,
+  Zap,
+} from 'lucide-vue-next'
+import TipTapEditor from '@/components/editor/TipTapEditor.vue'
 import { workflowApi } from '@/api/workflow'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useTypewriter } from '@/composables/useTypewriter'
@@ -197,8 +208,8 @@ const emit = defineEmits<{
   're-edit': []
 }>()
 
-watch(() => props.nodeStatus, () => nextTick(() => createIcons({ icons })))
-watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true, immediate: true })
+watch(() => props.nodeStatus, () => {})
+watch(() => props.result, () => {}, { deep: true, immediate: true })
 
 // 从配置获取目标文案长度
 const targetLength = computed(() => props.nodeConfig?.content_length || 300)

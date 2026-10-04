@@ -97,7 +97,7 @@ export interface PlatformInfo {
 }
 
 export const topicPoolApi = {
-  /** 列表查询 GET /api/topic-pool */
+  /** 列表查询 GET /api/topic-pool（v8：sort 新增 personalized 画像加权排序） */
   async list(params: {
     platform?: string
     keyword?: string
@@ -106,7 +106,7 @@ export const topicPoolApi = {
     emotion?: string
     scene?: string
     visual?: string
-    sort?: 'created_desc' | 'heat_desc'
+    sort?: 'created_desc' | 'heat_desc' | 'personalized'
     page?: number
     size?: number
   } = {}): Promise<TopicPoolListResponse> {

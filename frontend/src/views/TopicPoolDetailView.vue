@@ -1,4 +1,6 @@
 <template>
+<div class="min-h-screen" style="position: relative;">
+
   <div class="mint-shell tpd-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
 
     <!-- ============ LEFT COLUMN ============ -->
@@ -9,6 +11,8 @@
       @toggle-sidebar="toggleSidebar"
       @go-eco="goToEco"
       @open-settings="openSettings"
+      @new-workflow="goToWorkbench"
+      @new-chat="goToChat"
     />
 
     <div
@@ -262,12 +266,12 @@
 
     <SettingsView v-if="showSettings" @close="showSettings = false" />
   </div>
+</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createIcons, icons } from 'lucide'
 import {
   ArrowLeft, Star, Play, ExternalLink, Loader2, AlertCircle, RefreshCw,
   User, Tag, Clock, Flame, Eye, FileText, Sparkles, Info, AlignLeft,
@@ -277,32 +281,40 @@ import {
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import { topicPoolApi, type TopicPoolItem } from '@/api/topic_pool'
+import { useUIState } from '@/composables/useUIState'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const showSettings = ref(false)
+
 function openSettings() {
   showSettings.value = true
 }
 
-// ===== 侧边栏状态（与列表页保持一致） =====
-const SK_COLLAPSED = 'mint_sidebar_collapsed'
-const isSidebarCollapsed = ref(localStorage.getItem(SK_COLLAPSED) === '1')
-
-function toggleSidebar() {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value
-  localStorage.setItem(SK_COLLAPSED, isSidebarCollapsed.value ? '1' : '0')
-}
+// ===== 侧边栏状态（全局共享） =====
+const { isSidebarCollapsed, toggleSidebar } = useUIState()
 function handleNavClick(pageName: string) {
+  if (pageName === 'home') { router.push('/').catch(() => {}); return }
   if (pageName === 'topic-pool') {
     router.push('/topic-pool')
     return
   }
-  router.push({ path: '/workbench', query: pageName === 'workflow' ? {} : { page: pageName } })
+  if (pageName === 'my-works') { router.push('/my-works').catch(() => {}); return }
+  if (pageName === 'portfolio') { router.push('/portfolio').catch(() => {}); return }
+  if (pageName === 'task-plans') { router.push('/task-plans').catch(() => {}); return }
+  router.push({ path: '/workbench', query: { page: pageName } })
 }
 function goToEco() {
   router.push('/eco')
+}
+function goToWorkbench() {
+  router.push({ path: '/workbench', query: { page: 'workflow' } })
+}
+function goToChat() {
+  router.push({ path: '/workbench', query: { page: 'chat' } })
 }
 
 // ===== 详情页状态 =====
@@ -317,10 +329,13 @@ const scrollContainer = ref<HTMLElement | null>(null)
 
 // ===== 图片预览栏状态 =====
 import { computed } from 'vue'
-const previewWidth = ref(280)  // 默认宽度 280px
+function calcDefaultPreviewWidth() {
+  return Math.max(200, Math.min(560, Math.floor(window.innerWidth / 3)))
+}
+const previewWidth = ref(Number(localStorage.getItem('tpd_preview_width_v2')) || calcDefaultPreviewWidth())
 const previewPanel = ref<HTMLElement | null>(null)
 const previewBody = ref<HTMLElement | null>(null)
-const SK_PREVIEW_WIDTH = 'tpd_preview_width'
+const SK_PREVIEW_WIDTH = 'tpd_preview_width_v2'
 
 // 是否有任何图片（cover_img 或 images）
 const hasAnyImage = computed(() => {
@@ -352,7 +367,7 @@ function startPreviewResize(e: MouseEvent) {
   document.body.style.userSelect = 'none'
   const onMove = (ev: MouseEvent) => {
     const delta = ev.clientX - startX
-    const newW = Math.min(500, Math.max(200, startW + delta))
+    const newW = Math.min(560, Math.max(200, startW + delta))
     previewWidth.value = newW
   }
   const onUp = () => {
@@ -570,7 +585,7 @@ function startSidebarResize(e: MouseEvent) {
   document.body.style.userSelect = 'none'
   const onMove = (ev: MouseEvent) => {
     const delta = ev.clientX - startX
-    const newW = Math.min(600, Math.max(170, startW + delta))
+    const newW = Math.min(520, Math.max(170, startW + delta))
     applySidebarWidth(newW)
   }
   const onUp = () => {
@@ -589,7 +604,7 @@ function startSidebarResize(e: MouseEvent) {
 // ===== 初始化 =====
 onMounted(() => {
   loadDetail()
-  nextTick(() => createIcons({ icons }))
+
   const savedW = localStorage.getItem(SK_SIDEBAR_WIDTH)
   if (savedW && !isSidebarCollapsed.value) applySidebarWidth(Number(savedW))
   // 恢复图片预览栏宽度
@@ -615,7 +630,6 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   height: 100%;
-  background: #FFFFFF;
   font-family: var(--ma-font-sans);
   color: var(--ma-text-primary);
   box-sizing: border-box;
@@ -715,29 +729,26 @@ onMounted(() => {
 /* 预览栏拖拽条 */
 .tpd-preview-resizer {
   position: relative;
-  width: 6px;
+  width: 0;
   cursor: col-resize;
   flex-shrink: 0;
   align-self: stretch;
   z-index: 5;
-  transition: background 0.15s ease;
+  overflow: visible;
+}
+.tpd-preview-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 1;
 }
 .tpd-preview-resizer-line {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 40px;
-  border-radius: 2px;
-  background: #E5E7EB;
-  transition: background 0.15s ease, height 0.15s ease;
+  display: none !important;
 }
-.tpd-preview-resizer:hover { background: rgba(59, 108, 246, 0.08); }
-.tpd-preview-resizer:hover .tpd-preview-resizer-line {
-  background: #3B6CF6;
-  height: 60px;
-}
+.tpd-preview-resizer:hover { background: rgba(0, 0, 0, 0.04); }
 
 .tpd-content-card {
   flex: 1;
@@ -1318,27 +1329,24 @@ onMounted(() => {
 }
 .tpd-sidebar-resizer {
   position: relative;
-  width: 6px;
+  width: 0;
   cursor: col-resize;
   flex-shrink: 0;
   align-self: stretch;
   z-index: 5;
-  transition: background 0.15s ease;
+  overflow: visible;
+}
+.tpd-sidebar-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 1;
 }
 .tpd-sidebar-resizer-line {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 40px;
-  border-radius: 2px;
-  background: #E5E7EB;
-  transition: background 0.15s ease, height 0.15s ease;
+  display: none !important;
 }
-.tpd-sidebar-resizer:hover { background: rgba(59, 108, 246, 0.08); }
-.tpd-sidebar-resizer:hover .tpd-sidebar-resizer-line {
-  background: #3B6CF6;
-  height: 60px;
-}
+.tpd-sidebar-resizer:hover { background: rgba(0, 0, 0, 0.04); }
 </style>

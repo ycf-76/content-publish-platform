@@ -13,7 +13,7 @@
         <img
           v-if="item.cover_image"
           class="scatter-card-img"
-          :src="item.cover_image"
+          :src="resolveImgUrl(item.cover_image)"
           :alt="item.title || item.topic"
           loading="lazy"
         />
@@ -74,6 +74,16 @@ defineEmits<{
 
 const deskRef = ref<HTMLElement | null>(null)
 
+const _CDN_HOSTS = ['xhscdn.com', 'xiaohongshu.com', 'picasso-static']
+function resolveImgUrl(url: string | undefined): string {
+  if (!url) return ''
+  if (url.startsWith('/uploads/') || url.startsWith('data:')) return url
+  if (_CDN_HOSTS.some(h => url.includes(h))) {
+    return '/api/proxy/image?url=' + encodeURIComponent(url)
+  }
+  return url
+}
+
 function scatterStyle(index: number) {
   const direction = index % 2 === 0 ? -1 : 1
   const rotateBase = 2.5 + (index % 4) * 1.2
@@ -126,6 +136,7 @@ function formatRelativeTime(dateStr?: string) {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
+let scatterRafId = 0
 function onDeskMouseMove(e: MouseEvent) {
   const desk = deskRef.value
   if (!desk) return
@@ -133,26 +144,29 @@ function onDeskMouseMove(e: MouseEvent) {
   const mx = e.clientX - rect.left
   const my = e.clientY - rect.top
 
-  const cards = desk.querySelectorAll('.scatter-card') as NodeListOf<HTMLElement>
-  cards.forEach((card) => {
-    const cr = card.getBoundingClientRect()
-    const cx = cr.left + cr.width / 2 - rect.left
-    const cy = cr.top + cr.height / 2 - rect.top
-    const dx = cx - mx
-    const dy = cy - my
-    const dist = Math.sqrt(dx * dx + dy * dy)
-    const maxDist = 160
+  cancelAnimationFrame(scatterRafId)
+  scatterRafId = requestAnimationFrame(() => {
+    const cards = desk.querySelectorAll('.scatter-card') as NodeListOf<HTMLElement>
+    cards.forEach((card) => {
+      const cr = card.getBoundingClientRect()
+      const cx = cr.left + cr.width / 2 - rect.left
+      const cy = cr.top + cr.height / 2 - rect.top
+      const dx = cx - mx
+      const dy = cy - my
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const maxDist = 160
 
-    if (dist < maxDist && dist > 0) {
-      const force = (1 - dist / maxDist) * 8
-      const pushX = (dx / dist) * force
-      const pushY = (dy / dist) * force
-      card.style.setProperty('--push-x', `${pushX}px`)
-      card.style.setProperty('--push-y', `${pushY}px`)
-    } else {
-      card.style.setProperty('--push-x', '0px')
-      card.style.setProperty('--push-y', '0px')
-    }
+      if (dist < maxDist && dist > 0) {
+        const force = (1 - dist / maxDist) * 8
+        const pushX = (dx / dist) * force
+        const pushY = (dy / dist) * force
+        card.style.setProperty('--push-x', `${pushX}px`)
+        card.style.setProperty('--push-y', `${pushY}px`)
+      } else {
+        card.style.setProperty('--push-x', '0px')
+        card.style.setProperty('--push-y', '0px')
+      }
+    })
   })
 }
 

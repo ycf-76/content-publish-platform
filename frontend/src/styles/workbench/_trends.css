@@ -238,11 +238,12 @@
   background: var(--ma-bg-subtle);
 }
 
-/* 4 绉嶇被鍨嬮鑹诧紙涓庡悗绔?viral_type 瀵瑰簲锛?*/
-.wf-type-绮変笣鍨?{ background: #94A3B8; }
-.wf-type-鍐呭鍨?{ background: #10B981; }
-.wf-type-鍙岄噸鍨?{ background: #3B6CF6; }
-.wf-type-鏅€?{ background: #CBD5E1; color: #475569; }
+/* 4 种类型颜色（与后端 viral_type 对应）
+   说明：这里用属性选择器匹配中文类名，避免文件中再次出现编码损坏的选择器 */
+[class*="wf-type-"][class*="粉丝"] { background: #94A3B8; }
+[class*="wf-type-"][class*="内容"] { background: #10B981; }
+[class*="wf-type-"][class*="双重"] { background: #3B6CF6; }
+[class*="wf-type-"][class*="普通"] { background: #CBD5E1; color: #475569; }
 
 .wf-top-list {
   display: flex;

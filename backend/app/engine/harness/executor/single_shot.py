@@ -1,4 +1,4 @@
-﻿"""Single-shot executor.
+"""Single-shot executor.
 
 Single round: build prompt -> call LLM (streaming) -> call Skills -> parse output.
 Must support LLM streaming callback (D16 agent_thinking).
@@ -63,7 +63,16 @@ class SingleShotExecutor(ExecutorBase):
         """Call LLM with streaming, emit reasoning chunks via observer.
 
         Falls back to non-streaming chat if stream_chat is unavailable.
+        Checks LLM circuit breaker before calling.
         """
+        from app.engine.governance.llm_circuit import get_llm_circuit
+
+        circuit = get_llm_circuit()
+        if not circuit.allow_request():
+            raise RuntimeError(
+                f"LLM 熔断器已开启（{circuit.open_reason or '连续失败'}），请检查 API 余额和配置后重试"
+            )
+
         messages = [{"role": "user", "content": prompt}]
         response_format = self._response_format(harness)
         content_parts: list[str] = []
@@ -73,24 +82,29 @@ class SingleShotExecutor(ExecutorBase):
         if llm is None:
             return "", 0
 
-        stream_fn = getattr(llm, "stream_chat", None)
-        if stream_fn is not None:
-            async for chunk in stream_fn(messages, response_format=response_format):
-                reasoning = chunk.get("reasoning_content")
-                if reasoning:
-                    await harness.observer.emit_llm_stream(context.node_id, chunk)
-                text = chunk.get("content")
-                if text:
-                    content_parts.append(text)
-                if chunk.get("is_final"):
-                    token_usage = chunk.get("token_usage", 0) or token_usage
-        else:
-            result = await llm.chat(messages, response_format=response_format)
-            content_parts.append(result.get("content", ""))
-            token_usage = result.get("token_usage", 0)
-            if result.get("reasoning_content"):
-                await harness.observer.emit_llm_stream(context.node_id, result)
+        try:
+            stream_fn = getattr(llm, "stream_chat", None)
+            if stream_fn is not None:
+                async for chunk in stream_fn(messages, response_format=response_format):
+                    reasoning = chunk.get("reasoning_content")
+                    if reasoning:
+                        await harness.observer.emit_llm_stream(context.node_id, chunk)
+                    text = chunk.get("content")
+                    if text:
+                        content_parts.append(text)
+                    if chunk.get("is_final"):
+                        token_usage = chunk.get("token_usage", 0) or token_usage
+            else:
+                result = await llm.chat(messages, response_format=response_format)
+                content_parts.append(result.get("content", ""))
+                token_usage = result.get("token_usage", 0)
+                if result.get("reasoning_content"):
+                    await harness.observer.emit_llm_stream(context.node_id, result)
+        except Exception as e:
+            circuit.check_error(e)
+            raise
 
+        circuit.record_success()
         return "".join(content_parts), token_usage
 
     def _response_format(self, harness: AgentHarness) -> dict[str, Any] | None:

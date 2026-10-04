@@ -43,6 +43,34 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "定时发布流水线",
+        "description": "任务清单专用：搜索 → 文案（默认方向）→ 图片规划 → 服务端渲染出图 → 质量门审核 → 合规 → 终审 → 发布，全程无人值守",
+        "icon": "📅",
+        "category": "task_pipeline",
+        "graph_definition": {
+            "nodes": [
+                # copywrite 声明 interrupt=false：跳过方向选择挂起点，无人值守走默认方向
+                {"id": "node_1", "type": "search", "config": {}, "position": {"x": 50, "y": 50}},
+                {"id": "node_2", "type": "copywrite", "config": {"interrupt": False}, "position": {"x": 250, "y": 50}},
+                {"id": "node_3", "type": "image_plan", "config": {}, "position": {"x": 450, "y": 50}},
+                {"id": "node_4", "type": "image_gen", "config": {}, "position": {"x": 650, "y": 50}},
+                {"id": "node_5", "type": "image_review", "config": {}, "position": {"x": 850, "y": 50}},
+                {"id": "node_6", "type": "audit", "config": {}, "position": {"x": 1050, "y": 50}},
+                {"id": "node_7", "type": "final_review", "config": {}, "position": {"x": 1250, "y": 50}},
+                {"id": "node_8", "type": "publish", "config": {}, "position": {"x": 1450, "y": 50}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "node_1", "target": "node_2"},
+                {"id": "e2", "source": "node_2", "target": "node_3"},
+                {"id": "e3", "source": "node_3", "target": "node_4"},
+                {"id": "e4", "source": "node_4", "target": "node_5"},
+                {"id": "e5", "source": "node_5", "target": "node_6"},
+                {"id": "e6", "source": "node_6", "target": "node_7"},
+                {"id": "e7", "source": "node_7", "target": "node_8"},
+            ],
+        },
+    },
+    {
         "name": "仅搜索分析",
         "description": "搜索热点 → 要素分析，不生成内容",
         "icon": "🔍",

@@ -70,6 +70,13 @@ function goWorkbench() {
   router.push('/workbench')
 }
 
+const liked = ref(false)
+const likeCount = ref(0)
+function toggleLike() {
+  liked.value = !liked.value
+  likeCount.value += liked.value ? 1 : -1
+}
+
 
 /* ============ 粒子背景 ============ */
 const particlesCanvas = ref<HTMLCanvasElement | null>(null)

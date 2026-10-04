@@ -1,4 +1,4 @@
-﻿"""Executor abstract base class.
+"""Executor abstract base class.
 
 Corresponds to architecture doc 4.3. Phase 2 implements SingleShotExecutor.
 Red line: currently only single_shot, no ReAct.

@@ -1,7 +1,7 @@
 ﻿import asyncio
 
 from app.engine.schemas import LLMProtocol
-from app.core.sandbox.model_router import ChatResponse, ModelRouter
+from app.adapters.model_router import ChatResponse, ModelRouter
 
 
 def _router_with_stubbed_route():

@@ -1,4 +1,4 @@
-﻿"""监控智能体（MonitorAgent）—— v7 真实抓取版。
+"""监控智能体（MonitorAgent）—— v7 真实抓取版。
 
 职责：每 10 分钟遍历 source_manager 已注册的各大平台 → 调 get_trending()
      抓全站热点 → 过滤近期内容 → SimHash 去重 → LLM 三维分类 → 评分入池

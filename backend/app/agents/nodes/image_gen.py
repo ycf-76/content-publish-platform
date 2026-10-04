@@ -1,4 +1,7 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, _dlog, emit_node_event, logger
+from app.agents.nodes._base import (
+    NodeStatus, WorkflowState, _dlog, emit_node_event, logger,
+    build_belief_dict, build_loop_counter_update,
+)
 from app.services.sse_bus import sse_bus
 
 
@@ -39,8 +42,17 @@ async def image_gen_node(state: WorkflowState) -> dict:
 
     # 读取 inject 的图片 + plan_context
     image_gen_output = state.get("node_outputs", {}).get("image_gen", {}) or {}
-    injected_images = image_gen_output.get("images_base64", [])
+    # 优先从文件读取 base64（避免 checkpoint 膨胀），回退到直接存的 base64
     image_urls = image_gen_output.get("image_urls", [])
+    if image_urls:
+        try:
+            from app.services.image_store import read_workflow_images_as_base64
+            injected_images = read_workflow_images_as_base64(image_urls)
+        except Exception as exc:
+            logger.warning(f"[{workflow_id}] {node_id} read images from file failed: {exc}")
+            injected_images = image_gen_output.get("images_base64", [])
+    else:
+        injected_images = image_gen_output.get("images_base64", [])
     plan_context = image_gen_output.get("plan_context", {}) or {}
     is_asset_mode = bool(
         plan_output.get("is_asset_mode") or plan_context.get("is_asset_mode")
@@ -50,7 +62,6 @@ async def image_gen_node(state: WorkflowState) -> dict:
         expected_count = len(plan_output.get("format_plan", {}).get("pages", []))
         actual_count = len(injected_images)
         output = {
-            "images_base64": injected_images,
             "image_urls": image_urls,
             "image_count": actual_count,
             "image_details": image_gen_output.get("image_details", []),
@@ -81,6 +92,8 @@ async def image_gen_node(state: WorkflowState) -> dict:
             "current_node": node_id,
             "node_statuses": {node_id: NodeStatus.COMPLETED.value},
             "node_outputs": {node_id: output},
+            "agent_beliefs": build_belief_dict(node_id, output),
+            "loop_counters": build_loop_counter_update(state, node_id),
         }
 
     if injected_images:
@@ -99,8 +112,19 @@ async def image_gen_node(state: WorkflowState) -> dict:
             f"count_match={count_match}, template_changed={template_changed}"
         )
 
+        # P1-3 共享质量门禁：用最终页面类型复跑跨页预检（相邻去重/多样性/计数）
+        quality_report = None
+        try:
+            from app.services.quality_gate import run_quality_gate
+
+            quality_report = run_quality_gate(
+                {"pages": [{"type": t} for t in final_page_types]},
+                expected_count=final_page_count or original_page_count,
+            )
+        except Exception as exc:
+            logger.warning(f"[{workflow_id}] {node_id} quality gate failed: {exc}")
+
         output = {
-            "images_base64": injected_images,
             "image_urls": image_urls,
             "image_count": actual_count,
             "image_details": image_gen_output.get("image_details", []),
@@ -124,6 +148,7 @@ async def image_gen_node(state: WorkflowState) -> dict:
                 "count_match": count_match,
                 "expected_count": final_page_count or original_page_count,
                 "actual_count": actual_count,
+                "quality": quality_report.model_dump() if quality_report else None,
             },
             "_model_used": "card_editor_inject",
             "_duration_ms": int((time.time() - start_time) * 1000),
@@ -140,6 +165,8 @@ async def image_gen_node(state: WorkflowState) -> dict:
             "current_node": node_id,
             "node_statuses": {node_id: NodeStatus.COMPLETED.value},
             "node_outputs": {node_id: output},
+            "agent_beliefs": build_belief_dict(node_id, output),
+            "loop_counters": build_loop_counter_update(state, node_id),
         }
 
     # 没有注入图片：报错（正常不应走到这里，因为 interrupt 在 image_gen 前）
@@ -153,7 +180,7 @@ async def image_gen_node(state: WorkflowState) -> dict:
         "suggestion": "在工作区卡片编辑器中调整文案后，点击「生成图片」按钮",
     })
     output = {
-        "images_base64": [],
+        "image_urls": [],
         "image_count": 0,
         "image_details": [],
         "image_prompts": [],
@@ -171,4 +198,11 @@ async def image_gen_node(state: WorkflowState) -> dict:
         "current_node": node_id,
         "node_statuses": {node_id: NodeStatus.ERROR.value},
         "node_outputs": {node_id: output},
+        "agent_beliefs": build_belief_dict(node_id, output),
+            "loop_counters": build_loop_counter_update(state, node_id),
     }
+
+
+def _build_belief(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，写入 state.agent_beliefs。"""
+    return build_belief_dict(node_id, output)

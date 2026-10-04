@@ -1,9 +1,17 @@
 <template>
   <div class="agent-progress-card">
     <div class="agent-progress-header">
-      <span class="agent-progress-icon">{{ statusIcon }}</span>
+      <img :src="statusIconSrc" class="agent-progress-icon" v-if="statusIconSrc" />
+      <span class="agent-progress-icon" v-else>{{ statusIcon }}</span>
       <span class="agent-progress-title">{{ statusText }}</span>
-      <span v-if="(totalPercent ?? 0) > 0" class="agent-progress-percent">{{ totalPercent ?? 0 }}%</span>    </div>
+      <span v-if="(totalPercent ?? 0) > 0" class="agent-progress-percent">{{ totalPercent ?? 0 }}%</span>
+      <button
+        v-if="workflowStatus === 'error' && workflowId"
+        class="agent-progress-retry"
+        @click="emit('retry', workflowId)"
+        title="重试工作流"
+      >重试</button>
+    </div>
     <div class="agent-progress-bar">
       <div
         class="agent-progress-fill"
@@ -39,6 +47,11 @@ const props = defineProps<{
   steps: AgentStep[]
   workflowStatus?: string
   totalPercent?: number
+  workflowId?: string
+}>()
+
+const emit = defineEmits<{
+  retry: [workflowId: string]
 }>()
 
 const statusIcon = computed(() => {
@@ -48,6 +61,14 @@ const statusIcon = computed(() => {
     case 'awaiting_review': return '⚑'
     case 'suspended': return '⏸'
     default: return '▶'
+  }
+})
+
+const statusIconSrc = computed(() => {
+  switch (props.workflowStatus) {
+    case 'completed': return '/icons/发布.svg'
+    case 'awaiting_review': return '/icons/分析.svg'
+    default: return '/icons/思考过程-深度思考.svg'
   }
 })
 
@@ -92,6 +113,12 @@ const barClass = computed(() => {
 
 .agent-progress-icon {
   font-weight: 700;
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .agent-progress-percent {
@@ -99,6 +126,24 @@ const barClass = computed(() => {
   font-size: 12px;
   color: #94a3b8;
   font-variant-numeric: tabular-nums;
+}
+
+.agent-progress-retry {
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.agent-progress-retry:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
 }
 
 .agent-progress-bar {

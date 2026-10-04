@@ -12,10 +12,10 @@
       <div class="mint-wf-card cfg-card">
         <div class="cfg-card-header" @click="cfgDeepseek = !cfgDeepseek">
           <div class="mint-wf-title-row">
-            <div class="mint-wf-step"><i data-lucide="cpu" style="width:16px;height:16px;"></i></div>
+            <div class="mint-wf-step"><Cpu :size="16" /></div>
             <div>
               <div class="mint-wf-title">DeepSeek 模型配置</div>
-              <div class="mint-wf-desc">Esther 工厂 & 工作流共用的文本生成模型</div>
+              <div class="mint-wf-desc">工作流共用的文本生成模型</div>
             </div>
           </div>
           <svg class="cfg-chevron" :class="{ 'cfg-chevron-open': cfgDeepseek }" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -26,7 +26,7 @@
             <div class="cfg-key-row">
               <input :type="showDeepseekKey ? 'text' : 'password'" class="mint-input cfg-key-input" v-model="deepseekApiKey" :placeholder="deepseekKeySet ? '已配置（输入可覆盖）' : '输入 DeepSeek API Key...'" />
               <button class="cfg-key-toggle" @click="showDeepseekKey = !showDeepseekKey" type="button">
-                <i :data-lucide="showDeepseekKey ? 'eye-off' : 'eye'" style="width:16px;height:16px;"></i>
+                <EyeOff v-if="showDeepseekKey " :size="16" /><Eye v-else :size="16" />
               </button>
             </div>
             <div class="cfg-key-status" :class="{ 'cfg-key-set': deepseekKeySet }">
@@ -53,7 +53,7 @@
           </div>
           <div class="mint-wf-footer">
             <button class="mint-btn mint-btn-outline" @click="resetDeepseek">重置</button>
-            <button class="mint-btn mint-btn-primary" @click="saveDeepseek"><i data-lucide="save" style="width:16px;height:16px;"></i> 保存配置</button>
+            <button class="mint-btn mint-btn-primary" @click="saveDeepseek"><Save :size="16" /> 保存配置</button>
           </div>
         </div>
       </div>
@@ -62,7 +62,7 @@
       <div class="mint-wf-card cfg-card">
         <div class="cfg-card-header" @click="cfgDashscope = !cfgDashscope">
           <div class="mint-wf-title-row">
-            <div class="mint-wf-step"><i data-lucide="image" style="width:16px;height:16px;"></i></div>
+            <div class="mint-wf-step"><Image :size="16" /></div>
             <div>
               <div class="mint-wf-title">阿里云百炼配置</div>
               <div class="mint-wf-desc">通义千问 VL 视觉理解 & 通义万相文生图</div>
@@ -76,7 +76,7 @@
             <div class="cfg-key-row">
               <input :type="showDashscopeKey ? 'text' : 'password'" class="mint-input cfg-key-input" v-model="dashscopeApiKey" :placeholder="dashscopeKeySet ? '已配置（输入可覆盖）' : '输入阿里云百炼 API Key...'" />
               <button class="cfg-key-toggle" @click="showDashscopeKey = !showDashscopeKey" type="button">
-                <i :data-lucide="showDashscopeKey ? 'eye-off' : 'eye'" style="width:16px;height:16px;"></i>
+                <EyeOff v-if="showDashscopeKey " :size="16" /><Eye v-else :size="16" />
               </button>
             </div>
             <div class="cfg-key-status" :class="{ 'cfg-key-set': dashscopeKeySet }">
@@ -99,7 +99,7 @@
           </div>
           <div class="mint-wf-footer">
             <button class="mint-btn mint-btn-outline" @click="resetDashscope">重置</button>
-            <button class="mint-btn mint-btn-primary" @click="saveDashscope"><i data-lucide="save" style="width:16px;height:16px;"></i> 保存配置</button>
+            <button class="mint-btn mint-btn-primary" @click="saveDashscope"><Save :size="16" /> 保存配置</button>
           </div>
         </div>
       </div>
@@ -109,8 +109,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { ref, computed, onMounted, watch } from 'vue'
+import { Cpu, Eye, EyeOff, Image, Save } from 'lucide-vue-next'
 import apiClient from '@/api/client'
 
 const cfgDeepseek = ref(true)
@@ -197,9 +197,7 @@ async function saveDashscope() {
 }
 
 function refreshIcons() {
-  nextTick(() => {
-    try { createIcons({ icons }) } catch {}
-  })
+  
 }
 
 watch([cfgDeepseek, cfgDashscope], refreshIcons)

@@ -1,5 +1,7 @@
 <template>
+  <div class="dsh-chat-layout">
   <div class="dsh-chat" :class="{ 'is-dark': darkTheme, 'is-hero': heroMode }">
+
     <!-- SVG 滤镜：马克笔背景层手绘笔触效果（仅作用于伪元素背景，不伤文字） -->
     <svg style="position:absolute;width:0;height:0" aria-hidden="true">
       <defs>
@@ -9,19 +11,67 @@
         </filter>
       </defs>
     </svg>
-    <!-- 顶部轻量 header（简化版，去掉思考按钮） -->
-    <header class="dsh-header dsh-header-minimal" v-show="!heroMode">
-      <div class="dsh-header-cluster">
-        <button
-          class="dsh-mode-toggle"
-          :class="{ 'dsh-mode-active': isAgentMode }"
-          @click="isAgentMode = !isAgentMode"
-          :title="isAgentMode ? '切换到 Chat 模式' : '切换到 Agent 模式'"
-        >
-          {{ isAgentMode ? 'Agent' : 'Chat' }}
+
+    <div v-if="activeWork && !heroMode" class="dsh-work-bar">
+      <div class="dsh-work-bar-info">
+        <FileText :size="13" :stroke-width="1.8" class="dsh-work-bar-icon" />
+        <span class="dsh-work-bar-title">{{ activeWork.title || '未命名作品' }}</span>
+        <span v-if="activeWork.platform" class="dsh-work-bar-platform">{{ activeWork.platform }}</span>
+        <span v-if="activeWork.performanceTier && activeWork.performanceTier !== '-'" class="dsh-work-bar-metrics">{{ activeWork.performanceTier }}</span>
+      </div>
+      <div class="dsh-work-bar-actions">
+        <button class="dsh-work-bar-btn" @click="exitWorkContext" title="解除作品关联">
+          <X :size="14" />
         </button>
       </div>
-    </header>
+    </div>
+
+    <div v-if="workStore.analysisContext && !heroMode" class="dsh-analysis-bar">
+      <div class="dsh-analysis-bar-info">
+        <img src="/icons/分析.svg" class="dsh-analysis-bar-icon" />
+        <span class="dsh-analysis-bar-label">分析已联动</span>
+        <span class="dsh-analysis-bar-detail">{{ workStore.analysisContext.overview?.total || 0 }}篇数据 · 归因{{ ({ low: '低', medium: '中', high: '高' } as Record<string,string>)[workStore.analysisContext.confidence] || workStore.analysisContext.confidence }}置信</span>
+      </div>
+      <div class="dsh-analysis-bar-actions">
+        <button class="dsh-work-bar-btn dsh-analysis-create" @click="handoffOpen = true" title="基于分析开启创作">
+          <Sparkles :size="13" />
+          开启创作
+        </button>
+        <button class="dsh-work-bar-btn" @click="ctxStore.unlinkAnalysis()" title="解除联动">
+          <X :size="14" />
+        </button>
+      </div>
+    </div>
+
+    <CreationHandoffCard
+      v-if="handoffOpen && workStore.analysisContext"
+      :analysis="workStore.analysisContext"
+      @close="handoffOpen = false"
+      @start="onHandoffStart"
+    />
+
+    <div v-if="activeFile && !heroMode" class="dsh-file-bar">
+      <div class="dsh-file-bar-info">
+        <component :is="getFileIconComponent(activeFile.type)" :size="13" :stroke-width="1.6" class="dsh-file-bar-icon" />
+        <span class="dsh-file-bar-name">{{ activeFile.name }}</span>
+        <span class="dsh-file-bar-size">{{ fileStore.formatFileSize(activeFile.size) }}</span>
+      </div>
+      <div class="dsh-file-bar-actions">
+        <button class="dsh-work-bar-btn" @click="fileStore.setActiveFile(null)" title="移除文件">
+          <X :size="14" />
+        </button>
+      </div>
+    </div>
+
+    <!-- 侧边栏开关浮动按钮 -->
+    <button
+      v-if="!ctxStore.sidebarVisible"
+      class="dsh-sidebar-toggle"
+      @click="toggleWorkDetail"
+      title="打开工作台面板"
+    >
+      <PanelRight :size="18" :stroke-width="1.8" />
+    </button>
 
     <!-- 滚动主体 -->
     <div
@@ -31,165 +81,53 @@
       @scroll="onScroll"
     >
       <div v-if="!heroMode" class="dsh-column">
-        <!-- 状态指示行：等待/推理中/工具执行中 -->
+        <!--
+          Turn 状态指示行 — 基于 Codex submission_loop 生命周期
+          Turn: idle → thinking → planning → executing → responding → done
+          Chat 模式下只显示轻量提示，Codex 模式下显示详细信息
+        -->
         <div v-if="isStreaming" class="dsh-turn-status">
-          <span class="dsh-turn-status-dot"></span>
-          <span class="dsh-turn-status-text">
-            <template v-if="!streamingThinking && !streamingHasContent">Thinking…</template>
-            <template v-else-if="streamingThinking">Reasoning…</template>
-            <template v-else>Writing…</template>
+          <span class="dsh-turn-status-shimmer-text">
+            <template v-if="isChatMode">
+              {{ currentStatusIndicator.header || (streamingThinking ? '思考中…' : streamingHasContent ? '生成回复中…' : '思考中…') }}
+            </template>
+            <template v-else>
+              <template v-if="!streamingThinking && !streamingHasContent">Thinking…</template>
+              <template v-else-if="streamingThinking">{{ currentStatusIndicator.header || 'Reasoning…' }}</template>
+              <template v-else>Writing…</template>
+            </template>
           </span>
           <span class="dsh-turn-status-clock" v-if="streamingClock">{{ streamingClock }}s</span>
-          <span class="dsh-turn-status-hint">esc to interrupt</span>
+          <!-- Governance status indicators -->
+          <span v-if="isCodexMode && streamingMsg?.agentMeta?.governance?.retrying" class="dsh-governance-badge dsh-governance-retry">
+            Retrying ({{ streamingMsg.agentMeta.governance.retryCount }}x)
+          </span>
+          <span v-if="isCodexMode && streamingMsg?.agentMeta?.governance?.compacted" class="dsh-governance-badge dsh-governance-compact">
+            Context compressed
+          </span>
+          <span v-if="isCodexMode && streamingMsg?.agentMeta?.governance?.budgetWarning" class="dsh-governance-badge dsh-governance-budget">
+            Budget low
+          </span>
+          <span v-if="isCodexMode && streamingMsg?.agentMeta?.collab?.activeCount" class="dsh-governance-badge dsh-collab-badge">
+            {{ streamingMsg.agentMeta.collab.activeCount }} agent{{ streamingMsg.agentMeta.collab.activeCount > 1 ? 's' : '' }}
+          </span>
+          <span v-if="isCodexMode" class="dsh-turn-status-hint">esc to interrupt</span>
         </div>
 
         <div
           v-for="(msg, idx) in currentMessages"
           :key="idx"
           class="dsh-flow-item"
+          :data-user-idx="msg.role === 'user' ? minimapUserIndices.indexOf(idx) : undefined"
         >
           <!-- ═══ UserCell ═══ -->
-          <div v-if="msg.role === 'user'" class="dsh-user-row">
-            <div class="dsh-user-stack">
-              <div class="dsh-bubble" v-html="renderMarkdown(msg.content)"></div>
-            </div>
-          </div>
+          <UserMessageCell v-if="msg.role === 'user'" :msg="msg" />
 
           <!-- ═══ AssistantCell ═══ -->
-          <div v-else-if="msg.role === 'assistant'" class="dsh-assistant-row">
-            <!-- Markdown 回复主体（主内容在上） -->
-            <div
-              class="dsh-assistant-content"
-              v-html="renderMarkdown(getTypewriterContent(msg, idx))"
-            ></div>
-
-            <!-- PlanCell: 计划步骤 — 极简终端树形 -->
-            <div v-if="msg.planSteps && msg.planSteps.length > 0" class="dsh-plan">
-              <div class="dsh-plan-label">Updated Plan</div>
-              <div v-if="msg.planExplanation" class="dsh-plan-explanation">{{ msg.planExplanation }}</div>
-              <div class="dsh-plan-steps">
-                <div
-                  v-for="(step, si) in msg.planSteps"
-                  :key="si"
-                  class="dsh-plan-step"
-                  :class="{
-                    'dsh-plan-step-completed': step.status === 'completed',
-                    'dsh-plan-step-active': step.status === 'in_progress',
-                    'dsh-plan-step-pending': step.status === 'pending',
-                  }"
-                >
-                  <span class="dsh-plan-connector">{{ si === msg.planSteps.length - 1 ? '└' : '├' }}</span>
-                  <span class="dsh-plan-checkbox">
-                    <template v-if="step.status === 'completed'">✔</template>
-                    <template v-else-if="step.status === 'in_progress'">◉</template>
-                    <template v-else>□</template>
-                  </span>
-                  <span class="dsh-plan-step-text">{{ step.step }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- ExecCell: Shell 命令 — 默认折叠，点击展开 -->
-            <div v-if="msg.toolCalls && msg.toolCalls.length > 0" class="dsh-exec-group">
-              <div v-for="(tc, ti) in msg.toolCalls" :key="ti" class="dsh-exec-cell">
-                <div class="dsh-exec-line" @click="toggleExec(idx, ti)">
-                  <span class="dsh-exec-prompt">$</span>
-                  <span class="dsh-exec-cmd">{{ tc.name }}</span>
-                  <template v-if="tc.result">
-                    <template v-if="!isExecExpanded(idx, ti)">
-                      <span v-if="getResultLineCount(tc.result) > 2" class="dsh-exec-fold">… +{{ getResultLineCount(tc.result) - 2 }} lines</span>
-                    </template>
-                  </template>
-                  <span v-if="tc.durationMs" class="dsh-exec-duration">{{ (tc.durationMs / 1000).toFixed(1) }}s</span>
-                  <span class="dsh-exec-toggle">{{ isExecExpanded(idx, ti) ? '收起' : '展开' }}</span>
-                </div>
-                <Transition name="dsh-slide">
-                  <div v-show="isExecExpanded(idx, ti) && tc.result" class="dsh-exec-body">
-                    <pre class="dsh-exec-output"><code>{{ tc.result }}</code></pre>
-                  </div>
-                </Transition>
-              </div>
-            </div>
-
-            <!-- DiffCell: 代码变更 — 文件路径 + 增删行数，默认折叠 -->
-            <div v-if="msg.diffFile" class="dsh-diff">
-              <div class="dsh-diff-line" @click="toggleDiff(idx)">
-                <span class="dsh-diff-file">{{ msg.diffFile }}</span>
-                <span class="dsh-diff-stats">
-                  <span class="dsh-diff-add">+{{ msg.diffAddCount || 0 }}</span>
-                  <span class="dsh-diff-del">-{{ msg.diffDelCount || 0 }}</span>
-                </span>
-                <span class="dsh-diff-toggle">{{ isDiffExpanded(idx) ? '收起' : '展开' }}</span>
-              </div>
-              <Transition name="dsh-slide">
-                <div v-show="isDiffExpanded(idx) && msg.diffContent" class="dsh-diff-body">
-                  <pre class="dsh-diff-output" v-html="renderDiff(msg.diffContent)"></pre>
-                </div>
-              </Transition>
-            </div>
-
-            <!-- AgentProgressCard: 工作流进度 -->
-            <AgentProgressCard
-              v-if="msg.agentMeta?.workflowId"
-              :steps="msg.agentMeta.steps || []"
-              :workflow-status="msg.agentMeta.workflowStatus"
-              :total-percent="msg.agentMeta.totalPercent || 0"
-            />
-
-            <!-- RecoveryStatusCard: 恢复状态 -->
-            <RecoveryStatusCard
-              v-if="msg.agentMeta?.recoveryStatus"
-              :status="msg.agentMeta.recoveryStatus"
-              :strategy="msg.agentMeta.recoveryStrategy"
-              :attempt="msg.agentMeta.recoveryAttempt"
-              :message="msg.agentMeta.recoveryMessage"
-            />
-
-            <!-- RecoveryDecisionCard: 结构性恢复决策 -->
-            <RecoveryDecisionCard
-              v-if="msg.agentMeta?.pendingDecision"
-              :title="msg.agentMeta.pendingDecision.title"
-              :description="msg.agentMeta.pendingDecision.description"
-              @decide="onRecoveryDecide(idx, $event)"
-            />
-
-            <!-- ThinkingCell: 回复主体之下，视觉上从属于正式回复 -->
-            <div v-if="msg.thinking" class="dsh-thinking" :class="{ 'dsh-thinking-glow': isLastAssistant(idx) && isStreaming && streamingThinking }">
-              <!-- 流式阶段 -->
-              <div v-if="isLastAssistant(idx) && isStreaming && streamingThinking" class="dsh-thinking-streaming">
-                <span class="dsh-thinking-spinner"></span>
-                <span class="dsh-thinking-preview" v-html="renderThinkingText(getThinkingPreview(msg.thinking))"></span>
-              </div>
-              <!-- 完成后：一行 dim 指示器，可点击展开 -->
-              <div v-else class="dsh-thinking-line" @click="toggleThinking(idx)">
-                <span class="dsh-thinking-dot"></span>
-                <span class="dsh-thinking-label">{{ getThinkingSummary(msg.thinking) }}</span>
-                <span class="dsh-thinking-toggle-inline">{{ isThinkingExpanded(idx) ? '收起' : '展开' }}</span>
-              </div>
-              <Transition name="dsh-slide">
-                <div v-show="isThinkingExpanded(idx)" class="dsh-thinking-body">
-                  <div class="dsh-thinking-raw" v-html="renderThinkingText(msg.thinking)"></div>
-                </div>
-              </Transition>
-            </div>
-
-            <!-- 操作栏 -->
-            <div class="dsh-msg-actions">
-              <button class="dsh-msg-action" @click="copyMessage(msg.content)" title="复制">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              </button>
-            </div>
-
-            <!-- 错误重试 -->
-            <div v-if="msg.isError" class="dsh-error-row">
-              <button class="dsh-retry-btn" @click="retryLastMessage">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                重试
-              </button>
-            </div>
-          </div>
+          <AssistantMessageCell v-else-if="msg.role === 'assistant'" :msg="msg" :idx="idx" :sse-session-id="sse.activeSessionId.value || ''" />
         </div>
       </div>
+
 
       <!-- 回到底部浮动钮 -->
       <div v-if="showToBottom && !heroMode" class="dsh-to-bottom-slot">
@@ -199,55 +137,67 @@
       </div>
     </div>
 
+    <!-- Minimap 锚点导航栏 -->
+    <div
+      v-if="minimapDots.length > 1 && !heroMode"
+      class="dsh-minimap"
+    >
+      <button
+        v-for="(dot, di) in minimapDots"
+        :key="di"
+        class="dsh-minimap-dot"
+        :class="{ 'dsh-minimap-active': di === minimapActiveIndex }"
+        :title="dot.preview"
+        @click="minimapScrollTo(di)"
+      ></button>
+    </div>
+
     <!-- HERO 区 -->
     <div v-if="heroMode" class="dsh-hero-zone" aria-hidden="false">
       <div class="dsh-hero-stack">
         <div class="dsh-hero-brand">
           <div class="dsh-hero-logo-wrap">
-            <img src="/icons/logo3.svg" alt="" class="dsh-hero-logo" />
+            <img src="/icons/logo2.svg" alt="Pulse Studio" class="dsh-hero-logo-crab" />
             <div class="dsh-hero-logo-shimmer"></div>
           </div>
-          <h2 class="dsh-hero-title">为你开启智能创作之旅</h2>
+          <h2 class="dsh-hero-title">{{ activeWork ? activeWork.title : '为你开启智能创作之旅' }}</h2>
           <span class="dsh-hero-badge">测试版</span>
-          <svg class="dsh-hero-crab" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 180" width="40" height="36">
-            <defs>
-              <filter id="dsh-crab-shadow" x="-10%" y="-10%" width="120%" height="130%">
-                <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
-              </filter>
-            </defs>
-            <path d="M52,86 Q36,76 30,68" stroke="#D94F44" stroke-width="11" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <path d="M148,86 Q164,76 170,68" stroke="#D94F44" stroke-width="11" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <g filter="url(#dsh-crab-shadow)">
-              <ellipse cx="26" cy="56" rx="18" ry="11" transform="rotate(-45 26 56)" fill="#E8655A"/>
-              <ellipse cx="42" cy="80" rx="16" ry="10" transform="rotate(15 42 80)" fill="#E8655A"/>
-            </g>
-            <g filter="url(#dsh-crab-shadow)">
-              <ellipse cx="174" cy="56" rx="18" ry="11" transform="rotate(45 174 56)" fill="#E8655A"/>
-              <ellipse cx="158" cy="80" rx="16" ry="10" transform="rotate(-15 158 80)" fill="#E8655A"/>
-            </g>
-            <ellipse cx="100" cy="105" rx="58" ry="48" fill="#E8655A" filter="url(#dsh-crab-shadow)"/>
-            <path d="M55,110 Q30,118 22,134" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <path d="M52,125 Q28,136 18,154" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <path d="M62,138 Q48,152 42,170" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <path d="M145,110 Q170,118 178,134" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <path d="M148,125 Q172,136 182,154" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <path d="M138,138 Q152,152 158,170" stroke="#E8655A" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#dsh-crab-shadow)"/>
-            <circle cx="30" cy="68" r="8" fill="#D94F44"/>
-            <circle cx="170" cy="68" r="8" fill="#D94F44"/>
-            <circle cx="78" cy="62" r="16" fill="white" filter="url(#dsh-crab-shadow)"/>
-            <circle cx="80" cy="62" r="8" fill="#1a1a1a"/>
-            <circle cx="83" cy="59" r="3" fill="white"/>
-            <circle cx="122" cy="62" r="16" fill="white" filter="url(#dsh-crab-shadow)"/>
-            <circle cx="120" cy="62" r="8" fill="#1a1a1a"/>
-            <circle cx="123" cy="59" r="3" fill="white"/>
-          </svg>
         </div>
         <div class="dsh-hero-workspace-row">
-          <button class="dsh-hero-chip" type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-            <span>选择一个工作区开始</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
+          <div class="dsh-hero-ws-wrap">
+            <button class="dsh-hero-chip" type="button" @click="toggleHeroWorkspaceList">
+              <span>{{ workspaceStore.activeWorkspace ? workspaceStore.activeWorkspace.name : '选择一个工作区开始' }}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <Transition name="dsh-slide-up">
+              <div v-if="showHeroWorkspaceList" class="dsh-hero-ws-dropdown" @click.stop>
+                <div class="dsh-hero-ws-dropdown-header">
+                  <span class="dsh-hero-ws-dropdown-title">侧边栏工作区</span>
+                </div>
+                <div class="dsh-hero-ws-dropdown-list">
+                  <button
+                    v-for="ws in workspaceStore.workspaces"
+                    :key="ws.id"
+                    class="dsh-hero-ws-dropdown-item"
+                    :class="{ 'dsh-hero-ws-dropdown-selected': ws.id === workspaceStore.activeWorkspaceId }"
+                    @click="onHeroWorkspaceSelect(ws.id)"
+                  >
+                    <FolderOpen :size="14" :stroke-width="2" />
+                    <div class="dsh-hero-ws-item-info">
+                      <span class="dsh-hero-ws-item-name">{{ ws.name }}</span>
+                      <span class="dsh-hero-ws-item-path">{{ ws.local_path }}</span>
+                    </div>
+                    <span v-if="ws.id === workspaceStore.activeWorkspaceId" class="dsh-hero-ws-item-check">
+                      <Check :size="12" />
+                    </span>
+                  </button>
+                  <div v-if="workspaceStore.workspaces.length === 0" class="dsh-hero-ws-dropdown-empty">
+                    暂无工作区，请先在侧边栏导入文件夹
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
           <button class="dsh-hero-chip" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             <span>标准模式</span>
@@ -259,45 +209,268 @@
 
     <!-- 输入卡 -->
     <div class="dsh-composer-seat" :class="{ 'dsh-composer-hero': heroMode }">
-      <svg v-if="heroMode" class="dsh-hero-glow" viewBox="0 0 1051 468" fill="none" aria-hidden="true">
+      <svg v-if="heroMode" class="dsh-hero-glow" viewBox="0 0 900 400" fill="none" aria-hidden="true">
         <defs>
-          <filter id="dsh-hero-glow-blur" x="0" y="0" width="1051" height="468" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-            <feGaussianBlur stdDeviation="50" />
+          <filter id="dsh-hero-glow-blur" x="0" y="0" width="900" height="400" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+            <feFlood flood-opacity="0" result="BackgroundImageFix" />
+            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+            <feGaussianBlur stdDeviation="40" result="effect1_foregroundBlur" />
           </filter>
         </defs>
         <g filter="url(#dsh-hero-glow-blur)">
-          <ellipse cx="525.5" cy="234" rx="425.5" ry="134" fill="currentColor" />
+          <ellipse cx="450" cy="200" rx="360" ry="120" fill="#7C3AED" fill-opacity="0.18" />
         </g>
       </svg>
       <div class="dsh-composer-card">
+        <!-- 已选智能体标签行 -->
+        <div v-if="selectedAgentId" class="dsh-agent-tag-row">
+          <span class="dsh-agent-tag">
+            <img src="/icons/智能体.svg" class="dsh-agent-tag-icon" />
+            <span class="dsh-agent-tag-name">{{ selectedAgentLabel }}</span>
+            <button class="dsh-agent-tag-close" @click="clearSelectedAgent" title="取消选择">
+              <X :size="10" />
+            </button>
+          </span>
+        </div>
+        <div class="dsh-at-picker-wrap">
+          <AtContentPicker
+            :visible="showAtContentPicker"
+            :agents="availableAgents"
+            @select="onAtContentSelect"
+            @close="showAtContentPicker = false"
+          />
+        </div>
         <textarea
           ref="inputRef"
           v-model="inputText"
           class="dsh-input"
-          placeholder="给 Pulse Studio 发送消息"
-          rows="1"
+          :disabled="isStreaming"
+          :placeholder="isStreaming ? '等待回复中…' : (selectedAgentId ? `向 ${selectedAgentLabel} 发送消息…` : '给 Pulse Studio 发送消息（@ 智能体 / 内容 / 技能）')"
+          rows="2"
           @keydown="onKeyDown"
           @input="onUserInput"
           @focus="onUserInput"
         ></textarea>
         <div class="dsh-composer-row">
           <div class="dsh-tools">
-            <div class="dsh-plus-wrap">
-              <button class="dsh-add" :class="{ 'dsh-add-active': highlightEnabled }" :disabled="isStreaming" @click="toggleHighlight" title="划重点">
+          <div class="dsh-plus-wrap">
+            <button class="dsh-add" :class="{ 'dsh-add-active': highlightEnabled }" :disabled="isStreaming" @click="toggleHighlight" title="划重点">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              </button>
+            </div>
+            <!-- 绑定文件夹按钮 -->
+            <div class="dsh-ws-pick-wrap">
+              <button class="dsh-ws-pick-btn" :class="{ 'dsh-ws-pick-active': workspaceStore.activeWorkspace }" :disabled="workspaceStore.binding" @click="workspaceStore.workspaces.length > 0 ? toggleWorkspaceList() : onPickFolder()" title="绑定本地文件夹（智能体可直接操控）">
+                <FolderOpen :size="14" :stroke-width="2" />
+              </button>
+              <!-- 已绑定工作区下拉列表 -->
+              <Transition name="dsh-slide-up">
+                <div v-if="showWorkspaceList" class="dsh-ws-dropdown" @click.stop>
+                  <div class="dsh-ws-dropdown-header">
+                    <span class="dsh-ws-dropdown-title">已绑定的工作区</span>
+                    <button class="dsh-ws-dropdown-add" @click="onPickFolder" :disabled="workspaceStore.binding">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      绑定新文件夹
+                    </button>
+                  </div>
+                  <div class="dsh-ws-dropdown-list">
+                    <button
+                      v-for="ws in workspaceStore.workspaces"
+                      :key="ws.id"
+                      class="dsh-ws-dropdown-item"
+                      :class="{ 'dsh-ws-dropdown-selected': ws.id === workspaceStore.activeWorkspaceId }"
+                      @click="switchToFolder('ws-' + ws.id); showWorkspaceList = false"
+                    >
+                      <FolderOpen :size="14" :stroke-width="2" />
+                      <div class="dsh-ws-item-info">
+                        <span class="dsh-ws-item-name">{{ ws.name }}</span>
+                        <span class="dsh-ws-item-path">{{ ws.local_path }}</span>
+                      </div>
+                      <span v-if="ws.id === workspaceStore.activeWorkspaceId" class="dsh-ws-item-check">
+                        <Check :size="12" />
+                      </span>
+                      <button class="dsh-ws-item-unbind" @click.stop="workspaceStore.unbind(ws.id)" title="解绑">
+                        <X :size="10" />
+                      </button>
+                    </button>
+                    <div v-if="workspaceStore.workspaces.length === 0" class="dsh-ws-dropdown-empty">
+                      尚未绑定任何文件夹
+                    </div>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+            <!-- 智能体召唤按钮 -->
+            <div class="dsh-agent-pick-wrap">
+              <button class="dsh-agent-pick-btn" :class="{ 'dsh-agent-pick-active': showAgentPicker }" @click="toggleAgentPicker" title="选择智能体（快捷键 @）">
+                <img src="/icons/智能体.svg" class="dsh-agent-btn-icon" />
+                <ChevronDown :size="10" />
+              </button>
+              <!-- 智能体选择下拉面板 -->
+              <Transition name="dsh-slide-up">
+                <div v-if="showAgentPicker" class="dsh-agent-dropdown" @click.stop>
+                  <div class="dsh-agent-dropdown-header">
+                    <input
+                      v-model="agentPickerFilter"
+                      class="dsh-agent-search"
+                      placeholder="搜索智能体…"
+                      @keydown.escape.stop="closeAgentPicker"
+                      @keydown.enter.prevent="() => { const f = filteredAgents[0]; if (f) selectAgent(f) }"
+                      ref="agentSearchRef"
+                    />
+                  </div>
+                  <div class="dsh-agent-dropdown-list">
+                    <button
+                      v-for="a in filteredAgents"
+                      :key="a.agent_id"
+                      class="dsh-agent-dropdown-item"
+                      :class="{ 'dsh-agent-dropdown-selected': a.agent_id === selectedAgentId }"
+                      @click="selectAgent(a)"
+                    >
+                      <img src="/icons/智能体.svg" class="dsh-agent-item-svg" />
+                      <div class="dsh-agent-item-info">
+                        <span class="dsh-agent-item-role">{{ a.role || a.agent_id }}</span>
+                        <span class="dsh-agent-item-id">{{ a.agent_id }}</span>
+                      </div>
+                      <span v-if="a.agent_id === selectedAgentId" class="dsh-agent-item-check">
+                        <Check :size="12" />
+                      </span>
+                    </button>
+                    <div v-if="filteredAgents.length === 0" class="dsh-agent-dropdown-empty">
+                      没有匹配的智能体
+                    </div>
+                  </div>
+                  <div class="dsh-agent-dropdown-footer">
+                    <span class="dsh-agent-dropdown-hint">输入 @ 快速召唤</span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+            <!-- 技能召唤按钮 -->
+            <div class="dsh-skill-pick-wrap">
+              <button class="dsh-skill-pick-btn" :class="{ 'dsh-skill-pick-active': showSkillPicker }" @click="toggleSkillPicker" title="选择技能（快捷键 /）">
+                <span class="dsh-skill-pick-slash">/</span>
+                <ChevronDown :size="10" />
+              </button>
+              <!-- 技能选择下拉面板 -->
+              <Transition name="dsh-slide-up">
+                <div v-if="showSkillPicker" class="dsh-skill-dropdown" @click.stop>
+                  <div class="dsh-skill-dropdown-header">
+                    <input
+                      v-model="skillPickerFilter"
+                      class="dsh-skill-search"
+                      placeholder="搜索技能…"
+                      @keydown.escape.stop="closeSkillPicker"
+                      @keydown.enter.prevent="() => { const f = filteredSkills[0]; if (f) insertSkillToInput(f) }"
+                      ref="skillSearchRef"
+                    />
+                  </div>
+                  <div class="dsh-skill-dropdown-list">
+                    <button
+                      v-for="s in filteredSkills"
+                      :key="s.node_type + '.' + s.name"
+                      class="dsh-skill-dropdown-item"
+                      @click="insertSkillToInput(s)"
+                    >
+                      <span class="dsh-skill-item-slash">/</span>
+                      <div class="dsh-skill-item-info">
+                        <span class="dsh-skill-item-name">{{ s.display_name }}</span>
+                        <span class="dsh-skill-item-desc">{{ s.description }}</span>
+                      </div>
+                      <span class="dsh-skill-item-tag">{{ s.node_type }}</span>
+                    </button>
+                    <div v-if="filteredSkills.length === 0" class="dsh-skill-dropdown-empty">
+                      没有匹配的技能
+                    </div>
+                  </div>
+                  <div class="dsh-skill-dropdown-footer">
+                    <span class="dsh-skill-dropdown-hint">输入 / 快速召唤 · 选中后插入到输入框</span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+            <!-- 创作方向选择按钮 -->
+            <div class="dsh-creation-pick-wrap">
+              <button class="dsh-creation-pick-btn" :class="{ 'dsh-creation-pick-active': showCreationPicker }" @click="toggleCreationPicker" title="选择创作方向">
+                <Sparkles :size="14" />
+                <ChevronDown :size="10" />
+              </button>
+              <Transition name="dsh-slide-up">
+                <div v-if="showCreationPicker" class="dsh-creation-dropdown" @click.stop>
+                  <div class="dsh-creation-dropdown-header">
+                    <span class="dsh-creation-dropdown-title">选择创作方向</span>
+                  </div>
+                  <div class="dsh-creation-dropdown-list">
+                    <button
+                      v-for="ct in creationTypeOptions"
+                      :key="ct.key"
+                      class="dsh-creation-dropdown-item"
+                      :class="{ 'dsh-creation-dropdown-selected': workStore.activeCreationType === ct.key }"
+                      @click="onSelectCreationType(ct.key)"
+                    >
+                      <component :is="ct.icon" :size="16" />
+                      <div class="dsh-creation-item-info">
+                        <span class="dsh-creation-item-name">{{ ct.label }}</span>
+                        <span class="dsh-creation-item-desc">{{ ct.desc }}</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+            <!-- 自动放行切换按钮 -->
+            <div class="dsh-auto-approve-wrap">
+              <button
+                class="dsh-auto-approve-btn"
+                :class="{ 'dsh-auto-approve-on': autoApproveEnabled }"
+                @click="toggleAutoApprove"
+                :title="autoApproveEnabled ? '工具调用自动放行中，点击切换为需要确认' : '工具调用需要确认，点击切换为自动放行'"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span class="dsh-auto-approve-label">{{ autoApproveEnabled ? '自动放行' : '需确认' }}</span>
               </button>
             </div>
           </div>
           <div class="dsh-trailing">
-            <button class="dsh-model-pill" @click="cycleModel" :title="'当前模型: ' + currentModel">
-              {{ currentModel }}
-            </button>
-            <button class="dsh-primary" :disabled="!inputText.trim() || isStreaming" @click="sendMessage" title="发送">
+            <div class="dsh-model-pick-wrap">
+              <button class="dsh-model-pill" :class="{ 'dsh-model-pick-active': showModelPicker }" @click="toggleModelPicker" :title="(currentModelMeta?.name || currentModel) + ' · ' + (currentModelMeta?.providerName || '')">
+                <span class="dsh-model-pill-icon" v-html="currentModelMeta?.icon || ''" />
+                <span class="dsh-model-pill-name">{{ currentModelMeta?.name || currentModel }}</span>
+                <ChevronDown :size="10" />
+              </button>
+              <Transition name="dsh-slide-up">
+                <div v-if="showModelPicker" class="dsh-model-dropdown" @click.stop>
+                  <button
+                    v-for="m in modelOptions"
+                    :key="m.id"
+                    class="dsh-model-dropdown-item"
+                    :class="{ 'dsh-model-dropdown-selected': m.id === currentModel }"
+                    @click="selectModel(m.id)"
+                  >
+                    <Check v-if="m.id === currentModel" :size="12" class="dsh-model-check" />
+                    <span v-else class="dsh-model-check-placeholder" />
+                    <span class="dsh-model-dropdown-icon" v-html="m.icon" />
+                    <span class="dsh-model-dropdown-text">
+                      <span class="dsh-model-dropdown-name">
+                        {{ m.name }}
+                        <span class="dsh-model-dropdown-provider">{{ m.providerName }}</span>
+                      </span>
+                      <span class="dsh-model-dropdown-desc">{{ m.description }}</span>
+                    </span>
+                  </button>
+                </div>
+              </Transition>
+            </div>
+            <button v-if="!isStreaming" class="dsh-primary" :disabled="!inputText.trim()" @click="sendMessage" title="发送">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+            <button v-else class="dsh-stop" @click="stopStreaming" title="停止生成">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
             </button>
           </div>
         </div>
       </div>
+
       <div class="dsh-composer-footer" v-if="!heroMode && lastStats">
         <span class="dsh-stats-line">
           {{ lastStats.turns }} 轮 · {{ lastStats.tokens }} tokens · {{ lastStats.latency }}ms
@@ -306,49 +479,220 @@
     </div>
 
     <CrabCompanion
-      :show="crabVisible && pluginStore.isEnabled(CRAB_PLUGIN_ID)"
+      :show="!heroMode && crabVisible && pluginStore.isEnabled(CRAB_PLUGIN_ID)"
       :input-rect="crabInputRect"
     />
     <CatCompanion
-      :show="crabVisible && pluginStore.isEnabled(CAT_PLUGIN_ID)"
+      :show="!heroMode && crabVisible && pluginStore.isEnabled(CAT_PLUGIN_ID)"
       :input-rect="crabInputRect"
     />
     <SpongeBobCompanion
-      :show="crabVisible && pluginStore.isEnabled(SPONGEBOB_PLUGIN_ID)"
+      :show="!heroMode && crabVisible && pluginStore.isEnabled(SPONGEBOB_PLUGIN_ID)"
       :input-rect="crabInputRect"
     />
+
+    <ConfirmDialog
+      :visible="dangerDialog.visible"
+      :title="dangerDialog.title"
+      :message="dangerDialog.message"
+      confirm-text="确定重置"
+      cancel-text="等待恢复"
+      danger
+      @confirm="onDangerConfirm"
+      @cancel="onDangerCancel"
+    />
+
+  </div>
+
+  <!-- 右侧上下文侧边栏 -->
+  <div
+    class="dsh-ctx-slide"
+    :class="{ 'dsh-ctx-slide-open': ctxStore.sidebarVisible }"
+  >
+    <div
+      class="dsh-ctx-resize-bar"
+      title="拖拽调整面板宽度 · 双击恢复默认"
+      @mousedown="startCtxResize"
+      @dblclick.prevent="resetCtxWidth"
+    ></div>
+    <ContextSidebar
+      ref="contextSidebarRef"
+      :class="{ 'is-dark': darkTheme }"
+      @chat-action="onWorkChatAction"
+    />
+  </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, watch, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, watch, onUnmounted, defineAsyncComponent, provide } from 'vue'
+
 import { useAuthStore } from '@/stores/auth'
 import { usePluginStore } from '@/stores/plugin'
+import { useWorkStore } from '@/stores/work'
+import { useFileStore } from '@/stores/files'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { useChatContextStore } from '@/stores/chatContext'
+import AtContentPicker from './AtContentPicker.vue'
+
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { renderMarkdown, renderThinkingText } from './markdown-renderer'
-import type { ChatMessage, Conversation, ChatStats, AgentMeta } from './cell-types'
-import { getThinkingSummary, getThinkingPreview } from './cell-types'
+import type { ChatMessage, Conversation, ChatStats, AgentMeta, TurnPhase, StatusIndicator, DisplayItem } from './cell-types'
+import { provideChatRenderContext } from './chat-context'
+import UserMessageCell from './UserMessageCell.vue'
+import AssistantMessageCell from './AssistantMessageCell.vue'
+import { getThinkingSummary, getThinkingPreview, getThinkingLiveLines, getChatStatusText, getPlanPreviewText, getToolDisplayLabel, getNodeDisplayLabel, sanitizeContent } from './cell-types'
+
+const props = defineProps<{
+  modelSettings?: Record<string, any>
+}>()
+
+function extractFirstBold(text: string): string {
+  if (!text) return ''
+  const match = text.match(/\*\*(.+?)\*\*/)
+  if (match) return match[1]
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length > 0) {
+    const last = lines[lines.length - 1]
+    const cleaned = last.replace(/^\[(decision|progress|done|error|start|hint|circuit|skipped|rollback)\]\s*/, '').replace(/^\[\d+\]\s*/, '')
+    return cleaned.length > 40 ? cleaned.slice(0, 37) + '…' : cleaned
+  }
+  return ''
+}
+
+function extractThinkingHeader(text: string): string {
+  if (!text) return '思考中'
+  const boldHeader = extractFirstBold(text)
+  if (boldHeader) return boldHeader
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const decisions = lines.filter(l => l.startsWith('[decision]'))
+  if (decisions.length > 0) {
+    const last = decisions[decisions.length - 1]
+    const cleaned = last.replace(/^\[decision\]\s*/, '').replace(/^\[\d+\]\s*/, '')
+    const boldMatch = cleaned.match(/\*\*(.+?)\*\*/)
+    if (boldMatch) return boldMatch[1]
+    return cleaned.length > 60 ? cleaned.slice(0, 57) + '…' : cleaned
+  }
+  const progressLines = lines.filter(l => l.startsWith('[progress]') || l.startsWith('[done]'))
+  if (progressLines.length > 0) {
+    const last = progressLines[progressLines.length - 1]
+    return last.replace(/^\[(progress|done)\]\s*/, '')
+  }
+  return '思考中'
+}
+
+function getThinkingStepCount(text: string): string {
+  if (!text) return ''
+  const steps = text.split('\n').filter(l => l.trim().startsWith('[decision]')).length
+  if (steps <= 1) return ''
+  return `(${steps}步)`
+}
+
+function isThinkingExpanded(msg: any): boolean {
+  return !!msg._thinkingExpanded
+}
+
+function toggleThinkingExpand(msg: any) {
+  msg._thinkingExpanded = !msg._thinkingExpanded
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+import { formatAgentOutput, AGENT_NODE_LABELS } from './agent-output-formatter'
+import { useChatStream } from './composables/useChatStream'
+import { useChatExpandable } from './composables/useChatExpandable'
+import { useChatPickers } from './composables/useChatPickers'
+import { useChatSSE, _ingestContentDelta } from './composables/useChatSSE'
+import { useChatActions } from './composables/useChatActions'
+import { useChatInteractions } from './composables/useChatInteractions'
+import { useNotificationSSE } from './composables/useNotificationSSE'
+import { useChatWork } from './composables/useChatWork'
+import { toTagList, isLastAssistant, getResultLineCount, renderDiff, escapeHtml } from './chat-helpers'
+import { useChatSend } from './composables/useChatSend'
+import { useChatInit } from './composables/useChatInit'
+import { useChatAgent } from './composables/useChatAgent'
+
+const emit = defineEmits<{
+  'open-image-workspace': [draft?: any]
+  'start-cover-workflow': [topic: string]
+  'draft-panel-update': [data: any]
+}>()
 import { useChatHistory } from '@/composables/useChatHistory'
-import CrabCompanion from './CrabCompanion.vue'
-import CatCompanion from './CatCompanion.vue'
-import SpongeBobCompanion from './SpongeBobCompanion.vue'
-import RecoveryStatusCard from './RecoveryStatusCard.vue'
-import RecoveryDecisionCard from './RecoveryDecisionCard.vue'
-import AgentProgressCard from './AgentProgressCard.vue'
+import { X, BarChart3, Image as ImageIcon, File as FileIcon, FolderOpen, Music, Video, FileText, Code, FileSpreadsheet, ChevronDown, Check, Rocket, Sparkles, PanelRight, Scissors, Mic, Radio } from 'lucide-vue-next'
+import { agentsApi, type AgentSummary } from '@/api/agents'
+import { workflowApi } from '@/api/workflow'
+import { authFetch, tryRefreshToken } from '@/api/client'
+import * as chatSessionsApi from '@/api/chatSessions'
+
+import { normalizeCardDraft, pickCoverUrl, pickImages } from '@/composables/cardDraft'
+import CreationHandoffCard from './CreationHandoffCard.vue'
+import ChatConfirmCard from './ChatConfirmCard.vue'
+
+// P2：分析到创作的沉浸式承接卡开关
+const handoffOpen = ref(false)
+
+function onHandoffStart(payload: {
+  direction: string
+  proposedStructure: string[]
+  analysis: Record<string, any> | null
+}) {
+  const planLabel =
+    payload.direction === 'reuse' ? '沿用结构' : payload.direction === 'remix' ? '改造结构' : '全新表达'
+  const structureText = payload.proposedStructure.join(' → ')
+  const best = payload.analysis?.writing_prescription?.best_patterns?.[0]?.name
+  const avoid = payload.analysis?.writing_prescription?.avoid_patterns?.[0]?.name
+  const parts = [
+    `基于刚才的作品分析，帮我创作一篇新图文。`,
+    `创作方向：${planLabel}。`,
+    `建议分镜结构（供参考，生成时请过质量门禁细化）：${structureText}。`,
+  ]
+  if (best) parts.push(`请延续已验证模式「${best}」。`)
+  if (avoid) parts.push(`请规避「${avoid}」。`)
+  parts.push(`分析上下文已自动带入，直接产出 card_draft 即可。`)
+  inputText.value = parts.join('\n')
+  handoffOpen.value = false
+  sendMessage()
+}
+
+const CrabCompanion = defineAsyncComponent(() => import('./CrabCompanion.vue'))
+const CatCompanion = defineAsyncComponent(() => import('./CatCompanion.vue'))
+const SpongeBobCompanion = defineAsyncComponent(() => import('./SpongeBobCompanion.vue'))
+const RecoveryStatusCard = defineAsyncComponent(() => import('./RecoveryStatusCard.vue'))
+const RecoveryDecisionCard = defineAsyncComponent(() => import('./RecoveryDecisionCard.vue'))
+const WorkDetailPanel = defineAsyncComponent(() => import('./WorkDetailPanel.vue'))
+const ContextSidebar = defineAsyncComponent(() => import('./ContextSidebar.vue'))
+const AgentProgressCard = defineAsyncComponent(() => import('./AgentProgressCard.vue'))
+const ChatReviewCard = defineAsyncComponent(() => import('./ChatReviewCard.vue'))
 
 const authStore = useAuthStore()
 const pluginStore = usePluginStore()
+const workStore = useWorkStore()
+const fileStore = useFileStore()
+const workspaceStore = useWorkspaceStore()
+const ctxStore = useChatContextStore()
 
 const CRAB_PLUGIN_ID = 'crab-companion'
 const CAT_PLUGIN_ID = 'cat-companion'
 const SPONGEBOB_PLUGIN_ID = 'spongebob-companion'
 const darkTheme = ref(false)
-const { addConversation, updateTitle } = useChatHistory()
+
+const contextSidebarRef = ref<InstanceType<typeof ContextSidebar> | null>(null)
+
+function openExternalUrl(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const { addConversation, updateTitle, getSessionId, findBySessionId, removeConversation, getConversationsForFolder, getConversationsForWork, loaded: chatHistoryLoaded } = useChatHistory()
 
 const scrollBodyRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const agentSearchRef = ref<HTMLInputElement | null>(null)
+const skillSearchRef = ref<HTMLInputElement | null>(null)
 const inputText = ref('')
-const isStreaming = ref(false)
 const activeConvId = ref('')
+const showAtContentPicker = ref(false)
 
 const crabVisible = ref(false)
 const crabInputRect = ref<DOMRect | null>(null)
@@ -373,204 +717,360 @@ watch(crabVisible, (v) => {
   }
 })
 
+const stream = useChatStream()
+const expand = useChatExpandable()
+const pickers = useChatPickers()
+
+const {
+  isStreaming, streamingHasContent, streamingThinking, streamingClock,
+  streamingMsg,
+} = stream
+const {
+  isExecExpanded, toggleExec,
+  isDiffExpanded, toggleDiff, expandedAgentId, toggleAgentExpand,
+} = expand
+const {
+  selectedAgentId, selectedAgentLabel, showAgentPicker, showSkillPicker,
+  showModelPicker, currentModel, filteredAgents, filteredSkills,
+  agentPickerFilter, skillPickerFilter, showWorkspaceList, thinkingDepth,
+  thinkingLabel, allSkills, availableAgents, modelOptions, currentModelMeta,
+  selectAgent, clearSelectedAgent, toggleAgentPicker, closeAgentPicker,
+  toggleSkillPicker, closeSkillPicker, toggleModelPicker, selectModel,
+  cycleThinking, toggleWorkspaceList,
+} = pickers
+
+let _skillInsertGuard = false
+
+function insertSkillToInput(skill: { node_type: string; name: string; display_name: string; description: string }) {
+  _skillInsertGuard = true
+  pickers.insertSkillToInput(skill, inputText, inputRef)
+  setTimeout(() => { _skillInsertGuard = false }, 50)
+}
+
+const currentTurnPhase = ref<TurnPhase>('idle')
+const currentStatusIndicator = ref<StatusIndicator>({ header: '' })
+
+function _transitionTurn(phase: TurnPhase, statusHeader?: string) {
+  currentTurnPhase.value = phase
+  if (statusHeader !== undefined) {
+    currentStatusIndicator.value = { header: statusHeader }
+  }
+  if (stream.streamingMsg.value?.agentMeta) {
+    stream.streamingMsg.value.agentMeta.turnPhase = phase
+    if (statusHeader !== undefined) {
+      stream.streamingMsg.value.agentMeta.statusIndicator = { header: statusHeader }
+    }
+  }
+}
+
+const isChatMode = computed(() => {
+  return !heroMode.value
+})
+
+const isCodexMode = computed(() => {
+  return false
+})
+
+const sse = useChatSSE({
+  transitionTurn: _transitionTurn,
+  emit: (event: string, draft?: any) => {
+    if (event === 'draft-panel-update') {
+      emit('draft-panel-update', draft)
+      return
+    }
+    emit(event as 'open-image-workspace', draft)
+  },
+  isCodexMode: () => isCodexMode.value,
+  isChatMode: () => isChatMode.value,
+  streamingThinking: stream.streamingThinking,
+  streamingHasContent: stream.streamingHasContent,
+  persistAssistantMessage: (content: string, agentMeta: any) => {
+    const sid = sse.activeSessionId.value
+    if (sid) {
+      chatSessionsApi.addMessage(sid, 'assistant', content, agentMeta).catch(() => {})
+    }
+  },
+  onSseComplete: () => {
+    stream.notifySseComplete()
+  },
+  onContentReady: () => {
+    stream.notifySseComplete()
+  },
+  onStreamDelta: () => {
+    stream.touchStream()
+    if (!showToBottom.value && !_scrollRafPending) {
+      _scrollRafPending = true
+      requestAnimationFrame(() => {
+        _scrollRafPending = false
+        if (!showToBottom.value) {
+          void scrollToBottom()
+        }
+      })
+    }
+  },
+})
+
+let _scrollRafPending = false
+
 onUnmounted(() => {
   if (crabRafId) cancelAnimationFrame(crabRafId)
+  document.removeEventListener('click', onDocumentClick)
+  stopNotificationSSE()
 })
-const lastStats = ref<ChatStats | null>(null)
 
-const thinkingDepth = ref<'off' | 'low' | 'medium' | 'high'>('medium')
-const currentModel = ref('DeepSeek-V3')
+function onDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (pickers.showAgentPicker.value && !target.closest('.dsh-agent-pick-wrap')) {
+    pickers.closeAgentPicker()
+  }
+  if (pickers.showSkillPicker.value && !target.closest('.dsh-skill-pick-wrap')) {
+    pickers.closeSkillPicker()
+  }
+  if (pickers.showModelPicker.value && !target.closest('.dsh-model-pick-wrap')) {
+    pickers.showModelPicker.value = false
+  }
+  if (pickers.showWorkspaceList.value && !target.closest('.dsh-ws-pick-wrap')) {
+    pickers.showWorkspaceList.value = false
+  }
+  if (showHeroWorkspaceList.value && !target.closest('.dsh-hero-ws-wrap')) {
+    showHeroWorkspaceList.value = false
+  }
+}
+
+const lastStats = ref<ChatStats | null>(null)
 
 const conversations = ref<Conversation[]>([])
 
 const heroMode = ref(true)
 
-const streamingHasContent = ref(false)
-const streamingThinking = ref(false)
-const streamingClock = ref(0)
-const typewriterChars = ref(0)
-let typewriterTimer: ReturnType<typeof setInterval> | null = null
-let streamStartTs = 0
-let clockTimer: ReturnType<typeof setInterval> | null = null
-let abortController: AbortController | null = null
-
-const isAgentMode = ref(false)
-const activeWorkflowId = ref<string | null>(null)
-const workflowSseController = ref<AbortController | null>(null)
-const activeSessionId = ref<string | null>(null)
+const actions = useChatActions({
+  conversations,
+  activeConvId,
+  inputText,
+  lastStats,
+  heroMode,
+  activeSessionId: sse.activeSessionId,
+  chatSseController: sse.chatSseController,
+  workflowSseController: sse.workflowSseController,
+  scrollBodyRef,
+  inputRef,
+  resetExpandAll: () => expand.resetAll(),
+})
+const {
+  newConversation, deleteConversation, switchToConversation,
+  switchToFolder, onSwitchConv, enterHeroMode, resetToInitial,
+  scrollToBottom: actionsScrollToBottom, normalizeAgentMeta: actionsNormalizeAgentMeta,
+} = actions
 
 const showToBottom = ref(false)
 const highlightEnabled = ref(false)
+const autoApproveEnabled = ref(true)
+const showHeroWorkspaceList = ref(false)
 
-const expandedThinking = ref<Set<number>>(new Set())
-const expandedExec = ref<Set<string>>(new Set())
+let _autoApproveToastTimer: number | null = null
 
-const thinkingLabel = computed(() => {
-  const map = { off: '思考:关', low: '思考:浅', medium: '思考:中', high: '思考:深' }
-  return map[thinkingDepth.value]
-})
+function toggleAutoApprove() {
+  autoApproveEnabled.value = !autoApproveEnabled.value
+  const existing = document.querySelector('.dsh-copy-toast')
+  if (existing) existing.remove()
+  if (_autoApproveToastTimer !== null) window.clearTimeout(_autoApproveToastTimer)
+  const el = document.createElement('div')
+  el.className = 'dsh-copy-toast'
+  el.textContent = autoApproveEnabled.value
+    ? '已开启自动放行：工具调用将直接执行'
+    : '已切换为需确认：工具调用将暂停等待您批准'
+  document.body.appendChild(el)
+  _autoApproveToastTimer = window.setTimeout(() => {
+    el.remove()
+    _autoApproveToastTimer = null
+  }, 2000)
+}
+
+function toggleHeroWorkspaceList() {
+  showHeroWorkspaceList.value = !showHeroWorkspaceList.value
+}
+
+function onHeroWorkspaceSelect(wsId: string) {
+  workspaceStore.setActive(wsId)
+  switchToFolder('ws-' + wsId)
+  showHeroWorkspaceList.value = false
+}
+
+async function onPickFolder() {
+  pickers.showWorkspaceList.value = false
+  const result = await workspaceStore.pickAndBind()
+  if (result) {
+    pickers.showWorkspaceList.value = false
+  }
+}
 
 const currentMessages = computed(() => {
   const conv = conversations.value.find(c => c.id === activeConvId.value)
   return conv ? conv.messages.filter(m => m.role !== 'system') : []
 })
 
-function getTypewriterContent(msg: ChatMessage, idx: number): string {
-  if (!isLastAssistant(idx) || !isStreaming) return msg.content
-  return msg.content.slice(0, typewriterChars.value)
-}
+const sendMessageRef = ref<() => Promise<void>>(async () => {})
 
-function startTypewriter() {
-  stopTypewriter()
-  typewriterChars.value = 0
-  typewriterTimer = setInterval(() => {
-    typewriterChars.value += 3
-  }, 16)
-}
+const interactions = useChatInteractions({
+  conversations,
+  activeConvId,
+  inputText,
+  currentMessages,
+  activeSessionId: sse.activeSessionId,
+  chatSseController: sse.chatSseController,
+  workflowSseController: sse.workflowSseController,
+  activeWorkflowId: sse.activeWorkflowId,
+  workflowSseLastEventId: sse.workflowSseLastEventId,
+  isStreaming: stream.isStreaming,
+  streamingMsg: stream.streamingMsg,
+  streamingHasContent: stream.streamingHasContent,
+  streamingThinking: stream.streamingThinking,
+  abort: () => stream.abort(),
+  notifyImmediateComplete: () => stream.notifyImmediateComplete(),
+  resumeFromPause: () => stream.resumeFromPause(),
+  subscribeChatSSE: (sessionId: string, assistantMsg: ChatMessage) => sse.subscribeChatSSE(sessionId, assistantMsg),
+  sendMessageRef,
+})
+const {
+  onRecoveryDecide, getReviewType, onChatReviewed, onChatConfirmed, onChatClarified, onConfirmationExpired,
+  retryWorkflow, switchCollabMode, interruptAgent, confirmAction,
+  stopStreaming, retryLastMessage,
+  dangerDialog, showDangerConfirm, onDangerConfirm, onDangerCancel,
+  copyMessage,
+} = interactions
 
-function stopTypewriter() {
-  if (typewriterTimer) {
-    clearInterval(typewriterTimer)
-    typewriterTimer = null
+const chatWork = useChatWork({
+  inputText,
+  isStreaming: stream.isStreaming,
+  stopStreaming,
+  sendMessageRef,
+  emitStartCoverWorkflow: (topic: string) => emit('start-cover-workflow', topic),
+})
+const {
+  activeWork, showWorkDetail, detailWidth,
+  startDetailResize, resetDetailWidth, exitWorkContext, onWorkChatAction, getFileIconComponent,
+} = chatWork
+
+function startCtxResize(e: MouseEvent) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = ctxStore.sidebarWidth
+  let rafId = 0
+  function onMove(ev: MouseEvent) {
+    const delta = startX - ev.clientX
+    cancelAnimationFrame(rafId)
+    rafId = requestAnimationFrame(() => {
+      ctxStore.setSidebarWidth(startW + delta)
+    })
   }
-}
-
-function isLastAssistant(idx: number): boolean {
-  const msgs = currentMessages.value
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'assistant') return i === idx
+  function onUp() {
+    cancelAnimationFrame(rafId)
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.body.classList.remove('is-ctx-resizing')
   }
-  return false
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.body.classList.add('is-ctx-resizing')
 }
 
-function isThinkingExpanded(idx: number): boolean {
-  return expandedThinking.value.has(idx)
+function resetCtxWidth() {
+  ctxStore.setSidebarWidth(Math.max(280, Math.min(420, Math.floor(window.innerWidth / 4))))
 }
 
-function toggleThinking(idx: number) {
-  const s = new Set(expandedThinking.value)
-  if (s.has(idx)) s.delete(idx)
-  else s.add(idx)
-  expandedThinking.value = s
+const CREATION_TYPE_LABELS: Record<string, string> = {
+  image_text: '图文',
+  video: '视频',
+  ai_edit: 'AI剪辑',
 }
 
-function isExecExpanded(msgIdx: number, tcIdx: number): boolean {
-  return expandedExec.value.has(`${msgIdx}-${tcIdx}`)
+const creationTypeLabel = computed(() => CREATION_TYPE_LABELS[workStore.activeCreationType] || '图文')
+
+const creationTypeIcon = computed(() => {
+  const map: Record<string, any> = { image_text: FileText, video: Video, ai_edit: Scissors }
+  return map[workStore.activeCreationType] || FileText
+})
+
+const showCreationPicker = ref(false)
+
+const creationTypeOptions = [
+  { key: 'image_text' as const, label: '图文', desc: '小红书笔记、图文卡片', icon: ImageIcon },
+  { key: 'voiceover' as const, label: '口播', desc: '口播脚本与提词器', icon: Mic },
+  { key: 'short_video' as const, label: '短视频', desc: '抖音/快手短视频脚本', icon: Video },
+  { key: 'ai_edit' as const, label: 'AI剪辑', desc: 'AI辅助视频剪辑', icon: Scissors },
+  { key: 'long_article' as const, label: '长文', desc: '知乎/公众号长文', icon: FileText },
+  { key: 'live_clip' as const, label: '直播切片', desc: '直播精彩片段剪辑', icon: Radio },
+]
+
+function toggleCreationPicker() {
+  showCreationPicker.value = !showCreationPicker.value
 }
 
-function toggleExec(msgIdx: number, tcIdx: number) {
-  const key = `${msgIdx}-${tcIdx}`
-  const s = new Set(expandedExec.value)
-  if (s.has(key)) s.delete(key)
-  else s.add(key)
-  expandedExec.value = s
-}
-
-function getResultLineCount(result: string): number {
-  if (!result) return 0
-  return result.split('\n').filter(Boolean).length
-}
-
-const expandedDiff = ref<Set<number>>(new Set())
-
-function isDiffExpanded(idx: number): boolean {
-  return expandedDiff.value.has(idx)
-}
-
-function toggleDiff(idx: number) {
-  const s = new Set(expandedDiff.value)
-  if (s.has(idx)) s.delete(idx)
-  else s.add(idx)
-  expandedDiff.value = s
-}
-
-function onRecoveryDecide(idx: number, action: 'confirm' | 'cancel') {
-  const msg = currentMessages.value[idx]
-  if (msg?.agentMeta) {
-    // 后端 review API 尚未接入，这里先清除决策卡；后续按 action 调用 review 接口
-    msg.agentMeta.pendingDecision = undefined
+function onSelectCreationType(typeKey: string) {
+  workStore.activeCreationType = typeKey as any
+  showCreationPicker.value = false
+  const existingDraft = workStore.works.find(
+    (w: any) => w.isDraft && w.contentType === typeKey
+  )
+  if (existingDraft) {
+    workStore.setActiveWork(existingDraft.id)
+  } else {
+    workStore.createDraft(typeKey)
   }
-  console.log('[recovery] decision:', action, 'message index:', idx)
+  showWorkDetail.value = true
+  ctxStore.setSidebarVisible(true)
 }
 
-function renderDiff(content: string): string {
-  if (!content) return ''
-  return content.split('\n').map(line => {
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      return `<span class="dsh-diff-line-add">${escapeHtml(line)}</span>`
-    } else if (line.startsWith('-') && !line.startsWith('---')) {
-      return `<span class="dsh-diff-line-del">${escapeHtml(line)}</span>`
-    } else if (line.startsWith('@@')) {
-      return `<span class="dsh-diff-line-hunk">${escapeHtml(line)}</span>`
-    }
-    return escapeHtml(line)
-  }).join('\n')
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function newConversation() {
-  const id = 'conv_' + Date.now()
-  const conv: Conversation = {
-    id,
-    title: '新会话',
-    messages: [],
-    createdAt: Date.now(),
+function toggleWorkDetail() {
+  if (ctxStore.sidebarVisible) {
+    ctxStore.setSidebarVisible(false)
+  } else {
+    ctxStore.setSidebarVisible(true)
   }
-  conversations.value.unshift(conv)
-  activeConvId.value = id
-  addConversation(id, '新会话')
-  inputText.value = ''
-  lastStats.value = null
-  heroMode.value = true
-  expandedThinking.value = new Set()
-  expandedExec.value = new Set()
-  expandedDiff.value = new Set()
-  void scrollToBottom()
+  showWorkDetail.value = ctxStore.sidebarVisible
+}
+
+const chatSend = useChatSend({
+  activeWork,
+  workStore,
+  currentModel: pickers.currentModel,
+  thinkingDepth: pickers.thinkingDepth,
+  getAbortController: () => stream.getAbortController(),
+  streamingHasContent: stream.streamingHasContent,
+  streamingThinking: stream.streamingThinking,
+  streamingMsg: stream.streamingMsg,
+  isStreaming: stream.isStreaming,
+  notifySseComplete: () => stream.notifySseComplete(),
+  notifyImmediateComplete: () => stream.notifyImmediateComplete(),
+  notifyAgentLoopDone: (graceMs: number) => stream.notifyAgentLoopDone(graceMs),
+  chatSseController: sse.chatSseController,
+  scrollToBottom: async () => scrollToBottom(),
+  transitionTurn: (phase: string, label?: string) => _transitionTurn(phase as any, label || ''),
+  highlightEnabled,
+  lastStats,
+})
+const { sendMessageReal } = chatSend
+
+function getRunningToolLabel(msg: ChatMessage): string {
+  const running = msg.toolCalls?.filter(tc => tc.status === 'running') || []
+  if (running.length === 0) return ''
+  const names = running.map(tc => {
+    const { label } = getToolDisplayLabel(tc.name)
+    return `${label}中`
+  })
+  return names.join(' · ')
+}
+
+function getWorkflowStepLabel(msg: ChatMessage): string {
+  return getChatStatusText(msg.agentMeta)
 }
 
 function toggleHighlight() {
   highlightEnabled.value = !highlightEnabled.value
-}
-
-function onSwitchConv(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  activeConvId.value = v
-  void scrollToBottom()
-}
-
-function deleteConversation(convId: string) {
-  const idx = conversations.value.findIndex(c => c.id === convId)
-  if (idx === -1) return
-  conversations.value.splice(idx, 1)
-  if (activeConvId.value === convId) {
-    if (conversations.value.length > 0) {
-      activeConvId.value = conversations.value[0].id
-    } else {
-      newConversation()
-    }
-  }
-}
-
-function cycleThinking() {
-  const order: Array<'off' | 'low' | 'medium' | 'high'> = ['off', 'low', 'medium', 'high']
-  const idx = order.indexOf(thinkingDepth.value)
-  thinkingDepth.value = order[(idx + 1) % order.length]
-}
-
-function cycleModel() {
-  const models = ['DeepSeek-V3', 'DeepSeek-R1', 'Qwen-VL']
-  const idx = models.indexOf(currentModel.value)
-  currentModel.value = models[(idx + 1) % models.length]
-}
-
-function copyMessage(content: string) {
-  navigator.clipboard.writeText(content)
 }
 
 function autoResize() {
@@ -580,8 +1080,106 @@ function autoResize() {
   el.style.height = Math.min(el.scrollHeight, 336) + 'px'
 }
 
+provideChatRenderContext({
+  isChatMode,
+  isCodexMode,
+  isStreaming,
+  streamingMsg,
+  streamingThinking,
+  streamingHasContent,
+  streamingClock,
+  currentStatusIndicator,
+  isExecExpanded,
+  toggleExec,
+  isDiffExpanded,
+  toggleDiff,
+  isThinkingExpanded: (idx: number) => expand.isThinkingExpanded(idx),
+  toggleThinking: expand.toggleThinking,
+  expandedAgentId,
+  toggleAgentExpand,
+  copyMessage,
+  retryLastMessage,
+  retryWorkflow,
+  interruptAgent,
+  onRecoveryDecide,
+  onChatReviewed,
+  onChatConfirmed,
+  onChatClarified,
+  onConfirmationExpired,
+  switchCollabMode,
+  sendMessage,
+  openInBrowser: (url: string) => { ctxStore.setSidebarVisible(true); contextSidebarRef.value?.navigateToUrl(url) },
+})
+
 function onUserInput() {
   autoResize()
+  const text = inputText.value
+  const cursorPos = inputRef.value?.selectionStart ?? text.length
+  const before = text.slice(0, cursorPos)
+  const atMatch = before.match(/@([^@\s]*)$/)
+  if (atMatch) {
+    showAtContentPicker.value = true
+  } else {
+    showAtContentPicker.value = false
+  }
+
+  const slashMatch = before.match(/\/([^\s]*)$/)
+  if (slashMatch && !_skillInsertGuard) {
+    const beforeSlash = before.slice(0, before.lastIndexOf('/'))
+    if (!beforeSlash.match(/https?:$/)) {
+      if (!showSkillPicker.value) {
+        showSkillPicker.value = true
+      }
+      skillPickerFilter.value = slashMatch[1] || ''
+    } else {
+      if (showSkillPicker.value) {
+        showSkillPicker.value = false
+        skillPickerFilter.value = ''
+      }
+    }
+  } else {
+    if (showSkillPicker.value) {
+      showSkillPicker.value = false
+      skillPickerFilter.value = ''
+    }
+  }
+}
+
+function onAtContentSelect(type: string, data: any) {
+  showAtContentPicker.value = false
+  if (type === 'agent') {
+    selectAgent(data)
+    const atMatch = inputText.value.match(/@([^@\s]*)$/)
+    if (atMatch) {
+      inputText.value = inputText.value.replace(/@([^@\s]*)$/, '')
+    }
+    return
+  }
+  if (type === 'work') {
+    ctxStore.linkWork(data.id)
+  } else if (type === 'memory') {
+    ctxStore.addStyleMemory({ content: data.content, source: data.source || 'user-set' })
+  } else if (type === 'hot') {
+    ctxStore.addContextItem({
+      type: 'analysis',
+      label: data.type === 'trending' ? '当前热点趋势' : '热门话题',
+      summary: '实时数据',
+      pinned: true,
+      meta: { refId: `hot-${data.type}`, hotType: data.type },
+    })
+  } else if (type === 'rule') {
+    ctxStore.addContextItem({
+      type: 'rule',
+      label: data.type === 'xhs_rule' ? '小红书创作规范' : '抖音创作规范',
+      summary: '平台规范',
+      pinned: true,
+      meta: { refId: `rule-${data.type}`, ruleName: data.type === 'xhs_rule' ? '小红书创作规范' : '抖音创作规范' },
+    })
+  }
+  const atMatch = inputText.value.match(/@([^@\s]*)$/)
+  if (atMatch) {
+    inputText.value = inputText.value.replace(/@([^@\s]*)$/, '')
+  }
 }
 
 function onScroll() {
@@ -589,131 +1187,208 @@ function onScroll() {
   if (!el) return
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
   showToBottom.value = dist > 120
+  updateMinimapActive()
 }
 
-async function scrollToBottom(smooth = false) {
-  await nextTick()
-  if (scrollBodyRef.value) {
-    scrollBodyRef.value.scrollTo({
-      top: scrollBodyRef.value.scrollHeight,
-      behavior: smooth ? 'smooth' : 'auto',
-    })
+const minimapUserIndices = computed(() => {
+  return currentMessages.value
+    .map((m, i) => m.role === 'user' ? i : -1)
+    .filter(i => i !== -1)
+})
+
+const minimapDots = computed(() => {
+  return minimapUserIndices.value.map(idx => {
+    const msg = currentMessages.value[idx]
+    const text = typeof msg.content === 'string' ? msg.content : ''
+    const preview = text.length > 30 ? text.slice(0, 30) + '…' : text
+    return { msgIdx: idx, preview }
+  })
+})
+
+const minimapActiveIndex = ref(-1)
+
+function updateMinimapActive() {
+  const el = scrollBodyRef.value
+  if (!el || minimapUserIndices.value.length === 0) return
+  const viewportMid = el.scrollTop + el.clientHeight / 2
+  let active = -1
+  const items = el.querySelectorAll('.dsh-flow-item[data-user-idx]')
+  items.forEach((item) => {
+    const idxStr = (item as HTMLElement).dataset.userIdx
+    if (idxStr === undefined || idxStr === '') return
+    const idx = parseInt(idxStr, 10)
+    if (isNaN(idx)) return
+    const rect = item.getBoundingClientRect()
+    const containerRect = el.getBoundingClientRect()
+    const itemTop = rect.top - containerRect.top + el.scrollTop
+    if (itemTop <= viewportMid) {
+      active = idx
+    }
+  })
+  minimapActiveIndex.value = active
+}
+
+function minimapScrollTo(dotIndex: number) {
+  const el = scrollBodyRef.value
+  if (!el) return
+  const target = el.querySelector(`.dsh-flow-item[data-user-idx="${dotIndex}"]`)
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 }
 
-function startClock() {
-  streamStartTs = Date.now()
-  streamingClock.value = 0
-  clockTimer = setInterval(() => {
-    streamingClock.value = Math.floor((Date.now() - streamStartTs) / 1000)
-  }, 500)
-}
+watch(currentMessages, () => {
+  nextTick(() => updateMinimapActive())
+})
 
-function stopClock() {
-  if (clockTimer) {
-    clearInterval(clockTimer)
-    clockTimer = null
-  }
-}
+const scrollToBottom = actionsScrollToBottom
 
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (workflowSseController.value) {
-      workflowSseController.value.abort()
-      workflowSseController.value = null
+    if (pickers.showAgentPicker.value) {
+      pickers.closeAgentPicker()
       return
     }
-    if (isStreaming.value && abortController) {
-      abortController.abort()
+    if (pickers.showSkillPicker.value) {
+      pickers.closeSkillPicker()
+      return
+    }
+    if (pickers.showModelPicker.value) {
+      pickers.showModelPicker.value = false
+      return
+    }
+    if (sse.workflowSseController.value) {
+      sse.workflowSseController.value.abort()
+      sse.workflowSseController.value = null
+      return
+    }
+    if (stream.isStreaming.value) {
+      stream.abort()
       return
     }
   }
   if (e.key === 'Enter' && !e.shiftKey) {
+    if (pickers.showAgentPicker.value) {
+      e.preventDefault()
+      const first = pickers.filteredAgents.value[0]
+      if (first) pickers.selectAgent(first)
+      return
+    }
+    if (pickers.showSkillPicker.value) {
+      e.preventDefault()
+      const first = pickers.filteredSkills.value[0]
+      if (first) pickers.insertSkillToInput(first, inputText, inputRef)
+      return
+    }
     e.preventDefault()
     sendMessage()
   }
-}
-
-function getLastUserMessage(): string {
-  const conv = conversations.value.find(c => c.id === activeConvId.value)
-  if (!conv) return ''
-  for (let i = conv.messages.length - 1; i >= 0; i--) {
-    if (conv.messages[i].role === 'user') return conv.messages[i].content
+  if (e.key === '@' && !pickers.showAgentPicker.value && !pickers.showSkillPicker.value && !showAtContentPicker.value && inputText.value === '') {
+    e.preventDefault()
+    pickers.toggleAgentPicker()
   }
-  return ''
-}
-
-function removeLastAssistantMessage() {
-  const conv = conversations.value.find(c => c.id === activeConvId.value)
-  if (!conv) return
-  for (let i = conv.messages.length - 1; i >= 0; i--) {
-    if (conv.messages[i].role === 'assistant') {
-      conv.messages.splice(i, 1)
-      break
-    }
-  }
-}
-
-function retryLastMessage() {
-  removeLastAssistantMessage()
-  const lastUser = getLastUserMessage()
-  if (lastUser) {
-    inputText.value = lastUser
-    removeLastUserMessage()
-    nextTick(() => sendMessage())
-  }
-}
-
-function removeLastUserMessage() {
-  const conv = conversations.value.find(c => c.id === activeConvId.value)
-  if (!conv) return
-  for (let i = conv.messages.length - 1; i >= 0; i--) {
-    if (conv.messages[i].role === 'user') {
-      conv.messages.splice(i, 1)
-      break
-    }
+  if (e.key === '/' && !pickers.showSkillPicker.value && !pickers.showAgentPicker.value && !showAtContentPicker.value && inputText.value === '') {
+    e.preventDefault()
+    pickers.toggleSkillPicker()
   }
 }
 
 async function sendMessage() {
   const text = inputText.value.trim()
-  if (!text || isStreaming.value) return
+  if (!text) return
+  if (stream.isStreaming.value) {
+    return
+  }
+  stream.isStreaming.value = true
+  inputText.value = ''
+  if (!chatHistoryLoaded.value) {
+    const start = Date.now()
+    while (!chatHistoryLoaded.value && Date.now() - start < 15000) {
+      await new Promise(resolve => setTimeout(resolve, 120))
+    }
+    if (!chatHistoryLoaded.value) {
+      // 旧实现在这里静默 return——历史加载一旦超时（后端卡顿/网络慢时很容易发生），
+      // 用户的发送就凭空消失：没报错、没弹窗、没反应。这是「点了发送没动静」的根因。
+      // 历史加载只影响展示连续性，不阻塞发送。
+      console.warn('[ChatAgent] 历史会话加载超时（15s），跳过等待直接发送')
+    }
+  }
+
+  try {
+    const circuitStatus = await chatSessionsApi.getLLMCircuitStatus()
+    if (circuitStatus.state === 'open' || circuitStatus.state === 'half_open') {
+      const probeResult = await chatSessionsApi.probeLLMCircuit()
+      if (probeResult.recovered) {
+        console.info('[ChatAgent] LLM circuit auto-recovered via probe')
+      } else {
+        const shouldReset = await showDangerConfirm(
+          'LLM 服务不可用',
+          `LLM API 当前不可用（${circuitStatus.open_reason || circuitStatus.state}）\n\n` +
+          `探针结果：${probeResult.detail}\n\n` +
+          `如果您已充值或更换了 API Key，点击"确定"强制重置后重试。\n` +
+          `点击"取消"等待自动恢复（每 ${Math.round(circuitStatus.recovery_timeout)}s 自动探针一次）。`
+        )
+        if (shouldReset) {
+          try {
+            await chatSessionsApi.resetLLMCircuit()
+          } catch {}
+        } else {
+          stream.isStreaming.value = false
+          return
+        }
+      }
+    }
+  } catch {}
 
   let conv = conversations.value.find(c => c.id === activeConvId.value)
   if (!conv) {
-    newConversation()
-    conv = conversations.value[0]!
+    await newConversation()
+    conv = conversations.value.find(c => c.id === activeConvId.value)
+    if (!conv) {
+      conv = conversations.value[0]
+    }
+  }
+  if (!conv) {
+    stream.isStreaming.value = false
+    return
   }
 
   conv.messages.push({ role: 'user', content: text })
   if (conv.messages.filter(m => m.role === 'user').length === 1) {
-    conv.title = text.slice(0, 20) + (text.length > 20 ? '...' : '')
+    conv.title = text.length > 200 ? text.slice(0, 200) + '…' : text
     updateTitle(conv.id, conv.title)
+    const sid = sse.activeSessionId.value || getSessionId(conv.id)
+    if (sid) {
+      chatSessionsApi.updateSession(sid, conv.title).catch(() => {})
+    }
   }
 
-  inputText.value = ''
   if (inputRef.value) {
     inputRef.value.style.height = 'auto'
   }
 
   heroMode.value = false
   crabVisible.value = true
-  isStreaming.value = true
-  streamingHasContent.value = false
-  streamingThinking.value = false
-  startClock()
-  startTypewriter()
-  abortController = new AbortController()
+  stream.streamingHasContent.value = false
+  stream.streamingThinking.value = false
+  stream.startClock()
+  stream.createAbortController()
+  stream.setBeforeFinish(() => {
+    const msg = stream.streamingMsg.value
+    if (msg) sse.flushStreamDelta(msg)
+  })
+  stream.beginStream(() => {
+    stream.resetStreamState()
+    _transitionTurn('idle', '')
+    stream.stopClock()
+    scrollToBottom()
+  })
   await scrollToBottom()
 
   const startTime = Date.now()
 
   try {
-    if (isAgentMode.value) {
-      await sendAgentMessage(conv, text)
-    } else {
-      await sendMessageReal(conv, startTime)
-    }
+    await sendAgentMessage(conv, text, startTime)
   } catch (err: any) {
     const lastMsg = conv.messages[conv.messages.length - 1]
     if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content) {
@@ -726,488 +1401,191 @@ async function sendMessage() {
         isError: true,
       })
     }
+    const errSid = sse.activeSessionId.value || getSessionId(conv.id)
+    if (errSid) {
+      chatSessionsApi.addMessage(errSid, 'assistant', `请求失败: ${err.message || '未知错误'}`).catch(() => {})
+    }
+    stream.notifyImmediateComplete()
   } finally {
-    isStreaming.value = false
-    streamingHasContent.value = false
-    streamingThinking.value = false
-    abortController = null
-    stopClock()
-    stopTypewriter()
-    await scrollToBottom()
-  }
-}
-
-const AGENT_NODE_LABELS: Record<string, string> = {
-  search: '搜索爆款',
-  analyze: '要素分析',
-  image_plan: '图片规划',
-  image_gen: '图片生成',
-  image_review: '图片审核',
-  copywrite: '文案撰写',
-  audit: '合规审核',
-  final_review: '人工终审',
-  publish: '发布',
-}
-
-async function sendAgentMessage(conv: Conversation, text: string) {
-  const assistantMsg: ChatMessage = {
-    role: 'assistant',
-    content: '',
-    agentMeta: {
-      workflowId: null,
-      steps: [],
-      totalPercent: 0,
-      workflowStatus: 'running',
-    },
-  }
-  conv.messages.push(assistantMsg)
-
-  const token = localStorage.getItem('token')
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  try {
-    const response = await fetch('/api/v1/chat/agent', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        message: text,
-        mode: 'auto',
-        session_id: activeSessionId.value || undefined,
-      }),
-      signal: abortController?.signal,
-    })
-
-    if (!response.ok) {
-      const errText = await response.text()
-      throw new Error(errText || `HTTP ${response.status}`)
-    }
-
-    const data = await response.json()
-    if (data.session_id) activeSessionId.value = data.session_id
-
-    if (data.status === 'blocked') {
-      assistantMsg.content = data.message || '输入未通过安全校验'
-      assistantMsg.isError = true
-      assistantMsg.agentMeta!.workflowStatus = 'error'
-      return
-    }
-
-    if (data.status === 'chat') {
-      // 纯 chat：移除占位 assistant，走 /chat/completions 流式
-      conv.messages.pop()
-      await sendMessageReal(conv, Date.now())
-      return
-    }
-
-    if (data.workflow_id) {
-      assistantMsg.agentMeta!.workflowId = data.workflow_id
-      assistantMsg.agentMeta!.intent = data.intent
-      activeWorkflowId.value = data.workflow_id
-      await subscribeWorkflowSSE(data.workflow_id, assistantMsg)
-    }
-
-    if (data.status === 'agent_output' && data.output) {
-      const output = data.output
-      if (output.results && Array.isArray(output.results)) {
-        const count = output.results.length
-        const model = output._model_used || ''
-        const duration = output._duration_ms ? ` (${Math.round(output._duration_ms / 1000)}s)` : ''
-        let content = ''
-
-        if (output._message) {
-          content = output._message
-        } else if (output.patterns && output.insights) {
-          content = `分析完成，共 ${count} 条结果${model ? ` · ${model}` : ''}${duration}\n\n`
-          if (output.patterns.title_patterns?.length) {
-            content += `**标题钩子**: ${output.patterns.title_patterns.map((p: any) => p.type || p.template || '').filter(Boolean).join('、')}\n`
-          }
-          if (output.patterns.content_structures?.length) {
-            content += `**内容结构**: ${output.patterns.content_structures.map((s: any) => s.structure || s.description || '').filter(Boolean).join('、')}\n`
-          }
-          if (output.insights.recommendations?.length) {
-            content += `**选题方向**:\n`
-            for (const rec of output.insights.recommendations) {
-              content += `- ${rec.topic_direction || ''}${rec.title_template ? ` → ${rec.title_template}` : ''}\n`
-            }
-          }
-        } else {
-          content = `搜索完成，找到 ${count} 条结果${duration}`
-          const top5 = output.results.slice(0, 5)
-          for (const r of top5) {
-            content += `\n- **${r.title || '无标题'}** ❤️${r.likes || 0} 💬${r.comments || 0}`
-          }
-          if (count > 5) content += `\n…共 ${count} 条`
-        }
-        assistantMsg.content = content
-      } else if (output._error) {
-        assistantMsg.content = `执行失败: ${output._error}`
-        assistantMsg.isError = true
-      } else {
-        assistantMsg.content = JSON.stringify(output, null, 2)
-      }
-      assistantMsg.agentMeta!.workflowStatus = 'completed'
-    }
-  } catch (err: any) {
-    assistantMsg.content = `Agent 执行失败: ${err.message || '未知错误'}`
-    assistantMsg.isError = true
-    assistantMsg.agentMeta!.workflowStatus = 'error'
-  }
-}
-
-async function subscribeWorkflowSSE(workflowId: string, assistantMsg: ChatMessage) {
-  const controller = new AbortController()
-  workflowSseController.value = controller
-
-  const token = localStorage.getItem('token')
-  const headers: Record<string, string> = { Accept: 'text/event-stream' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  const response = await fetch(`/api/sse/workflow/${workflowId}`, {
-    headers,
-    signal: controller.signal,
-  })
-
-  if (!response.ok || !response.body) {
-    assistantMsg.agentMeta!.workflowStatus = 'error'
-    return
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const jsonStr = line.slice(6)
-        if (!jsonStr.trim()) continue
-        try {
-          handleWorkflowEvent(JSON.parse(jsonStr), assistantMsg)
-        } catch {
-          // 忽略心跳等非 JSON 行
-        }
-      }
-    }
-  } finally {
-    workflowSseController.value = null
-  }
-}
-
-function _recalcPercent(meta: AgentMeta) {
-  const steps = meta.steps || []
-  if (steps.length === 0) { meta.totalPercent = 0; return }
-  const done = steps.filter(s => s.status === 'completed').length
-  meta.totalPercent = Math.round((done / steps.length) * 100)
-}
-
-function handleWorkflowEvent(event: any, assistantMsg: ChatMessage) {
-  const eventType = event.type || event.event_type
-  const payload = event.payload || {}
-  const meta = assistantMsg.agentMeta
-  if (!meta) return
-
-  switch (eventType) {
-    case 'workflow_started': {
-      meta.workflowStatus = 'running'
-      meta.totalPercent = 0
-      break
-    }
-    case 'node_status_changed': {
-      const nodeKey = payload.node_id || ''
-      const status = payload.status || ''
-      const step = meta.steps?.find(s => s.nodeKey === nodeKey)
-      if (step) step.status = status
-      else if (nodeKey) {
-        meta.steps?.push({
-          nodeKey,
-          nodeLabel: AGENT_NODE_LABELS[nodeKey] || nodeKey,
-          status,
-          percent: status === 'completed' ? 100 : 0,
-        })
-      }
-      _recalcPercent(meta)
-      break
-    }
-    case 'node_completed': {
-      const nodeKey = payload.node_id || ''
-      const step = meta.steps?.find(s => s.nodeKey === nodeKey)
-      if (step) {
-        step.status = 'completed'
-        step.percent = 100
-      }
-      _recalcPercent(meta)
-      break
-    }
-    case 'workflow_completed': {
-      meta.workflowStatus = 'completed'
-      meta.totalPercent = 100
-      assistantMsg.content = '工作流完成'
-      break
-    }
-    case 'workflow_error':
-    case 'workflow_failed': {
-      meta.workflowStatus = 'error'
-      assistantMsg.content = payload.message || payload.error_message || '工作流出错'
-      assistantMsg.isError = true
-      break
-    }
-    case 'workflow_cancelled': {
-      meta.workflowStatus = 'error'
-      assistantMsg.content = '工作流已取消'
-      break
-    }
-    case 'review_required': {
-      const reviewNode = payload.review_node || payload.node_id || ''
-      meta.workflowStatus = 'awaiting_review'
-      const step = meta.steps?.find(s => s.nodeKey === reviewNode)
-      if (step) {
-        step.status = 'awaiting_review'
-      } else if (reviewNode) {
-        meta.steps?.push({
-          nodeKey: reviewNode,
-          nodeLabel: AGENT_NODE_LABELS[reviewNode] || reviewNode,
-          status: 'awaiting_review',
-          percent: 0,
-        })
-      }
-      break
-    }
-    // Recovery 事件 → RecoveryStatusCard
-    case 'recovery_attempt': {
-      meta.recoveryStatus = 'retrying'
-      meta.recoveryStrategy = payload.strategy
-      meta.recoveryAttempt = payload.attempt
-      break
-    }
-    case 'recovery_attempt_failed': {
-      meta.recoveryStatus = 'failed'
-      meta.recoveryMessage = payload.error
-      break
-    }
-    case 'recovery_success': {
-      meta.recoveryStatus = 'success'
-      break
-    }
-    case 'recovery_exhausted': {
-      meta.recoveryStatus = 'failed'
-      meta.recoveryMessage = payload.last_error
-      break
-    }
-    case 'circuit_open': {
-      meta.recoveryStatus = 'circuit_open'
-      break
-    }
-    case 'intent_parsed': {
-      meta.intent = {
-        action: payload.action,
-        params: payload.params,
-        confidence: payload.confidence,
-      }
-      break
-    }
-    case 'stream_chunk': {
-      assistantMsg.content += payload.chunk || ''
-      break
-    }
-    case 'tool_call_start': {
-      if (!assistantMsg.toolCalls) assistantMsg.toolCalls = []
-      assistantMsg.toolCalls.push({
-        id: `tc_${Date.now()}`,
-        type: 'exec',
-        name: payload.tool_name,
-        arguments: payload.inputs || {},
-      })
-      break
-    }
-    case 'tool_call_end': {
-      const last = assistantMsg.toolCalls?.[assistantMsg.toolCalls.length - 1]
-      if (last) last.result = payload.summary || JSON.stringify(payload)
-      break
+    if (stream.isStreaming.value) {
+      // Codex turn 生命周期：SSE 终态才是唯一结束信号。
+      // POST /api/v1/chat/agent 是非流式端点（loop 跑完才返回），返回时 SSE 播放器
+      // 可能仍在追赶积压 delta——立即收尾会表现为「回复没显示完就结束」。
+      // 改为宽限期收尾：等 SSE 真正关闭，最多再等 10s 兜底。
+      stream.notifyAgentLoopDone(10_000)
     }
   }
 }
 
-async function sendMessageReal(conv: Conversation, startTime: number) {
-  let assistantContent = ''
-  let thinkingContent = ''
+sendMessageRef.value = sendMessage
 
-  const token = localStorage.getItem('token')
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  const messagesPayload = conv.messages.map(m => ({ role: m.role, content: m.content }))
-  const response = await fetch('/api/v1/chat/completions', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      messages: messagesPayload,
-      model: currentModel.value,
-      stream: true,
-      thinking_depth: thinkingDepth.value,
-    }),
-    signal: abortController?.signal,
-  })
-
-  if (!response.ok) {
-    const errText = await response.text()
-    throw new Error(errText || `HTTP ${response.status}`)
-  }
-
-  const reader = response.body?.getReader()
-  const decoder = new TextDecoder()
-
-  if (reader) {
-    let assistantMsgPushed = false
-
-    const ensureAssistantMsg = () => {
-      if (!assistantMsgPushed) {
-        conv!.messages.push({
-          role: 'assistant',
-          content: '',
-          thinking: '',
-        })
-        assistantMsgPushed = true
-      }
-    }
-
-    let currentEvent = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim()
-          continue
-        }
-        if (!line.startsWith('data: ')) {
-          continue
-        }
-        const data = line.slice(6).trim()
-        if (data === '[DONE]') {
-          currentEvent = ''
-          continue
-        }
-
-        try {
-          // highlight 事件：用标记版本替换原文
-          if (currentEvent === 'highlight') {
-            if (highlightEnabled.value) {
-              const parsed = JSON.parse(data)
-              if (parsed.highlighted_text) {
-                const lastMsg = conv.messages[conv.messages.length - 1]
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.content = parsed.highlighted_text
-                }
-              }
-            }
-            currentEvent = ''
-            continue
-          }
-          currentEvent = ''
-
-          const parsed = JSON.parse(data)
-          const delta = parsed.choices?.[0]?.delta
-          const finishReason = parsed.choices?.[0]?.finish_reason
-          if (!delta) continue
-
-          if (delta.reasoning_content) {
-            thinkingContent += delta.reasoning_content
-            streamingThinking.value = true
-            ensureAssistantMsg()
-            const lastMsg = conv!.messages[conv!.messages.length - 1]
-            if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.thinking = thinkingContent
-            }
-            await scrollToBottom()
-          }
-
-          if (delta.content) {
-            assistantContent += delta.content
-            streamingHasContent.value = true
-            ensureAssistantMsg()
-            const lastMsg = conv!.messages[conv!.messages.length - 1]
-            if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = assistantContent
-              lastMsg.thinking = thinkingContent || undefined
-            }
-            await scrollToBottom()
-          }
-
-          // 后期待接入: tool_call 事件解析
-          // 当后端工具系统完成后，在此处解析 delta.tool_calls
-          // 并写入 msg.toolCalls / msg.planSteps / msg.diffFile 等
-
-          if (finishReason === 'stop') {
-            streamingThinking.value = false
-            typewriterChars.value = Infinity
-
-            const lastMsg = conv.messages[conv.messages.length - 1]
-            if (lastMsg && lastMsg.role === 'assistant') {
-              // Source-Backed Streaming 完成阶段：
-              // 用最终完整文本替换流式草稿，触发重渲染确保格式完整
-              const finalContent = lastMsg.content
-              lastMsg.content = ''
-              void nextTick(() => {
-                lastMsg.content = finalContent
-              })
-            }
-          }
-        } catch {
-          // skip unparseable lines
-        }
-      }
-    }
-  }
-
-  if (!assistantContent && !thinkingContent) {
-    conv.messages.push({
-      role: 'assistant',
-      content: '（无回复内容）',
-    })
-  } else {
-    const lastMsg = conv.messages[conv.messages.length - 1]
-    if (lastMsg && lastMsg.role === 'assistant') {
-      if (!thinkingContent) {
-        lastMsg.thinking = undefined
-      }
-    }
-  }
-
-  const latency = Date.now() - startTime
-  const userTurns = conv.messages.filter(m => m.role === 'user').length
-  lastStats.value = {
-    turns: userTurns,
-    tokens: assistantContent.length,
-    latency,
-  }
+function normalizeAgentMeta(raw: any): any {
+  return actionsNormalizeAgentMeta(raw)
 }
 
-onMounted(async () => {
-  newConversation()
-  await pluginStore.loadInstalledPlugins().catch(() => {})
-  crabVisible.value = true
-  console.log('[ChatView] crabVisible=true, isEnabled(crab-companion)=', pluginStore.isEnabled(CRAB_PLUGIN_ID))
+function mergeLoadedHistory(conv: Conversation, apiMsgs: any[]) {
+  const loaded = apiMsgs.map(m => ({
+    role: m.role as 'user' | 'assistant' | 'system',
+    content: m.content,
+    agentMeta: actionsNormalizeAgentMeta(m.agent_meta || undefined) as any,
+  })).filter(m => m.role !== 'system')
+  // 防御性降级：历史中残留的 awaiting_clarification 消息已不可能再交互，
+  // 降级为 completed 避免渲染出无法操作的澄清卡片
+  for (const m of loaded) {
+    if (m.role === 'assistant' && m.agentMeta?.workflowStatus === 'awaiting_clarification') {
+      m.agentMeta.workflowStatus = 'completed'
+    }
+  }
+  const existing = new Set(conv.messages.map(m => `${m.role}:${m.content}`))
+  const fresh = loaded.filter(m => !existing.has(`${m.role}:${m.content}`))
+  conv.messages = [
+    ...fresh,
+    ...conv.messages.filter(m => m.role !== 'system'),
+  ]
+}
+
+const notificationSSE = useNotificationSSE()
+const startNotificationSSE = notificationSSE.start
+const stopNotificationSSE = notificationSSE.stop
+
+const chatInit = useChatInit({
+  conversations,
+  activeConvId,
+  heroMode,
+  chatHistoryLoaded,
+  crabVisible,
+  sse,
+  fileStore,
+  pluginStore,
+  workspaceStore,
+  pickers,
+  addConversation,
+  mergeLoadedHistory,
+  startNotificationSSE,
+  onDocumentClick,
+  CRAB_PLUGIN_ID,
 })
 
-watch(activeConvId, () => {
+onMounted(() => chatInit.init())
+
+watch(activeConvId, async (newId) => {
+  if (!newId) return
+  const conv = conversations.value.find(c => c.id === newId)
+  if (conv && conv.messages.length === 0) {
+    heroMode.value = true
+    const sid = getSessionId(newId) || newId
+    sse.activeSessionId.value = sid
+    try {
+      const msgs = await chatSessionsApi.listMessages(sid)
+      mergeLoadedHistory(conv, msgs)
+      if (conv.messages.length > 0) heroMode.value = false
+    } catch {
+      // failed to load messages
+    }
+  } else {
+    heroMode.value = false
+  }
+  const sid = getSessionId(newId) || newId
+  sse.activeSessionId.value = sid
+  await fileStore.loadFilesForSession(sid)
   void scrollToBottom()
 })
 
-defineExpose({ newConversation, deleteConversation })
+watch(pickers.showAgentPicker, (val) => {
+  if (val) {
+    nextTick(() => {
+      agentSearchRef.value?.focus()
+    })
+  }
+})
+
+watch(pickers.showSkillPicker, (val) => {
+  if (val) {
+    nextTick(() => {
+      skillSearchRef.value?.focus()
+    })
+  }
+})
+
+const activeFile = computed(() => fileStore.activeFile)
+const creativePhase = ref<string>('idle')
+
+const chatAgent = useChatAgent({
+  activeWork,
+  activeFile,
+  workStore,
+  fileStore,
+  workspaceStore,
+  pickers,
+  sse,
+  stream,
+  showWorkDetail,
+  creativePhase,
+  modelSettings: props.modelSettings,
+  autoApproveEnabled,
+  sendMessageReal,
+  transitionTurn: (phase: string, label?: string) => _transitionTurn(phase as any, label || ''),
+})
+const { sendAgentMessage } = chatAgent
+
+watch(activeWork, async (newWork, oldWork) => {
+  if (newWork) {
+    showWorkDetail.value = true
+    ctxStore.setSidebarVisible(true)
+    ctxStore.linkWork(newWork.id)
+    if (newWork.id !== oldWork?.id) {
+      await switchToWorkConversation(newWork.id)
+    }
+  } else {
+    showWorkDetail.value = false
+  }
+})
+
+async function switchToWorkConversation(workId: string) {
+  const workConvs = getConversationsForWork(workId)
+  if (workConvs.length > 0) {
+    const latest = workConvs[0]
+    await switchToConversation(latest.id)
+    return
+  }
+  // 内存缓存未命中（如页面刷新后），向后端查询该作品已有的会话
+  try {
+    const sessions = await chatSessionsApi.listSessions(workId)
+    if (sessions.length > 0) {
+      for (const sess of sessions) {
+        const exists = conversations.value.find(c => c.id === sess.id)
+        if (!exists) {
+          conversations.value.push({
+            id: sess.id,
+            title: sess.title || '新会话',
+            messages: [],
+            createdAt: sess.created_at ? new Date(sess.created_at).getTime() : Date.now(),
+          })
+        }
+        addConversation(sess.id, sess.title || '新会话', sess.folder_id || 'chat-files', sess.id, sess.work_id)
+      }
+      conversations.value.sort((a, b) => b.createdAt - a.createdAt)
+      // 后端按 updated_at 倒序返回，sessions[0] 即最新会话
+      const latest = conversations.value.find(c => c.id === sessions[0].id)
+      if (latest) {
+        await switchToConversation(latest.id)
+        return
+      }
+    }
+  } catch {
+    // 后端查询失败时回退：新建会话
+  }
+  await newConversation(undefined, workId)
+}
+
+function _resetToInitial() {
+  resetToInitial()
+  showWorkDetail.value = false
+  ctxStore.setSidebarVisible(false)
+  ctxStore.clearAll()
+}
+
+defineExpose({ newConversation, deleteConversation, onWorkChatAction, resetToInitial: _resetToInitial, enterHeroMode, switchToConversation, switchToFolder, showWorkDetail, toggleWorkDetail })
 </script>
 
 <style>
@@ -1217,421 +1595,36 @@ defineExpose({ newConversation, deleteConversation })
   background: transparent;
   color: #c9d1d9;
 }
-</style>
-
-<style scoped>
+.dsh-chat.is-dark .dsh-md img {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.10);
+}
 .dsh-chat {
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-  --dsh-bg: #ffffff;
-  --dsh-surface: #ffffff;
-  --dsh-card: #ffffff;
-  --dsh-input-surface: #f7f7f8;
-  --dsh-border: rgba(0, 0, 0, 0.10);
-  --dsh-border-thin: rgba(0, 0, 0, 0.07);
-  --dsh-border-strong: rgba(0, 0, 0, 0.16);
-  --dsh-bubble: #f0f0f0;
-  --dsh-text-1: #1a1a1a;
-  --dsh-text-2: #555;
-  --dsh-text-3: #888;
-  --dsh-text-cap: #aaa;
-  --dsh-hover: rgba(0, 0, 0, 0.04);
-  --dsh-hover-solid: rgba(0, 0, 0, 0.06);
-  --dsh-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --dsh-scrollbar: rgba(0, 0, 0, 0.15);
-  --dsh-scrollbar-hover: rgba(0, 0, 0, 0.25);
-  --dsh-code-bg: #f4f4f5;
-  --dsh-think-bg: #f7f7f8;
-  --dsh-think-border: rgba(0, 0, 0, 0.08);
-  --dsh-accent: #4a90d9;
-  --dsh-green: #2da44e;
-  --dsh-red: #cf222e;
-
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  background: var(--dsh-bg);
-  color: var(--dsh-text-1);
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, 'PingFang SC', 'Microsoft YaHei', monospace;
-  font-size: 14px;
-  line-height: 22px;
-  position: relative;
+  background: #fff !important;
 }
-
 .dsh-chat.is-dark {
-  --dsh-bg: #111;
-  --dsh-surface: #0a0a0a;
-  --dsh-card: #161616;
-  --dsh-input-surface: #1a1a1a;
-  --dsh-border: rgba(255, 255, 255, 0.08);
-  --dsh-border-thin: rgba(255, 255, 255, 0.05);
-  --dsh-border-strong: rgba(255, 255, 255, 0.14);
-  --dsh-bubble: #222;
-  --dsh-text-1: #e0e0e0;
-  --dsh-text-2: #999;
-  --dsh-text-3: #666;
-  --dsh-text-cap: #555;
-  --dsh-hover: rgba(255, 255, 255, 0.04);
-  --dsh-hover-solid: rgba(255, 255, 255, 0.07);
-  --dsh-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --dsh-scrollbar: rgba(255, 255, 255, 0.1);
-  --dsh-scrollbar-hover: rgba(255, 255, 255, 0.18);
-  --dsh-code-bg: rgba(0, 0, 0, 0.3);
-  --dsh-think-bg: rgba(255, 255, 255, 0.03);
-  --dsh-think-border: rgba(255, 255, 255, 0.06);
-  --dsh-accent: #6cb6ff;
-  --dsh-green: #3fb950;
-  --dsh-red: #f85149;
+  background: #111 !important;
+}
+body.is-detail-resizing .dsh-chat-layout > .wdp {
+  transition: none !important;
+}
+body.is-detail-resizing .dsh-chat-layout > .dsh-chat {
+  transition: none !important;
+}
+body.is-detail-resizing * {
+  cursor: col-resize !important;
 }
 
-/* ============ 顶部 header ============ */
-.dsh-header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--dsh-border-thin);
-  position: relative;
-  z-index: 2;
+/* 统一 Markdown 输出层：所有 LLM 回复、用户消息和推理链都套用同一套尺寸与排版约束 */
+.dsh-md {
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
-/* 简化版header：与内容区融为一体 */
-.dsh-header-minimal {
-  padding: 8px 20px 0;
-  border-bottom: none;
-  background: transparent;
-}
-
-.dsh-header-cluster {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.dsh-header-trailing {
-  flex: none;
-}
-
-.dsh-header-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--dsh-border);
-  border-radius: 10px;
-  background: var(--dsh-card);
-  color: var(--dsh-text-1);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-
-.dsh-header-btn:hover {
-  background: var(--dsh-hover);
-  border-color: var(--dsh-border-strong);
-}
-
-.dsh-conv-switcher {
-  min-width: 0;
-}
-
-.dsh-conv-select {
-  height: 32px;
-  max-width: 220px;
-  padding: 0 24px 0 10px;
-  border: 1px solid var(--dsh-border);
-  border-radius: 10px;
-  background: var(--dsh-card);
-  color: var(--dsh-text-1);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  appearance: none;
-  outline: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  background-size: 12px 12px;
-  transition: border-color 0.12s ease;
-}
-
-.dsh-conv-select:hover {
-  border-color: var(--dsh-border-strong);
-}
-
-.dsh-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--dsh-border-thin);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsh-text-3);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.dsh-pill:hover {
-  background: var(--dsh-hover);
-  color: var(--dsh-text-2);
-}
-
-.dsh-pill-active {
-  background: var(--dsh-hover-solid);
-  border-color: var(--dsh-border-strong);
-  color: var(--dsh-text-1);
-}
-
-/* ============ 滚动主体 ============ */
-.dsh-scroll-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
-  position: relative;
-}
-
-.dsh-scroll-body::-webkit-scrollbar {
-  width: 8px;
-}
-
-.dsh-scroll-body::-webkit-scrollbar-thumb {
-  background: var(--dsh-scrollbar);
-  border-radius: 4px;
-}
-
-.dsh-scroll-body::-webkit-scrollbar-thumb:hover {
-  background: var(--dsh-scrollbar-hover);
-}
-
-.dsh-scroll-hidden {
-  display: none;
-}
-
-/* ============ Hero 阶段 ============ */
-.dsh-chat.is-hero {
-  justify-content: center;
-}
-
-.dsh-chat.is-hero .dsh-hero-zone {
-  flex: none;
-  padding-bottom: 18px;
-}
-.dsh-hero-zone {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.dsh-hero-glow {
-  display: none;
-}
-
-.dsh-hero-stack {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  text-align: center;
-  width: 100%;
-  max-width: 780px;
-  padding: 0 16px;
-}
-
-.dsh-hero-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dsh-hero-logo-wrap {
-  position: relative;
-  display: inline-flex;
-  overflow: hidden;
-  border-radius: 8px;
-  flex: none;
-}
-
-.dsh-hero-logo {
-  height: 64px;
-  width: auto;
-  object-fit: contain;
-  opacity: 0.92;
-  display: block;
-}
-
-.dsh-hero-logo-shimmer {
-  position: absolute;
-  top: -10%;
-  left: -120%;
-  width: 80%;
-  height: 120%;
-  background: linear-gradient(
-    105deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.3) 38%,
-    rgba(255, 255, 255, 0.5) 50%,
-    rgba(255, 255, 255, 0.3) 62%,
-    transparent 80%
-  );
-  animation: dsh-logo-shimmer 2s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes dsh-logo-shimmer {
-  0% { left: -100%; }
-  60% { left: 150%; }
-  100% { left: 150%; }
-}
-
-.dsh-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 4px;
-  border: 1px solid var(--dsh-border);
-  background: transparent;
-  color: var(--dsh-text-3);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 20px;
-  position: relative;
-  z-index: 2;
-}
-
-.dsh-hero-crab {
-  position: relative;
-  z-index: 1;
-  margin-left: -12px;
-  margin-top: 2px;
-  opacity: 0.85;
-  animation: dsh-crab-peek 3s ease-in-out infinite;
-  flex: none;
-}
-
-@keyframes dsh-crab-peek {
-  0%, 100% { transform: translateX(-4px) rotate(-2deg); }
-  50% { transform: translateX(2px) rotate(2deg); }
-}
-
-.dsh-hero-workspace-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-}
-
-.dsh-hero-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px 0 12px;
-  border: 1px solid var(--dsh-border-thin);
-  border-radius: 10px;
-  background: var(--dsh-card);
-  color: var(--dsh-text-2);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-
-.dsh-hero-chip:hover {
-  background: var(--dsh-hover);
-  border-color: var(--dsh-border-strong);
-  color: var(--dsh-text-1);
-}
-
-.dsh-hero-chip svg {
-  flex: none;
-  color: var(--dsh-text-3);
-}
-
-/* ============ 消息列 ============ */
-.dsh-column {
-  max-width: 748px;
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 16px 16px;
-  box-sizing: border-box;
-  position: relative;
-  z-index: 1;
-}
-
-.dsh-flow-item {
-  min-width: 0;
-}
-
-/* 思考中 shimmer 行 */
-.dsh-turn-status {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: auto;
-  padding: 0;
-  background: transparent;
-  border: none;
-}
-
-.dsh-turn-status-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--dsh-text-3);
-  animation: dsh-pulse-dot 1.1.5s ease-in-out infinite;
-}
-
-@keyframes dsh-pulse-dot {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-
-.dsh-turn-status-text {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--dsh-text-3);
-}
-
-.dsh-turn-status-clock {
-  font-size: 12px;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsh-text-cap);
-}
-
-.dsh-turn-status-hint {
-  font-size: 11px;
-  color: var(--dsh-text-cap);
-  opacity: 0.5;
-  margin-left: 4px;
-}
-
-/* ============ UserCell ══════════════════ */
 .dsh-user-row {
   display: flex;
   flex-direction: column;
@@ -1645,1069 +1638,494 @@ defineExpose({ newConversation, deleteConversation })
 
 .dsh-bubble {
   max-width: 100%;
-  background: #f3f4f6;
-  color: var(--dsh-text-1);
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 8px 12px;
+  background: #f0f0f0;
+  color: #1a1a1a;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 1.6;
   word-break: break-word;
   text-align: left;
 }
 
-.dsh-bubble :deep(p) {
+.dsh-bubble p {
   margin: 0;
 }
 
-.dsh-bubble :deep(p + p) {
+.dsh-bubble p + p {
   margin-top: 6px;
 }
-
-/* ============ AssistantCell ══════════════════ */
-.dsh-assistant-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.dsh-assistant-content :deep(p) {
-  margin: 0;
-}
-
-.dsh-assistant-content :deep(p + p) {
-  margin-top: 8px;
-}
-
-.dsh-assistant-content :deep(h1),
-.dsh-assistant-content :deep(h2),
-.dsh-assistant-content :deep(h3) {
+.dsh-md p {
+  margin: 0 0 16px 0;
+  line-height: 1.625;
+  color: #374151;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--dsh-text-1);
-  margin: 12px 0 4px;
-  line-height: 22px;
 }
-
-.dsh-assistant-content :deep(ul) {
-  margin: 4px 0;
+.dsh-md p:last-child {
+  margin-bottom: 0;
+}
+.dsh-md h1 {
+  margin: 24px 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+  color: #111827;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.dsh-md h2 {
+  margin: 24px 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+  color: #111827;
+}
+.dsh-md h3,
+.dsh-md h4 {
+  margin: 24px 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+  color: #111827;
+}
+.dsh-md ul,
+.dsh-md ol {
+  margin: 0 0 16px 0;
   padding-left: 0;
+}
+.dsh-md ul {
   list-style: none;
-}
-
-.dsh-assistant-content :deep(ul li) {
-  margin: 2px 0;
-  line-height: 20px;
-  padding-left: 14px;
-  position: relative;
-}
-
-.dsh-assistant-content :deep(ul li::before) {
-  content: '•';
-  position: absolute;
-  left: 0;
-  color: var(--dsh-text-3);
-}
-
-.dsh-assistant-content :deep(ol) {
-  margin: 4px 0;
   padding-left: 20px;
 }
-
-.dsh-assistant-content :deep(ol li) {
-  margin: 2px 0;
-  line-height: 20px;
-}
-
-.dsh-assistant-content :deep(blockquote) {
-  margin: 6px 0;
-  padding: 0 0 0 0;
-  border-left: none;
-  color: var(--dsh-text-2);
-  font-size: 13px;
-}
-
-.dsh-assistant-content :deep(blockquote p) {
-  margin: 0;
+.dsh-md ul li {
+  margin: 8px 0;
+  line-height: 1.625;
   padding-left: 14px;
   position: relative;
 }
-
-.dsh-assistant-content :deep(blockquote p::before) {
-  content: '│';
+.dsh-md ul li::before {
+  content: '›';
   position: absolute;
   left: 0;
-  color: var(--dsh-text-cap);
-  font-weight: var(--fw-light, 300);
-}
-
-.dsh-assistant-content :deep(table) {
-  border-collapse: collapse;
-  margin: 8px 0;
+  top: 1px;
+  color: var(--dsh-accent);
   font-size: 13px;
-  width: 100%;
-  overflow-x: auto;
+  font-weight: 700;
+  line-height: 18px;
+}
+.dsh-md ol {
+  padding-left: 20px;
+  list-style: decimal;
+}
+.dsh-md ol li {
+  margin: 8px 0;
+  line-height: 1.625;
+  padding-left: 4px;
+}
+.dsh-md img {
+  max-width: 100%;
+  height: auto;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 6px;
+  margin: 6px 0;
   display: block;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  padding: 4px;
 }
-
-.dsh-assistant-content :deep(th),
-.dsh-assistant-content :deep(td) {
-  border: none;
-  padding: 3px 10px;
-  text-align: left;
-  border-bottom: 1px solid var(--dsh-border-thin);
-}
-
-.dsh-assistant-content :deep(th) {
-  border-bottom: 2px solid var(--dsh-border-strong);
-  font-weight: 600;
-  color: var(--dsh-text-1);
-}
-
-.dsh-assistant-content :deep(td) {
-  color: var(--dsh-text-2);
-}
-
-.dsh-assistant-content :deep(tr:last-child td) {
-  border-bottom: none;
-}
-
-.dsh-assistant-content :deep(hr) {
-  border: none;
-  border-top: 1px solid var(--dsh-border-thin);
-  margin: 10px 0;
-}
-
-.dsh-assistant-content :deep(.dsh-link-text) {
-  color: var(--dsh-text-2);
-}
-
-.dsh-assistant-content :deep(a) {
-  color: var(--dsh-text-2);
-  text-decoration: none;
-  pointer-events: none;
-  cursor: default;
-}
-
-.dsh-assistant-content :deep(mark) {
-  background: none;
-  color: inherit;
-  padding: 3px 5px 2px 3px;
-  margin: 0 -2px;
-  border-radius: 3px 5px 4px 3px;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-  position: relative;
-}
-
-.dsh-assistant-content :deep(mark)::after {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -2px;
-  right: -2px;
-  bottom: -1px;
-  background: linear-gradient(
-    104deg,
-    transparent 0.4%,
-    rgba(250, 204, 21, 0.35) 2%,
-    rgba(250, 204, 21, 0.38) 40%,
-    rgba(250, 204, 21, 0.32) 60%,
-    rgba(250, 204, 21, 0.36) 98%,
-    transparent 99.6%
-  );
-  border-radius: inherit;
-  filter: url(#dsh-marker-filter);
-  z-index: -1;
-  pointer-events: none;
-}
-
-.dsh-chat.is-dark .dsh-assistant-content :deep(mark)::after {
-  background: linear-gradient(
-    104deg,
-    transparent 0.4%,
-    rgba(250, 204, 21, 0.22) 2%,
-    rgba(250, 204, 21, 0.25) 40%,
-    rgba(250, 204, 21, 0.20) 60%,
-    rgba(250, 204, 21, 0.23) 98%,
-    transparent 99.6%
-  );
-}
-
-/* ═══ Code Block: 语法高亮 + 语言标识 ═══ */
-.dsh-assistant-content :deep(.dsh-code-block) {
-  position: relative;
-  background: var(--dsh-code-bg);
-  border: 1px solid var(--dsh-border-thin);
-  border-radius: 8px;
-  padding: 12px 16px;
+.dsh-md table {
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+  width: 100%;
+  max-width: 100%;
+  display: block;
   overflow-x: auto;
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 8px 0;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+  border: none;
+  border-radius: 0;
 }
-
-.dsh-assistant-content :deep(.dsh-code-lang) {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  font-size: 10px;
+.dsh-md th,
+.dsh-md td {
+  border-bottom: 1px solid #f3f4f6;
+  padding: 10px;
+  text-align: left;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.dsh-md th {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
   font-weight: 500;
-  color: var(--dsh-text-cap);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  pointer-events: none;
+  color: #4b5563;
 }
-
-.dsh-assistant-content :deep(.dsh-code-block code) {
-  font-family: inherit;
-  font-size: inherit;
+.dsh-md td {
+  color: #374151;
+}
+.dsh-md a {
+  color: var(--dsh-accent);
+  text-decoration: none;
+}
+.dsh-md a:hover {
+  color: var(--dsh-text-1);
+  text-decoration: underline;
+}
+.dsh-md blockquote {
+  margin: 16px 0;
+  padding: 12px;
+  border-left: 4px solid #60a5fa;
+  border-radius: 0 8px 8px 0;
+  background: rgba(239, 246, 255, 0.3);
+  color: #4b5563;
+  font-size: 14px;
+}
+.dsh-md .dsh-kv-list {
+  margin: 16px 0;
+  padding: 0;
+  font-size: 14px;
+}
+.dsh-md .dsh-kv-list dt {
+  font-weight: 600;
+  color: #374151;
+  margin-top: 10px;
+  padding-left: 0;
+}
+.dsh-md .dsh-kv-list dt:first-child {
+  margin-top: 0;
+}
+.dsh-md .dsh-kv-list dd {
+  margin: 2px 0 0 0;
+  color: #6b7280;
+  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+.dsh-md .dsh-code-block {
+  margin: 16px 0;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #1e293b;
+  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+  box-shadow: none;
+}
+.dsh-md .dsh-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  padding: 0 10px 0 14px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+}
+.dsh-md .dsh-code-lang {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.dsh-md .dsh-code-actions {
+  display: inline-flex;
+  align-items: center;
+}
+.dsh-md .dsh-code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
   background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  opacity: 0.72;
+  padding: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.dsh-md .dsh-code-copy-btn:hover {
+  opacity: 1;
+  color: #475569;
+  background: rgba(0, 0, 0, 0.05);
+}
+.dsh-md .dsh-code-copy-btn .dsh-copy-icon-check {
+  display: none;
+}
+.dsh-md .dsh-code-copy-btn.dsh-copy-success {
+  opacity: 1;
+  color: #16a34a;
+}
+.dsh-md .dsh-code-copy-btn.dsh-copy-success .dsh-copy-icon-default {
+  display: none;
+}
+.dsh-md .dsh-code-copy-btn.dsh-copy-success .dsh-copy-icon-check {
+  display: block;
+}
+.dsh-md .dsh-code-body {
+  display: flex;
+  align-items: flex-start;
+  max-height: 480px;
+  overflow: auto;
+}
+.dsh-md .dsh-code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  min-width: 38px;
+  padding: 16px 10px 16px 14px;
+  text-align: right;
+  background: #f1f5f9;
+  border-right: 1px solid #e2e8f0;
+  color: #94a3b8;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+  user-select: none;
+}
+.dsh-md .dsh-code-body code.hljs {
+  display: block;
+  flex: 1 1 auto;
+  min-width: max-content;
+  margin: 0;
+  padding: 16px;
+  background: transparent;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+}
+.dsh-md .dsh-code-body .hljs-comment,
+.dsh-md .dsh-code-body .hljs-quote {
+  color: #6a737d;
+}
+.dsh-md .dsh-code-body .hljs-keyword,
+.dsh-md .dsh-code-body .hljs-selector-tag,
+.dsh-md .dsh-code-body .hljs-literal,
+.dsh-md .dsh-code-body .hljs-doctag,
+.dsh-md .dsh-code-body .hljs-title.section {
+  color: #d73a49;
+}
+.dsh-md .dsh-code-body .hljs-string,
+.dsh-md .dsh-code-body .hljs-regexp,
+.dsh-md .dsh-code-body .hljs-addition,
+.dsh-md .dsh-code-body .hljs-attr,
+.dsh-md .dsh-code-body .hljs-variable,
+.dsh-md .dsh-code-body .hljs-template-variable,
+.dsh-md .dsh-code-body .hljs-selector-attr,
+.dsh-md .dsh-code-body .hljs-selector-pseudo {
+  color: #032f62;
+}
+.dsh-md .dsh-code-body .hljs-number,
+.dsh-md .dsh-code-body .hljs-symbol,
+.dsh-md .dsh-code-body .hljs-bullet,
+.dsh-md .dsh-code-body .hljs-link,
+.dsh-md .dsh-code-body .hljs-meta,
+.dsh-md .dsh-code-body .hljs-selector-id,
+.dsh-md .dsh-code-body .hljs-title {
+  color: #005cc5;
+}
+.dsh-md .dsh-code-body .hljs-built_in,
+.dsh-md .dsh-code-body .hljs-type,
+.dsh-md .dsh-code-body .hljs-title.class_ {
+  color: #6f42c1;
+}
+.dsh-md .dsh-code-body .hljs-attribute,
+.dsh-md .dsh-code-body .hljs-name,
+.dsh-md .dsh-code-body .hljs-tag {
+  color: #22863a;
+}
+.dsh-md .dsh-code-body .hljs-section,
+.dsh-md .dsh-code-body .hljs-selector-class,
+.dsh-md .dsh-code-body .hljs-deletion {
+  color: #24292e;
+}
+.dsh-md .dsh-inline-code {
+  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+  font-size: 0.9em;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: #3b82f6;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.dsh-md .dsh-inline-code:hover {
+  color: #2563eb;
+}
+.dsh-md .dsh-card-html-wrap {
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+.dsh-md .dsh-card-iframe {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  border: none;
+  margin: 0;
   padding: 0;
 }
 
-
-
-/* ═══ ThinkingCell: Codex 风格思考过程渲染 ═══
-   流式阶段：spinner + 最后3行预览（dim + italic）
-   完成后：折叠为一行 dim 指示器 `思考过程 (N行)`
-   展开内容：dim + italic，视觉上从属于正式回复 */
-.dsh-thinking {
-  position: relative;
-  margin-top: 8px;
-  border-radius: 10px;
-  overflow: hidden;
+.dsh-cell-reasoning {
+  background: transparent;
+  border: none;
 }
-
-/* ─── 流式阶段：spinner + 预览 ─── */
-.dsh-thinking-streaming {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  margin: -10px -12px;
-  overflow: hidden;
-}
-
-/* 白光扫光层 - 仅流式输出时 */
-.dsh-thinking-streaming::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0) 20%,
-    rgba(255, 255, 255, 0.4) 45%,
-    rgba(255, 255, 255, 1) 50%,        /* 纯白核心 */
-    rgba(255, 255, 255, 0.4) 55%,
-    rgba(255, 255, 255, 0) 80%,
-    transparent 100%
-  );
-  pointer-events: none;
-  z-index: 10;
-  animation: dsh-shimmer-sweep 1s ease-in-out infinite;
-}
-
-.dsh-chat.is-dark .dsh-thinking-streaming::before {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0) 20%,
-    rgba(255, 255, 255, 0.25) 45%,
-    rgba(255, 255, 255, 0.8) 50%,       /* 暗色模式稍弱但仍是白光 */
-    rgba(255, 255, 255, 0.25) 55%,
-    rgba(255, 255, 255, 0) 80%,
-    transparent 100%
-  );
-}
-
-@keyframes dsh-shimmer-sweep {
-  0% { left: -60%; }
-  100% { left: 160%; }
-}
-
-.dsh-thinking-spinner {
-  position: relative;
-  z-index: 11;
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #9ca3af;
-  flex-shrink: 0;
-  margin-top: 7px;
-  opacity: 0.8;
-  box-shadow:
-    0 0 6px 2px rgba(156, 163, 175, 0.3),
-    0 0 12px 4px rgba(156, 163, 175, 0.15);
-  animation: dsh-spinner-pulse 1.2s ease-in-out infinite;
-}
-
-.dsh-chat.is-dark .dsh-thinking-spinner {
-  background: #6b7280;
-  box-shadow:
-    0 0 6px 2px rgba(107, 114, 128, 0.4),
-    0 0 12px 4px rgba(107, 114, 128, 0.2);
-}
-
-@keyframes dsh-spinner-pulse {
-  0%, 100% {
-    opacity: 0.6;
-    box-shadow:
-      0 0 4px 1px rgba(156, 163, 175, 0.2),
-      0 0 8px 2px rgba(156, 163, 175, 0.1);
-  }
-  50% {
-    opacity: 1;
-    box-shadow:
-      0 0 8px 3px rgba(156, 163, 175, 0.4),
-      0 0 16px 6px rgba(156, 163, 175, 0.2);
-  }
-}
-
-.dsh-thinking-preview {
-  position: relative;
-  z-index: 11;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--dsh-text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
-  opacity: 0.75;
-}
-
-
-
-/* ─── 完成后：折叠指示器（无扫光） ─── */
-.dsh-thinking-line {
+.dsh-cell-reasoning .dsh-cell-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 22px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.dsh-thinking-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--dsh-text-cap);
-  flex-shrink: 0;
-}
-
-.dsh-thinking-label {
-  font-size: 13px;
-  line-height: 1.6;
+  padding: 6px 0;
   color: var(--dsh-text-3);
-}
-
-.dsh-thinking-toggle-inline {
-  font-size: 11px;
-  color: var(--dsh-text-cap);
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.dsh-thinking-line:hover .dsh-thinking-toggle-inline {
-  opacity: 1;
-}
-
-.dsh-thinking-body {
-  padding: 6px 0 0 13px;
-}
-
-.dsh-slide-enter-active,
-.dsh-slide-leave-active {
-  transition: all 0.25s ease;
-  overflow: hidden;
-}
-
-.dsh-slide-enter-from,
-.dsh-slide-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.dsh-slide-enter-to,
-.dsh-slide-leave-from {
-  opacity: 1;
-  max-height: 2000px;
-}
-
-.dsh-thinking-raw {
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--dsh-text-3);
-  font-style: italic;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* ═══ PlanCell: 计划步骤 — 极简终端树形 ═══ */
-.dsh-plan {
-  margin: 4px 0;
-}
-
-.dsh-plan-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dsh-text-1);
-  margin-bottom: 4px;
-}
-
-.dsh-plan-explanation {
-  font-size: 13px;
-  color: var(--dsh-text-2);
-  margin-bottom: 6px;
-}
-
-.dsh-plan-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.dsh-plan-step {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.dsh-plan-connector {
-  color: var(--dsh-text-cap);
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
   font-size: 12px;
-  flex-shrink: 0;
-  width: 14px;
-  text-align: center;
+  letter-spacing: 0.02em;
+  cursor: default;
 }
-
-.dsh-plan-checkbox {
-  flex: none;
-  width: 14px;
-  text-align: center;
-  font-size: 12px;
-}
-
-.dsh-plan-step-completed .dsh-plan-checkbox {
-  color: #16a34a;
-}
-
-.dsh-plan-step-active .dsh-plan-checkbox {
-  color: var(--dsh-accent);
-  animation: dsh-plan-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes dsh-plan-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.dsh-plan-step-pending .dsh-plan-checkbox {
-  color: var(--dsh-text-cap);
-}
-
-.dsh-plan-step-completed .dsh-plan-step-text {
+.dsh-cell-reasoning .dsh-cell-icon {
   color: var(--dsh-text-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--dsh-border-strong);
+  flex-shrink: 0;
 }
-
-.dsh-plan-step-active .dsh-plan-step-text {
-  color: var(--dsh-text-1);
+.dsh-cell-reasoning .dsh-cell-label {
+  color: var(--dsh-text-3);
   font-weight: 500;
-}
-
-.dsh-plan-step-pending .dsh-plan-step-text {
-  color: var(--dsh-text-3);
-}
-
-/* ═══ ExecCell: Shell 命令 — 极简终端风格 ═══ */
-.dsh-exec-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 4px 0;
-}
-
-.dsh-exec-cell {
-  position: relative;
-}
-
-.dsh-exec-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 22px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.dsh-exec-prompt {
-  color: var(--dsh-text-3);
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.dsh-exec-cmd {
-  color: var(--dsh-text-2);
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  font-size: 12px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+.dsh-cell-reasoning .dsh-cell-streaming-preview {
   flex: 1;
   min-width: 0;
-}
-
-.dsh-exec-fold {
-  color: var(--dsh-text-3);
-  font-size: 11px;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  flex-shrink: 0;
-}
-
-.dsh-exec-duration {
-  color: var(--dsh-text-cap);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.dsh-exec-toggle {
-  font-size: 11px;
-  color: var(--dsh-text-cap);
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.dsh-exec-line:hover .dsh-exec-toggle {
-  opacity: 1;
-}
-
-.dsh-exec-body {
-  padding: 4px 0 4px 16px;
-}
-
-.dsh-exec-output {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--dsh-text-2);
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-/* ═══ DiffCell: 代码变更 — 极简终端风格 ═══ */
-.dsh-diff {
-  margin: 4px 0;
-}
-
-.dsh-diff-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 22px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.dsh-diff-file {
-  color: var(--dsh-text-2);
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  font-size: 12px;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
-}
-
-.dsh-diff-stats {
-  display: flex;
-  gap: 4px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  flex-shrink: 0;
-}
-
-.dsh-diff-add {
-  color: #16a34a;
-}
-
-.dsh-diff-del {
-  color: #dc2626;
-}
-
-.dsh-diff-toggle {
-  font-size: 11px;
-  color: var(--dsh-text-cap);
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.dsh-diff-line:hover .dsh-diff-toggle {
-  opacity: 1;
-}
-
-.dsh-diff-body {
-  padding: 4px 0 4px 16px;
-}
-
-.dsh-diff-output {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.dsh-diff-line-add {
-  color: #16a34a;
-}
-
-.dsh-diff-line-del {
-  color: #dc2626;
-}
-
-.dsh-diff-line-hunk {
+  white-space: nowrap;
   color: var(--dsh-text-3);
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.7;
+}
+.dsh-cell-reasoning .dsh-cell-streaming-preview--settled {
+  opacity: 0.55;
   font-style: italic;
 }
 
-/* ═══ 回复主体 + 流式 Bloom ═══
-   text-shadow 多层扩散 + 底部暖边
-   光从文字本身发出，底部有"正在书写"的暖光 */
-.dsh-assistant-content {
-  position: relative;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--dsh-text-1);
-  word-break: break-word;
-  overflow-wrap: anywhere;
+.dsh-cell-reasoning-streaming .dsh-cell-streaming-preview::after {
+  content: '▍';
+  margin-left: 2px;
+  color: var(--dsh-text-3);
+  animation: dsh-md-reasoning-cursor 1s step-end infinite;
+}
+
+.dsh-cell-reasoning-streaming .dsh-cell-icon {
+  animation: dsh-md-reasoning-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes dsh-md-reasoning-cursor {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes dsh-md-reasoning-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.dsh-copy-toast {
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  animation: dsh-copy-toast-in 0.18s ease-out;
+}
+
+@keyframes dsh-copy-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 /* ═══ 消息操作栏 ═══ */
 .dsh-msg-actions {
   display: flex;
-  gap: 4px;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 20px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
   opacity: 0;
-  transition: opacity 0.12s ease;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.dsh-flow-item:hover .dsh-msg-actions {
+.dsh-assistant-row:hover .dsh-msg-actions {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
-.dsh-msg-action {
-  padding: 4px 6px;
-  border: none;
-  background: none;
-  color: var(--dsh-text-cap);
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.dsh-msg-action:hover {
-  background: var(--dsh-hover-solid);
-  color: var(--dsh-text-2);
-}
-
-/* ═══ 错误重试 ═══ */
-.dsh-error-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.dsh-retry-btn {
+.dsh-msg-btn {
+  all: unset;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--dsh-border);
-  border-radius: 8px;
-  background: var(--dsh-card);
-  color: var(--dsh-text-2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.dsh-retry-btn:hover {
-  background: var(--dsh-hover);
-  border-color: var(--dsh-border-strong);
-  color: var(--dsh-text-1);
-}
-
-/* ═══ 回到底部浮动钮 ═══ */
-.dsh-to-bottom-slot {
-  position: sticky;
-  bottom: 16px;
-  z-index: 8;
-  height: 0;
-  display: flex;
-  justify-content: flex-end;
-  padding-right: max(16px, calc((100% - 748px) / 2));
-  pointer-events: none;
-}
-
-.dsh-to-bottom {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  margin-top: -34px;
-  padding: 0;
-  border: 1px solid var(--dsh-border);
-  border-radius: 999px;
-  color: var(--dsh-text-1);
-  background: var(--dsh-card);
-  box-shadow: var(--dsh-shadow);
+  color: #9ca3af;
   cursor: pointer;
-  pointer-events: auto;
-  transition: background 0.12s ease;
+  transition: color 0.15s ease;
 }
 
-.dsh-to-bottom:hover {
-  background: var(--dsh-hover);
+.dsh-msg-btn:hover {
+  color: #374151;
 }
 
-/* HERO 模式下的 composer */
-.dsh-composer-hero {
-  position: relative;
-  bottom: auto;
-  z-index: 1;
-  background: transparent;
-  padding: 0 16px 8px;
-  flex: none;
-  width: 100%;
-  animation: dsh-composer-hero-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+.dsh-msg-btn:active {
+  color: #111827;
 }
 
-.dsh-composer-hero .dsh-composer-card {
-  max-width: 680px;
-  margin: 0 auto;
+.dsh-msg-btn--liked {
+  color: #ef4444 !important;
 }
 
-/* DOCKED 模式下的 composer */
-.dsh-composer-seat:not(.dsh-composer-hero) {
-  position: sticky;
-  bottom: 0;
-  z-index: 7;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dsh-bg) 0%, transparent) 0px, var(--dsh-bg) 36px);
-  padding: 0 16px 8px;
-  animation: dsh-composer-dock-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+.dsh-like-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  margin-left: 2px;
+  line-height: 1;
 }
 
-@keyframes dsh-composer-dock-in {
-  from { transform: translateY(40vh); }
-  to { transform: translateY(0); }
+.dsh-msg-btn--disliked {
+  color: #6b7280 !important;
 }
 
-@keyframes dsh-composer-hero-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dsh-composer-hero,
-  .dsh-composer-seat:not(.dsh-composer-hero) {
-    animation: none;
-  }
-  .dsh-turn-status-dot {
-    animation: none;
-    opacity: 1;
-  }
-  .dsh-thinking-spinner {
-    animation: none;
-  }
-  .dsh-thinking-glow .dsh-thinking-preview {
-    animation: none;
-  }
-  .dsh-plan-step-active .dsh-plan-checkbox {
-    animation: none;
-  }
-}
-
-/* ═══ 浮动输入卡 ═══ */
-.dsh-composer-card {
-  box-sizing: border-box;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  max-width: 780px;
-  margin: 0 auto;
-  padding-top: 10px;
-  border: 1px solid var(--dsh-border-thin);
-  border-radius: 12px;
-  background: var(--dsh-input-surface);
-}
-
-.dsh-input {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--dsh-text-1);
-  font-size: 14px;
-  line-height: 22px;
-  font-family: inherit;
-  resize: none;
-  max-height: 336px;
-  padding: 4px 16px 0 16px;
-  overflow-y: auto;
-}
-
-.dsh-input::placeholder {
-  color: var(--dsh-text-cap);
-  user-select: none;
-}
-
-.dsh-input::-webkit-scrollbar {
-  width: 6px;
-}
-
-.dsh-input::-webkit-scrollbar-thumb {
-  background: var(--dsh-scrollbar);
-  border-radius: 3px;
-}
-
-.dsh-composer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 2px 8px 6px;
-}
-
-.dsh-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dsh-plus-wrap {
-  position: relative;
-}
-
-.dsh-add {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 999px;
-  background: var(--dsh-hover-solid);
-  color: var(--dsh-text-1);
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-.dsh-add:hover:not(:disabled) {
-  background: var(--dsh-border-strong);
-}
-
-.dsh-add:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.dsh-add-active {
-  background: rgba(250, 204, 21, 0.2);
-  color: #ca8a04;
-}
-
-.dsh-plus-menu {
+.dsh-theme-scene {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  min-width: 180px;
-  background: var(--dsh-bg);
-  border: 1px solid var(--dsh-border);
-  border-radius: 10px;
-  padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  z-index: 100;
-}
-
-.dsh-plus-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsh-text-1);
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.dsh-plus-item:hover {
-  background: var(--dsh-hover);
-}
-
-.dsh-plus-item-active {
-  background: rgba(250, 204, 21, 0.08);
-  color: var(--dsh-text-1);
-}
-
-.dsh-plus-item-active:hover {
-  background: rgba(250, 204, 21, 0.14);
-}
-
-.dsh-plus-check {
-  margin-left: auto;
-  color: #eab308;
-  font-size: 12px;
-}
-
-.dsh-slide-up-enter-active,
-.dsh-slide-up-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.dsh-slide-up-enter-from,
-.dsh-slide-up-leave-to {
-  opacity: 0;
-  transform: translateY(4px);
-}
-
-.dsh-trailing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dsh-model-pill {
-  padding: 4px 10px;
-  border: 1px solid var(--dsh-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dsh-text-3);
-  font-size: 11px;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  white-space: nowrap;
-}
-
-.dsh-model-pill:hover {
-  background: var(--dsh-hover);
-  color: var(--dsh-text-2);
-}
-
-.dsh-mode-toggle {
-  padding: 4px 12px;
-  border: 1px solid var(--dsh-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dsh-text-3);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  white-space: nowrap;
-}
-
-.dsh-mode-toggle:hover {
-  background: var(--dsh-hover);
-  color: var(--dsh-text-2);
-}
-
-.dsh-mode-active {
-  background: var(--dsh-text-1);
-  color: var(--dsh-bg);
-  border-color: var(--dsh-text-1);
-}
-
-.dsh-primary {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--dsh-border);
-  border-radius: 999px;
-  background: var(--dsh-text-1);
-  color: var(--dsh-bg);
-  cursor: pointer;
-  transition: opacity 0.12s ease;
-}
-
-.dsh-primary:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.dsh-primary:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.dsh-composer-footer {
-  display: flex;
-  justify-content: flex-end;
-  min-height: 16px;
-  padding: 0 4px;
-}
-
-.dsh-stats-line {
-  font-size: 11px;
-  color: var(--dsh-text-cap);
-  letter-spacing: 0.3px;
-}
-
-/* ═══ 响应式 ═══ */
-@media (max-width: 640px) {
-  .dsh-header {
-    padding: 8px 12px;
-  }
-  .dsh-column {
-    padding: 16px 12px 12px;
-  }
-  .dsh-header-btn span {
-    display: none;
-  }
-  .dsh-conv-select {
-    max-width: 140px;
-  }
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
 }
 </style>
+
+<style scoped src="./chat-view.css"></style>

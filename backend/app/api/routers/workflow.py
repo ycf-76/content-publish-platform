@@ -1,4 +1,4 @@
-﻿"""Workflow routers."""
+"""Workflow routers."""
 
 import logging
 import traceback
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.api.schemas.common import StandardResponse
+from pydantic import BaseModel
 
 _bearer_scheme_optional = HTTPBearer(auto_error=False)
 
@@ -61,7 +62,11 @@ async def start_workflow(
             creative_brief=request.creative_brief,
             model_settings=request.model_settings,
             reference=request.reference,
+            source=request.source,
         )
+    except HTTPException:
+        # 业务错误（如 400 PROFILE_NOT_FOUND）原样透传，禁止包装成 500
+        raise
     except Exception as e:
         logger.error(f"[start_workflow] FAILED: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"启动工作流失败: {e}")
@@ -77,6 +82,41 @@ async def start_workflow(
             created_at=workflow.created_at.isoformat() if workflow.created_at else "",
         )
     )
+
+
+@router.post("/{workflow_id}/retry")
+async def retry_workflow(
+    workflow_id: str,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Retry a failed workflow by re-starting it with the same parameters."""
+    service = get_workflow_service(db)
+
+    from app.db.models import Workflow
+    workflow = await db.get(Workflow, workflow_id)
+    if workflow is None or workflow.user_id != user_id:
+        raise HTTPException(status_code=404, detail="工作流不存在")
+
+    if workflow.status not in ("error", "suspended"):
+        raise HTTPException(status_code=400, detail="只能重试失败或暂停的工作流")
+
+    new_workflow = await service.start_workflow(
+        user_id=user_id,
+        account_id=workflow.account_id or "",
+        topic=workflow.topic,
+        search_keyword=workflow.search_keyword,
+        creative_brief=workflow.creative_brief or "",
+        model_settings=workflow.model_settings or {},
+        reference=workflow.reference or {},
+        source=workflow.source or "gui",
+    )
+
+    return {
+        "workflow_id": new_workflow.id,
+        "status": "workflow_started",
+        "original_workflow_id": workflow_id,
+    }
 
 
 @router.get("")
@@ -463,6 +503,18 @@ async def get_node_images(
         image_urls = node_output.get("image_urls", []) or []
         images_base64 = node_output.get("images_base64", []) or []
 
+        if not image_urls:
+            from app.services.image_store import get_workflow_image_urls, save_workflow_images
+            existing = get_workflow_image_urls(workflow_id)
+            if existing:
+                image_urls = existing
+            elif images_base64:
+                try:
+                    image_urls = save_workflow_images(workflow_id, images_base64)
+                    image_urls = [u for u in image_urls if u]
+                except Exception:
+                    pass
+
         return StandardResponse(data={
             "node_id": node_id,
             "image_urls": image_urls,
@@ -537,6 +589,22 @@ async def get_showcase(
 
             image_gen_output = node_outputs.get("image_gen", {}) or {}
             image_urls = image_gen_output.get("image_urls", []) or []
+            images_base64 = image_gen_output.get("images_base64", []) or []
+
+            if not image_urls:
+                from app.services.image_store import get_workflow_image_urls, save_workflow_images
+                existing = get_workflow_image_urls(w.id)
+                if existing:
+                    image_urls = existing
+                elif images_base64:
+                    try:
+                        image_urls = save_workflow_images(w.id, images_base64)
+                        image_urls = [u for u in image_urls if u]
+                        if image_urls:
+                            logger.info(f"[showcase] migrated {len(image_urls)} images for old workflow {w.id}")
+                    except Exception as migrate_err:
+                        logger.warning(f"[showcase] migrate images for {w.id} failed: {migrate_err}")
+
             if image_urls:
                 entry["image_urls"] = image_urls
                 entry["cover_image_url"] = image_urls[0] if image_urls else None
@@ -758,11 +826,16 @@ async def check_publish_result(
       - session_invalid: 会话过期
       - not_applicable: 非半自动模式（无需轮询）
     """
-    from app.tools.mcp.xhs_client import mcp_manager
+    try:
+        from app.tools.mcp.xhs_client import mcp_manager
+    except ImportError:
+        mcp_manager = None
     from app.services.sse_bus import sse_bus
     from app.db.models import NodeType, NodeStatus, WorkflowNode
     from sqlalchemy import select
 
+    if mcp_manager is None:
+        return {"status": "error", "message": "小红书MCP模块已移除"}
     result = await mcp_manager.check_publish_result()
     status = result.get("status", "pending")
 
@@ -837,11 +910,8 @@ async def render_template_image(
         raise HTTPException(status_code=400, detail="data is required")
 
     try:
-        if style.startswith("esther_"):
-            from app.services.esther_card_renderer import render_esther_template_to_base64
-            b64 = await render_esther_template_to_base64(template_type, data, style, size)
-        else:
-            b64 = await render_template_to_base64(template_type, data, style, size)
+        from app.services.card_renderer import render_template_to_base64
+        b64 = await render_template_to_base64(template_type, data, style, size)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -913,3 +983,69 @@ async def get_weekly_stats(
         "completed_rate": completed_rate,
         "active_count": active_count,
     })
+
+
+# ═══════════════════════════════════════════
+# 发布端点（前端 adapters 调用）
+# ═══════════════════════════════════════════
+
+class PublishRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+    images_base64: list[str] = []
+    account_id: str = ""
+
+
+class WeiboPublishRequest(BaseModel):
+    content: str = ""
+    images_base64: list[str] = []
+    account_id: str = ""
+
+
+class WechatMpPublishRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+    cover_image_base64: str = ""
+    account_id: str = ""
+
+
+@router.post("/publish")
+async def publish_to_xhs(
+    request: PublishRequest,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """小红书发布（前端 xiaohongshu adapter 调用）。"""
+    try:
+        try:
+            from app.tools.mcp.xhs_client import mcp_manager
+        except ImportError:
+            return {"status": "error", "message": "小红书MCP模块已移除"}
+        if not mcp_manager.is_logged_in:
+            return {"status": "error", "message": "小红书未登录，请先扫码登录"}
+        result = await mcp_manager.publish_note(
+            title=request.title,
+            content=request.content,
+            images_base64=request.images_base64,
+        )
+        return {"status": "success", "post_id": result.get("note_id", ""), "message": "发布成功"}
+    except Exception as e:
+        logger.warning(f"[publish/xhs] failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/publish/weibo")
+async def publish_to_weibo(
+    request: WeiboPublishRequest,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """微博发布（前端 weibo adapter 调用）。"""
+    return {"status": "error", "message": "微博发布暂未实现"}
+
+
+@router.post("/publish/wechat_mp")
+async def publish_to_wechat_mp(
+    request: WechatMpPublishRequest,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """微信公众号发布（前端 wechat-mp adapter 调用）。"""
+    return {"status": "error", "message": "微信公众号发布暂未实现"}

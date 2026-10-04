@@ -1,4 +1,7 @@
-from app.agents.nodes._base import NodeStatus, WorkflowState, _dlog, emit_node_event, logger
+from app.agents.nodes._base import (
+    NodeStatus, WorkflowState, _dlog, emit_node_event, logger,
+    build_belief_dict, build_loop_counter_update,
+)
 
 
 async def image_review_node(state: WorkflowState) -> dict:
@@ -30,14 +33,13 @@ async def image_review_node(state: WorkflowState) -> dict:
         f"(status={review_status})"
     )
 
-    # 读取 image_gen 输出（blueprint 模式下已含 images_base64）
+    # 读取 image_gen 输出
     image_gen_output = state.get("node_outputs", {}).get("image_gen", {})
-    images_base64 = image_gen_output.get("images_base64", [])
     image_urls = image_gen_output.get("image_urls", [])
     image_details = image_gen_output.get("image_details", [])
     image_prompts = image_gen_output.get("image_prompts", [])
     style = image_gen_output.get("style", "")
-    image_count = image_gen_output.get("image_count", len(images_base64))
+    image_count = image_gen_output.get("image_count", len(image_urls))
     plan_context = image_gen_output.get("plan_context", {}) or {}
     card_draft_summary = image_gen_output.get("card_draft_summary", {}) or {}
     validation = image_gen_output.get("validation", {}) or {}
@@ -47,11 +49,16 @@ async def image_review_node(state: WorkflowState) -> dict:
         f"is_rejected={is_rejected}, "
         f"is_blueprint_mode={image_gen_output.get('is_blueprint_mode', False)}, "
         f"image_count={image_count}, "
-        f"has_images_base64={bool(images_base64)}, "
+        f"image_urls={len(image_urls)}, "
         f"review_status={review_status}, "
         f"template={plan_context.get('template', '')}, "
         f"count_match={validation.get('count_match', 'N/A')}"
     )
+
+    # 读取用户提交的审核反馈（submit_review 接口通过 update_state 写入）
+    user_feedback = state.get("review_feedback", "")
+    if not user_feedback:
+        user_feedback = state.get("node_outputs", {}).get(node_id, {}).get("feedback", "")
 
     # 打包审核数据（供后续节点使用）
     review_data = {
@@ -61,15 +68,14 @@ async def image_review_node(state: WorkflowState) -> dict:
         "image_prompts": image_prompts,
         "prompt_source": image_gen_output.get("prompt_source", "blueprint"),
         "review_status": "rejected" if is_rejected else "passed",
-        "feedback": "",
-        "selected_indices": list(range(image_count)),  # 默认全部选中
+        "feedback": user_feedback,
+        "selected_indices": list(range(image_count)),
         "is_blueprint_mode": image_gen_output.get("is_blueprint_mode", False),
         "blueprint": image_gen_output.get("blueprint"),
-        "images_base64": images_base64,  # 透传渲染好的图片，供后续 publish 节点使用
-        "image_urls": image_urls,        # 本地文件 URL 列表，供前端展示
-        "plan_context": plan_context,     # 规划上下文：模板、强调色、页数、页类型
-        "card_draft_summary": card_draft_summary,  # 规划对比：原始 vs 最终、是否改过模板
-        "validation": validation,         # 校验结果：图片数量是否匹配
+        "image_urls": image_urls,
+        "plan_context": plan_context,
+        "card_draft_summary": card_draft_summary,
+        "validation": validation,
     }
 
     await emit_node_event(workflow_id, node_id, "node_completed", review_data)
@@ -89,4 +95,11 @@ async def image_review_node(state: WorkflowState) -> dict:
         "current_node": node_id,
         "node_statuses": {node_id: node_status},
         "node_outputs": {node_id: review_data},
+        "agent_beliefs": build_belief_dict(node_id, review_data),
+        "loop_counters": build_loop_counter_update(state, node_id),
     }
+
+
+def _build_belief(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，写入 state.agent_beliefs。"""
+    return build_belief_dict(node_id, output)

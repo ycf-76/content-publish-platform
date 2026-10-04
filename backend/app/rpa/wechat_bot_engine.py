@@ -317,16 +317,12 @@ class WeChatBotEngine:
         
         logger.info(f"[WeChatBotEngine] 📤 发送消息 → {to_wxid}: {content[:50]}...")
         
-        # 尝试从缓存获取 context_token
-        context_token = self._client.get_context_token(to_wxid)
+        context_token = await self._client.ensure_context_token(to_wxid) or ""
         
         if not context_token:
-            # 如果没有缓存的 token，尝试使用默认值或报错
-            logger.warning(f"[WeChatBotEngine] ⚠️ 未找到 {to_wxid} 的 context_token")
-            # 对于 filehelper 等特殊ID，可能需要特殊处理
-            # 这里先尝试发送，让底层API处理错误
+            logger.warning(f"[WeChatBotEngine] ⚠️ ensure_context_token 也无法获取 {to_wxid} 的 token，将尝试空 token 发送")
         
-        success = await self._client.send_text(to_wxid, context_token or "", content)
+        success = await self._client.send_text(to_wxid, context_token, content)
         
         if success:
             result = {"success": True, "message": "消息发送成功"}
@@ -900,6 +896,51 @@ class WeChatBotEngine:
             return success
         except Exception as e:
             logger.error(f"[WeChatBotEngine] ❌ 发送图片失败: {e}")
+            return False
+
+    async def send_file(self, to_user_id: str, context_token: str,
+                        file_data: bytes, file_ext: str = "mp4",
+                        file_name: str = "video.mp4") -> bool:
+        """
+        发送文件消息到微信用户 (视频/文档等)
+
+        Args:
+            to_user_id: 目标用户ID
+            context_token: 会话令牌
+            file_data: 文件二进制数据
+            file_ext: 文件扩展名
+            file_name: 文件名
+
+        Returns:
+            bool: 是否发送成功
+        """
+        if not self._client or not self._client._credentials:
+            logger.error("[WeChatBotEngine] 未登录，无法发送文件")
+            return False
+
+        try:
+            success = await self._client.send_file(
+                to_user_id, context_token, file_data, file_ext, file_name, show_typing=False
+            )
+            if success:
+                now = datetime.now().strftime('%H:%M:%S')
+                logger.info(f"[{now}] [WeChatBotEngine] ✅ 文件发送成功: to={to_user_id}, name={file_name}, size={len(file_data)}")
+
+                sent_msg = {
+                    "from_user_id": "bot",
+                    "to_user_id": to_user_id,
+                    "text": f"[文件 {file_name} {len(file_data)//1024}KB]",
+                    "timestamp": int(time.time()),
+                    "sent_at": datetime.now().isoformat(),
+                    "direction": "sent",
+                    "message_type": "file",
+                }
+                self._recent_messages.append(sent_msg)
+                if len(self._recent_messages) > self._MAX_RECENT_MESSAGES:
+                    self._recent_messages = self._recent_messages[-self._MAX_RECENT_MESSAGES:]
+            return success
+        except Exception as e:
+            logger.error(f"[WeChatBotEngine] ❌ 发送文件失败: {e}")
             return False
 
     def get_recent_messages(self, limit: int = 20) -> list:

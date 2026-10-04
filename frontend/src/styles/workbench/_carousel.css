@@ -401,11 +401,13 @@
   padding: 20px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.08) transparent;
 }
-.wf-groups-scroll::-webkit-scrollbar { width: auto; }
-.wf-groups-scroll::-webkit-scrollbar-track { background: initial; }
-.wf-groups-scroll::-webkit-scrollbar-thumb { background: initial; border-radius: initial; }
+.wf-groups-scroll::-webkit-scrollbar { width: 5px; }
+.wf-groups-scroll::-webkit-scrollbar-track { background: transparent; }
+.wf-groups-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 4px; }
+.wf-groups-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.15); }
 
 .wf-group {
   display: flex;
@@ -587,36 +589,19 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 6px;
+  width: 8px;
   height: 100%;
   cursor: col-resize;
   z-index: 20;
   background: transparent;
-  transition: background 0.15s ease;
 }
 .wf-canvas-resizer-line {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 40px;
-  border-radius: 2px;
-  background: #E5E7EB;
-  transition: background 0.15s ease, height 0.15s ease;
+  display: none !important;
 }
 .wf-canvas-resizer:hover {
-  background: rgba(59, 108, 246, 0.08);
-}
-.wf-canvas-resizer:hover .wf-canvas-resizer-line {
-  background: #3B6CF6;
-  height: 60px;
+  background: rgba(0, 0, 0, 0.04);
 }
 .wf-canvas-resizer:active,
 .wf-canvas.wf-resizing .wf-canvas-resizer {
-  background: rgba(59, 108, 246, 0.12);
-}
-.wf-canvas.wf-resizing .wf-canvas-resizer-line {
-  background: #3B6CF6;
-  height: 60px;
+  background: rgba(0, 0, 0, 0.04);
 }

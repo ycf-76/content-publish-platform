@@ -1,38 +1,7 @@
 <template>
-<main class="min-h-screen" style="position: relative;">
+<div class="min-h-screen" style="position: relative;">
 
-  <!-- ============ 右上角全局用户头像（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
-  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
-    <img
-      v-if="authStore.user.avatar_url"
-      :src="authStore.user.avatar_url"
-      alt="头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <img
-      v-else
-      src="/images/avatar/@man.svg"
-      alt="默认头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <transition name="mint-dropdown">
-      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
-        <div class="mint-dropdown-user-section">
-          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
-          <span class="mint-dropdown-user-method">{{ authStore.user.login_method === 'wechat' ? '微信登录' : '邮箱登录' }}</span>
-        </div>
-        <div class="mint-dropdown-body">
-          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
-            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
-          </button>
-        </div>
-      </div>
-    </transition>
-  </div>
-
-  <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
+  <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }" :style="{ '--left-sidebar-width': leftSidebarWidth + 'px' }">
 
     <!-- ============ LEFT COLUMN ============ -->
     <SidebarNav
@@ -43,7 +12,7 @@
       @go-eco="goToEco"
       @open-settings="openSettings"
       @new-workflow="goToWorkbench"
-      @new-chat="goToWorkbench"
+      @new-chat="goToChat"
     />
 
     <!-- 侧边栏拖拽条（Codex 风格）：拖动调整侧边栏宽度 -->
@@ -87,16 +56,9 @@
             :disabled="fetching"
           />
           <select class="tp-fetch-select" v-model="fetchForm.platform" :disabled="fetching">
-            <option value="xiaohongshu_web">小红书</option>
-            <option value="zhihu">知乎</option>
-            <option value="weibo">微博</option>
-            <option value="bilibili">B站</option>
-            <option value="douyin">抖音</option>
-            <option value="pinterest">Pinterest</option>
-            <option value="instagram">Instagram</option>
-            <option value="hackernews">HackerNews</option>
-            <option value="reddit">Reddit</option>
-            <option value="tavily">Tavily</option>
+            <option v-for="plat in platformTabs" :key="plat.value" :value="plat.value">
+              {{ plat.label }}{{ plat.is_hotboard ? ' 🔥' : '' }}
+            </option>
           </select>
           <div class="tp-stat-inline" v-if="stats.total > 0">
             <span class="tp-stat-inline-item"><Radar class="tp-stat-inline-icon" />{{ stats.monitor_count }}</span>
@@ -134,10 +96,11 @@
           v-for="plat in platformTabs"
           :key="plat.value"
           class="tp-tab"
-          :class="{ 'is-active': filters.platform === plat.value }"
+          :class="{ 'is-active': filters.platform === plat.value, 'is-hotboard': plat.is_hotboard }"
           @click="filters.platform = plat.value"
           type="button"
         >
+          <Flame v-if="plat.is_hotboard" :size="12" style="display:inline;vertical-align:middle;margin-right:2px" />
           {{ plat.label }}
           <span class="tp-tab-count" v-if="stats.platforms[plat.value]">{{ stats.platforms[plat.value] }}</span>
         </button>
@@ -199,11 +162,12 @@
             class="tp-sort-btn"
             @click="toggleSort"
             type="button"
-            :title="filters.sort === 'heat_desc' ? '当前按热度分降序，点击切换为最新' : '当前按最新排序，点击切换为热度'"
+            :title="filters.sort === 'heat_desc' ? '当前按热度排序，点击切换为个性化' : filters.sort === 'personalized' ? '当前按个性化排序，点击切换为最新' : '当前按最新排序，点击切换为热度'"
           >
             <ArrowDownWideNarrow v-if="filters.sort === 'heat_desc'" />
+            <Sparkles v-else-if="filters.sort === 'personalized'" />
             <Clock v-else />
-            <span>{{ filters.sort === 'heat_desc' ? '热度' : '最新' }}</span>
+            <span>{{ filters.sort === 'heat_desc' ? '热度' : filters.sort === 'personalized' ? '个性' : '最新' }}</span>
           </button>
         </div>
 
@@ -378,26 +342,40 @@
     </main>
 
     <SettingsView v-if="showSettings" @close="showSettings = false" />
+
+    <ConfirmDialog
+      :visible="confirmState.visible"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :confirm-text="confirmState.confirmText"
+      :cancel-text="confirmState.cancelText"
+      :danger="confirmState.danger"
+      @confirm="onConfirm"
+      @cancel="onCancel"
+    />
   </div>
-</main>
+</div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { createIcons, icons } from 'lucide'
 import {
   ArrowLeft, Layers, Star, Globe, DownloadCloud, Download, Loader2,
   Search, RefreshCw, Inbox, User, Users, ThumbsUp, Bookmark,
   MessageSquare, Tag, Play, Trash2, ExternalLink, ChevronLeft, ChevronRight,
-  Radar, Flame, Zap, ArrowDownWideNarrow, Clock, LogOut,
+  Radar, Flame, Zap, ArrowDownWideNarrow, Clock, Sparkles,
 } from 'lucide-vue-next'
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { topicPoolApi, type TopicPoolItem, type TopicPoolStats, type TopicPoolFetchResponse } from '@/api/topic_pool'
+import { useUIState } from '@/composables/useUIState'
+import { useConfirm } from '@/composables/useConfirm'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const authStore = useAuthStore()
+const { state: confirmState, confirm, onConfirm, onCancel } = useConfirm()
 
 const showSettings = ref(false)
 function openSettings() {
@@ -418,31 +396,27 @@ const emit = defineEmits<{
 const router = useRouter()
 
 // ===== 侧边栏状态 =====
-const SK_COLLAPSED = 'mint_sidebar_collapsed'
-const isSidebarCollapsed = ref(localStorage.getItem(SK_COLLAPSED) === '1')
+const { isSidebarCollapsed, toggleSidebar: toggleSidebarBase } = useUIState()
 
 function toggleSidebar() {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value
-  localStorage.setItem(SK_COLLAPSED, isSidebarCollapsed.value ? '1' : '0')
-  if (isSidebarCollapsed.value) {
-    const sidebar = document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null
-    const wrapper = document.querySelector('.tp-shell .mint-sidebar-wrapper') as HTMLElement | null
-    if (sidebar) sidebar.style.width = ''
-    if (wrapper) wrapper.style.width = ''
-  } else {
-    const savedW = localStorage.getItem(SK_SIDEBAR_WIDTH)
-    if (savedW) applySidebarWidth(Number(savedW))
-  }
+  toggleSidebarBase()
 }
 function handleNavClick(pageName: string) {
+  if (pageName === 'home') { router.push('/').catch(() => {}); return }
   if (pageName === 'topic-pool') return
-  router.push({ path: '/workbench', query: pageName === 'workflow' ? {} : { page: pageName } })
+  if (pageName === 'my-works') { router.push('/my-works').catch(() => {}); return }
+  if (pageName === 'portfolio') { router.push('/portfolio').catch(() => {}); return }
+  if (pageName === 'task-plans') { router.push('/task-plans').catch(() => {}); return }
+  router.push({ path: '/workbench', query: { page: pageName } })
 }
 function goToEco() {
   router.push('/eco')
 }
 function goToWorkbench() {
   router.push({ path: '/workbench', query: { page: 'workflow' } })
+}
+function goToChat() {
+  router.push({ path: '/workbench', query: { page: 'chat' } })
 }
 
 // ===== 状态 =====
@@ -455,26 +429,40 @@ const filters = reactive({
   keyword: '',
   favorited_only: false,
   auto_source: '' as '' | 'manual' | 'monitor',  // '' = 全部
-  sort: 'created_desc' as 'created_desc' | 'heat_desc',
+  sort: 'created_desc' as 'created_desc' | 'heat_desc' | 'personalized',
 })
 const page = ref(1)
 const size = ref(20)
 const total = ref(0)
 
-// 平台分类标签（用于分类切换栏）
-const platformTabs = [
-  { value: 'xiaohongshu_web', label: '小红书' },
-  { value: 'zhihu', label: '知乎' },
-  { value: 'weibo', label: '微博' },
-  { value: 'bilibili', label: 'B站' },
-  { value: 'douyin', label: '抖音' },
-  { value: 'pinterest', label: 'Pinterest' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'hackernews', label: 'HackerNews' },
-  { value: 'reddit', label: 'Reddit' },
-  { value: 'tavily', label: 'Tavily' },
-  { value: 'github', label: 'GitHub' },
-]
+// 平台分类标签（动态从 API 加载，含热点源 hb-* 平台）
+const platformTabs = ref<{ value: string; label: string; is_hotboard?: boolean }[]>([])
+
+async function loadPlatformTabs() {
+  try {
+    const resp = await topicPoolApi.getPlatforms()
+    const list = Array.isArray(resp) ? resp : []
+    platformTabs.value = list.map((p: any) => ({
+      value: p.name,
+      label: p.label,
+      is_hotboard: p.is_hotboard || false,
+    }))
+    if (platformTabs.value.length > 0 && !platformTabs.value.find(t => t.value === fetchForm.platform)) {
+      fetchForm.platform = platformTabs.value[0].value
+    }
+  } catch (e) {
+    console.error('加载平台列表失败:', e)
+    platformTabs.value = [
+      { value: 'xiaohongshu_web', label: '小红书' },
+      { value: 'zhihu', label: '知乎' },
+      { value: 'weibo', label: '微博' },
+      { value: 'bilibili', label: 'B站' },
+      { value: 'douyin', label: '抖音' },
+      { value: 'hackernews', label: 'HackerNews' },
+      { value: 'tavily', label: 'Tavily' },
+    ]
+  }
+}
 
 // ===== 抓取状态 =====
 const fetching = ref(false)
@@ -555,7 +543,12 @@ async function toggleFavorite(item: TopicPoolItem) {
 }
 
 async function deleteItem(item: TopicPoolItem) {
-  if (!window.confirm(`确认删除选题「${item.title}」？此操作不可撤销。`)) return
+  const ok = await confirm({
+    title: '删除选题',
+    message: `确认删除选题「${item.title}」？\n此操作不可撤销。`,
+    danger: true,
+  })
+  if (!ok) return
   try {
     await topicPoolApi.deleteItem(item.id)
     items.value = items.value.filter(i => i.id !== item.id)
@@ -634,7 +627,9 @@ async function doMonitorFetch() {
 
 // ===== 排序切换 =====
 function toggleSort() {
-  filters.sort = filters.sort === 'heat_desc' ? 'created_desc' : 'heat_desc'
+  const order: Array<'created_desc' | 'heat_desc' | 'personalized'> = ['created_desc', 'heat_desc', 'personalized']
+  const idx = order.indexOf(filters.sort)
+  filters.sort = order[(idx + 1) % order.length]
   if (page.value === 1) loadList()
   else page.value = 1
 }
@@ -719,17 +714,19 @@ function formatNum(n: number): string {
 function platformStyle(platform: string) {
   const p = (platform || '').toLowerCase()
   let color = '#64748B'
-  if (p === 'xiaohongshu' || p === 'xiaohongshu_web') color = '#FF2442'
-  else if (p === 'zhihu') color = '#0066FF'
-  else if (p === 'weibo') color = '#E6162D'
-  else if (p === 'bilibili') color = '#00A1D6'
-  else if (p === 'douyin') color = '#000000'
+  if (p === 'xiaohongshu' || p === 'xiaohongshu_web' || p === 'hb-rednote') color = '#FF2442'
+  else if (p === 'zhihu' || p === 'hb-zhihu') color = '#0066FF'
+  else if (p === 'weibo' || p === 'hb-weibo') color = '#E6162D'
+  else if (p === 'bilibili' || p === 'hb-bilibili') color = '#00A1D6'
+  else if (p === 'douyin' || p === 'hb-douyin') color = '#000000'
   else if (p === 'pinterest') color = '#E60023'
   else if (p === 'instagram') color = '#E4405F'
   else if (p === 'hackernews') color = '#FF6600'
   else if (p === 'reddit') color = '#FF4500'
   else if (p === 'tavily') color = '#FF2442'
   else if (p === 'github') color = '#24292E'
+  else if (p === 'hb-toutiao') color = '#F85959'
+  else if (p === 'hb-baidu') color = '#3388FF'
   const r = parseInt(color.slice(1, 3), 16)
   const g = parseInt(color.slice(3, 5), 16)
   const b = parseInt(color.slice(5, 7), 16)
@@ -785,69 +782,52 @@ function platformLabel(platform: string) {
   if (p === 'reddit') return 'Reddit'
   if (p === 'tavily') return 'Tavily'
   if (p === 'github') return 'GitHub'
+  if (p === 'hb-weibo') return '微博热搜'
+  if (p === 'hb-douyin') return '抖音热搜'
+  if (p === 'hb-zhihu') return '知乎热榜'
+  if (p === 'hb-toutiao') return '头条热搜'
+  if (p === 'hb-baidu') return '百度热搜'
+  if (p === 'hb-bilibili') return 'B站热搜'
+  if (p === 'hb-rednote') return '小红书热搜'
+  const tab = platformTabs.value.find(t => t.value === p)
+  if (tab) return tab.label
   return platform || '未知'
 }
 
 // ===== 初始化 =====
-// ===== 侧边栏拖拽调整宽度（Codex 风格）=====
-const SK_SIDEBAR_WIDTH = 'mint_sidebar_width'
-const sidebarResizing = ref(false)
-function applySidebarWidth(w: number) {
-  const sidebar = document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null
-  const wrapper = document.querySelector('.tp-shell .mint-sidebar-wrapper') as HTMLElement | null
-  if (sidebar) sidebar.style.width = w + 'px'
-  if (wrapper) wrapper.style.width = (w + 4) + 'px'
-}
-function startSidebarResize(e: MouseEvent) {
-  e.preventDefault()
-  sidebarResizing.value = true
-  const shell = document.querySelector('.tp-shell') as HTMLElement | null
-  if (shell) shell.classList.add('tp-resizing')
-  const startX = e.clientX
-  const sidebarEl = document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null
-  const startW = sidebarEl ? sidebarEl.offsetWidth : 192
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  const onMove = (ev: MouseEvent) => {
-    const delta = ev.clientX - startX
-    const newW = Math.min(600, Math.max(170, startW + delta))
-    applySidebarWidth(newW)
-  }
-  const onUp = () => {
-    sidebarResizing.value = false
-    if (shell) shell.classList.remove('tp-resizing')
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    const cur = (document.querySelector('.tp-shell .mint-sidebar') as HTMLElement | null)?.offsetWidth || 212
-    localStorage.setItem(SK_SIDEBAR_WIDTH, String(cur))
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
+// ===== 侧边栏拖拽调整宽度（统一 composable）=====
+import { useResizeHandle } from '@/composables/useResizeHandle'
+const {
+  width: leftSidebarWidth,
+  isResizing: sidebarResizing,
+  startResize: startSidebarResize,
+} = useResizeHandle({
+  direction: 'left',
+  minWidth: 170,
+  maxWidth: 520,
+  storageKey: 'mint-left-sidebar-width-v2',
+})
 
 const contentResizing = ref(false)
 function startContentResize(e: MouseEvent) {
   e.preventDefault()
   contentResizing.value = true
-  const shell = document.querySelector('.tp-shell') as HTMLElement | null
-  if (shell) shell.classList.add('tp-resizing')
   const startX = e.clientX
   const contentEl = document.querySelector('.tp-content-card-wrapper') as HTMLElement | null
   const startW = contentEl ? contentEl.offsetWidth : 600
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
+  document.body.classList.add('is-panel-resizing')
   const onMove = (ev: MouseEvent) => {
     const delta = ev.clientX - startX
-    const newW = Math.min(1200, Math.max(300, startW + delta))
+    const newW = Math.min(1100, Math.max(280, startW + delta))
     if (contentEl) contentEl.style.width = newW + 'px'
   }
   const onUp = () => {
     contentResizing.value = false
-    if (shell) shell.classList.remove('tp-resizing')
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
+    document.body.classList.remove('is-panel-resizing')
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
   }
@@ -856,12 +836,9 @@ function startContentResize(e: MouseEvent) {
 }
 
 onMounted(() => {
+  loadPlatformTabs()
   loadList()
   loadStats()
-  nextTick(() => createIcons({ icons }))
-  // 恢复保存的侧边栏宽度
-  const savedW = localStorage.getItem(SK_SIDEBAR_WIDTH)
-  if (savedW && !isSidebarCollapsed.value) applySidebarWidth(Number(savedW))
 })
 </script>
 
@@ -882,7 +859,6 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   height: 100%;
-  background: #F5F5F7;
   font-family: var(--ma-font-sans);
   color: var(--ma-text-primary);
   box-sizing: border-box;
@@ -1223,6 +1199,12 @@ min-width: 0;
 }
 .tp-tab.is-active .tp-tab-count {
   background: rgba(255, 255, 255, 0.25);
+}
+.tp-tab.is-hotboard {
+  border: 1px solid rgba(255, 100, 50, 0.25);
+}
+.tp-tab.is-hotboard:not(.is-active) {
+  color: #E85D3A;
 }
 
 /* ===== 筛选栏 ===== */
@@ -2014,46 +1996,61 @@ min-width: 0;
   grid-template-columns: 56px 1fr !important;
 }
 
-/* ===== 侧边栏拖拽条（Codex 风格）===== */
+/* ===== 侧边栏拖拽条 ===== */
 .tp-sidebar-resizer {
   position: relative;
-  width: 6px;
+  width: 0;
   cursor: col-resize;
   flex-shrink: 0;
   align-self: stretch;
   z-index: 5;
-  transition: background 0.15s ease;
+  overflow: visible;
+}
+.tp-sidebar-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 1;
 }
 .tp-sidebar-resizer-line {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 40px;
-  border-radius: 2px;
-  background: #E5E7EB;
-  transition: background 0.15s ease, height 0.15s ease;
+  display: none !important;
 }
 .tp-sidebar-resizer:hover {
-  background: rgba(59, 108, 246, 0.08);
-}
-.tp-sidebar-resizer:hover .tp-sidebar-resizer-line {
-  background: #3B6CF6;
-  height: 60px;
+  background: rgba(0, 0, 0, 0.04);
 }
 .tp-sidebar-resizer:active,
 .tp-shell.tp-resizing .tp-sidebar-resizer {
-  background: rgba(59, 108, 246, 0.12);
-}
-.tp-shell.tp-resizing .tp-sidebar-resizer-line {
-  background: #3B6CF6;
-  height: 60px;
+  background: rgba(0, 0, 0, 0.04);
 }
 /* 拖拽中禁用过渡，跟随鼠标实时变化 */
 .tp-shell.tp-resizing .mint-sidebar {
   transition: none !important;
 }
+.tp-content-resize-handle {
+  position: relative;
+  width: 0;
+  cursor: col-resize;
+  flex-shrink: 0;
+  align-self: stretch;
+  z-index: 5;
+  overflow: visible;
+}
+.tp-content-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 1;
+}
+.tp-content-resize-line {
+  display: none !important;
+}
+.tp-content-resize-handle:hover { background: rgba(0, 0, 0, 0.04); }
 
 /* ===== 右上角用户头像 ===== */
 .tp-global-user {

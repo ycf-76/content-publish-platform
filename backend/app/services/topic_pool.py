@@ -1,9 +1,14 @@
-﻿"""选题池服务（v6 合并：手动抓取 + 监控数据统一管理）。
+"""选题池服务（v6 合并：手动抓取 + 监控数据统一管理，v8 画像加权排序）。
 
 管理工作流搜索时后台抓取的其他平台内容 + 监控模块自动抓取评分的热点内容。
 两者都写入 topic_pool_items 表，通过 auto_source 字段区分：
 - auto_source="manual"：用户主动抓取（fetch_and_save）
 - auto_source="monitor"：监控定时抓取并评分入库（MonitorAgent）
+
+v8：查询时画像加权——全局池共享，个性化在读取层实现：
+- 传入 user_id 时，读取 UserProfile + agent_memory 做个性化 re-rank
+- 匹配用户领域的条目加权提升，禁忌话题压低
+- 搜索记忆关键词匹配的条目额外加分
 """
 
 from __future__ import annotations
@@ -14,10 +19,21 @@ from typing import Any
 from sqlalchemy import func, select, delete, case, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import TopicPoolItem
+from app.db.models import TopicPoolItem, UserProfile
 from app.db.session import is_sqlite, is_mysql
 
 logger = logging.getLogger(__name__)
+
+_DOMAIN_KEYWORD_MAP: dict[str, list[str]] = {
+    "tech": ["编程", "代码", "AI", "人工智能", "科技", "数码", "软件", "开发", "互联网", "产品", "算法", "机器学习", "大模型", "GPT", "Python", "前端", "后端", "云计算", "区块链"],
+    "beauty": ["护肤", "美妆", "化妆", "口红", "粉底", "防晒", "美白", "抗老", "精华", "面膜", "彩妆", "香水", "医美"],
+    "food": ["美食", "食谱", "做饭", "烘焙", "探店", "餐厅", "小吃", "甜品", "咖啡", "茶饮", "减脂餐", "便当"],
+    "travel": ["旅行", "旅游", "攻略", "打卡", "景点", "民宿", "签证", "自由行", "自驾", "出境游", "周边游"],
+    "education": ["学习", "考试", "考研", "留学", "英语", "教资", "公务员", "高考", "笔记", "课程", "培训"],
+    "parenting": ["育儿", "母婴", "宝宝", "孕期", "辅食", "早教", "幼儿园", "疫苗", "亲子"],
+    "fitness": ["健身", "运动", "减脂", "增肌", "瑜伽", "跑步", "饮食", "体态", "拉伸", "减重"],
+    "finance": ["理财", "投资", "基金", "股票", "保险", "存款", "房贷", "信用卡", "财务自由", "攒钱"],
+}
 
 
 class TopicPoolService:
@@ -38,8 +54,9 @@ class TopicPoolService:
         sort: str = "created_desc",
         page: int = 1,
         size: int = 20,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
-        """分页查询选题池条目（手动 + 监控数据统一查询）。
+        """分页查询选题池条目（手动 + 监控数据统一查询，v8 画像加权排序）。
 
         Args:
             platform: 平台筛选（空 = 全部）
@@ -48,9 +65,27 @@ class TopicPoolService:
             auto_source: 来源筛选 manual/monitor（空 = 全部）
             emotion/scene/visual: 三维标签筛选（监控数据才有）
             sort: created_desc（默认，最新在前）/ heat_desc（热度分降序）
+                  personalized（v8：画像加权排序，需 user_id）
             page: 页码（1-based）
             size: 每页条数
+            user_id: 当前用户 ID（v8：传入时启用画像加权排序）
         """
+        use_personalized = user_id is not None and sort == "personalized"
+        profile_data: dict | None = None
+        memory_keywords: list[str] = []
+
+        if user_id is not None:
+            profile_data = await self._load_user_profile(user_id)
+            try:
+                from app.services import agent_memory
+                memory_keywords = await agent_memory.get_search_keywords(user_id, limit=5)
+            except Exception as e:
+                logger.warning(f"list_items: get_search_keywords failed: {e}")
+
+            if use_personalized and profile_data is None and not memory_keywords:
+                use_personalized = False
+                sort = "heat_desc"
+
         stmt = select(TopicPoolItem)
 
         if platform:
@@ -94,13 +129,24 @@ class TopicPoolService:
         else:
             stmt = stmt.order_by(TopicPoolItem.created_at.desc())
 
-        # 分页
-        offset = (page - 1) * size
-        stmt = stmt.offset(offset).limit(size)
+        # 分页：个性化排序时多取一些候选做 re-rank
+        fetch_size = size * 3 if use_personalized else size
+        offset = (page - 1) * fetch_size if use_personalized else (page - 1) * size
+        stmt = stmt.offset(offset).limit(fetch_size)
         result = await self.db.execute(stmt)
         rows = result.scalars().all()
 
         items = [_to_dict(row) for row in rows]
+
+        # v8 画像加权 re-rank
+        if use_personalized and (profile_data or memory_keywords):
+            items = self._personalized_rerank(
+                items,
+                profile_data=profile_data,
+                memory_keywords=memory_keywords,
+            )
+            items = items[:size]
+
         return {"items": items, "total": total, "page": page, "size": size}
 
     async def toggle_favorite(self, item_id: str) -> dict[str, Any]:
@@ -445,15 +491,7 @@ class TopicPoolService:
         if not items:
             diag_error = ""
             if platform == "xiaohongshu":
-                try:
-                    from app.api.routers.mcp_bridge import bridge_state
-                    sub_count = len(bridge_state._subscribers)
-                    if sub_count == 0:
-                        diag_error = "桥接页面未在线（SSE无订阅）。请打开桥接页面并保持标签页在前台"
-                    else:
-                        diag_error = f"桥接SSE订阅数={sub_count}，但扩展60s内未响应。请确认：1)扩展已重新加载 2)浏览器已登录小红书 3)桥接页面在前台标签页"
-                except Exception as diag_e:
-                    diag_error = f"桥接诊断失败: {diag_e}"
+                diag_error = "小红书 MCP 已移除，请使用浏览器自动化方式搜索"
             return {
                 "saved_count": 0,
                 "skipped_duplicate": 0,
@@ -595,6 +633,98 @@ class TopicPoolService:
             "platform": platform,
             "items": saved_items,
         }
+
+    async def _load_user_profile(self, user_id: str) -> dict[str, Any] | None:
+        """加载用户画像，返回画像摘要 dict 或 None（画像不存在时）。
+
+        仅提取排序所需字段，不暴露敏感信息。
+        """
+        stmt = select(UserProfile).where(UserProfile.user_id == user_id)
+        result = await self.db.execute(stmt)
+        profile = result.scalar_one_or_none()
+        if profile is None:
+            return None
+        return {
+            "primary_domain": profile.primary_domain.value if profile.primary_domain else None,
+            "sub_domain": profile.sub_domain,
+            "taboo_topics": profile.taboo_topics or [],
+            "taboo_words": profile.taboo_words or [],
+            "target_audience": profile.target_audience,
+            "content_direction": profile.content_direction,
+        }
+
+    @staticmethod
+    def _personalized_rerank(
+        items: list[dict[str, Any]],
+        profile_data: dict[str, Any] | None = None,
+        memory_keywords: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """基于画像 + 搜索记忆对选题池条目做个性化 re-rank。
+
+        加权策略（叠加在原始 heat_score 上，不修改原值）：
+        1. 领域匹配加分：条目标题/摘要命中用户主领域关键词 → +15
+        2. 搜索记忆加分：条目匹配用户常搜关键词 → +10
+        3. 内容方向加分：条目命中 content_direction 关键词 → +8
+        4. 禁忌话题惩罚：条目标题命中 taboo_words → -30（基本排除）
+        5. 收藏加分：已收藏条目 → +5
+
+        最终按 personalized_score 降序排列。
+        """
+        if not items:
+            return items
+
+        profile_data = profile_data or {}
+        memory_keywords = memory_keywords or []
+
+        primary_domain = profile_data.get("primary_domain")
+        domain_kws = _DOMAIN_KEYWORD_MAP.get(primary_domain or "", [])
+        taboo_words = profile_data.get("taboo_words", [])
+        content_direction = profile_data.get("content_direction", "") or ""
+
+        for item in items:
+            bonus = 0.0
+            title = (item.get("title") or "").lower()
+            summary = (item.get("summary") or "").lower()
+            source_kw = (item.get("source_keyword") or "").lower()
+            text = f"{title} {summary} {source_kw}"
+
+            # 1. 领域匹配加分
+            if domain_kws:
+                domain_hits = sum(1 for kw in domain_kws if kw.lower() in text)
+                if domain_hits > 0:
+                    bonus += min(15.0, domain_hits * 5.0)
+
+            # 2. 搜索记忆加分
+            if memory_keywords:
+                memory_hits = sum(1 for kw in memory_keywords if kw.lower() in text)
+                if memory_hits > 0:
+                    bonus += min(10.0, memory_hits * 3.0)
+
+            # 3. 内容方向加分
+            if content_direction:
+                direction_parts = [p.strip().lower() for p in content_direction.split(",") if p.strip()]
+                dir_hits = sum(1 for p in direction_parts if p in text)
+                if dir_hits > 0:
+                    bonus += min(8.0, dir_hits * 4.0)
+
+            # 4. 禁忌话题惩罚
+            if taboo_words:
+                taboo_hits = sum(1 for tw in taboo_words if tw.lower() in text)
+                if taboo_hits > 0:
+                    bonus -= 30.0 * taboo_hits
+
+            # 5. 收藏加分
+            if item.get("is_favorited"):
+                bonus += 5.0
+
+            item["_personalized_score"] = float(item.get("heat_score", 0)) + bonus
+
+        items.sort(key=lambda x: x.get("_personalized_score", 0), reverse=True)
+
+        for item in items:
+            item.pop("_personalized_score", None)
+
+        return items
 
 
 def _to_dict(item: TopicPoolItem, include_full: bool = False) -> dict[str, Any]:

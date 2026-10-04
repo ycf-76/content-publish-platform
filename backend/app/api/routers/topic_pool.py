@@ -1,6 +1,6 @@
-"""选题池 API 路由（v6 合并：手动抓取 + 监控数据统一入口）。
+"""选题池 API 路由（v6 合并：手动抓取 + 监控数据统一入口，v8 画像加权排序）。
 
-GET    /api/topic-pool              列表（支持平台/关键词/收藏/来源/热度排序/维度筛选）
+GET    /api/topic-pool              列表（支持平台/关键词/收藏/来源/热度排序/维度筛选/个性化排序）
 GET    /api/topic-pool/stats         统计（总数/收藏/各平台/各情绪/平均热度分）
 POST   /api/topic-pool/fetch         主动抓取指定平台内容存入选题池
 POST   /api/topic-pool/monitor/fetch 手动触发一次监控抓取（MonitorAgent）
@@ -34,12 +34,17 @@ async def list_items(
     emotion: str | None = Query(None, description="情绪维度筛选"),
     scene: str | None = Query(None, description="场景维度筛选"),
     visual: str | None = Query(None, description="视觉形式筛选"),
-    sort: str = Query("created_desc", description="排序：created_desc/heat_desc"),
+    sort: str = Query("created_desc", description="排序：created_desc/heat_desc/personalized（画像加权）"),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     size: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ) -> StandardResponse[dict[str, Any]]:
-    """分页查询选题池条目（手动抓取 + 监控数据统一查询）。"""
+    """分页查询选题池条目（手动抓取 + 监控数据统一查询，v8 画像加权排序）。
+
+    sort=personalized 时启用画像加权：读取用户画像 + 搜索记忆做个性化 re-rank。
+    其他 sort 值行为不变，但 user_id 仍用于读取搜索记忆（推荐接口等）。
+    """
     service = TopicPoolService(db)
     data = await service.list_items(
         platform=platform,
@@ -52,6 +57,7 @@ async def list_items(
         sort=sort,
         page=page,
         size=size,
+        user_id=user_id,
     )
     return StandardResponse(data=data)
 
@@ -98,6 +104,7 @@ async def get_recommended(
             try:
                 data = await service.list_items(
                     keyword=kw, sort="heat_desc", page=1, size=per_kw,
+                    user_id=user_id,
                 )
                 for item in data.get("items", []):
                     item_id = item.get("id", "")
@@ -112,6 +119,7 @@ async def get_recommended(
         try:
             data = await service.list_items(
                 sort="heat_desc", page=1, size=limit,
+                user_id=user_id,
             )
             for item in data.get("items", []):
                 item_id = item.get("id", "")

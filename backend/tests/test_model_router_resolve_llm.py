@@ -1,5 +1,5 @@
 ﻿from app.adapters.llm_base import BaseLLM
-from app.core.sandbox.model_router import ModelRouter
+from app.adapters.model_router import ModelRouter
 
 
 class _FakeSettings:

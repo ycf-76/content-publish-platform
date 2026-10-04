@@ -1,7 +1,7 @@
 [project]
 name = "creator-platform-backend"
 version = "1.0.0"
-description = "多智能体小红书发布平台 - 后端服务"
+description = "多智能体内容运营创作平台 - 后端服务"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 

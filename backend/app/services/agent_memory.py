@@ -123,6 +123,18 @@ async def _list_memory(
     return list(result.all())
 
 
+async def _ensure_user_exists(db: AsyncSession, user_id: str) -> None:
+    """确保 user_id 在 users 表中存在，避免外键约束错误。"""
+    from app.db.models import User
+    from sqlalchemy import select
+    stmt = select(User.id).where(User.id == user_id)
+    result = await db.scalar(stmt)
+    if result is None:
+        user = User(id=user_id, nickname=f"user_{user_id[:8]}", email=f"{user_id[:8]}@memory.local")
+        db.add(user)
+        await db.commit()
+
+
 async def _save_memory(
     db: AsyncSession,
     user_id: str,
@@ -134,6 +146,7 @@ async def _save_memory(
     importance: float = 0.5,
 ) -> None:
     """upsert 单条记忆。"""
+    await _ensure_user_exists(db, user_id)
     memory = AgentMemory(
         user_id=user_id,
         memory_type=memory_type,
@@ -146,6 +159,34 @@ async def _save_memory(
     stmt = _upsert_stmt(memory)
     await db.execute(stmt)
     await db.commit()
+
+
+async def save_memory(
+    user_id: str,
+    memory_type: MemoryType,
+    memory_key: str,
+    memory_value: dict,
+    source: str = "workflow_inferred",
+    workflow_id: str | None = None,
+    importance: float = 0.5,
+) -> None:
+    """公开的 upsert 记忆接口（供 SelfAttributionEngine 等外部调用）。
+
+    封装 _save_memory()，自动管理 AsyncSession。
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            await _save_memory(
+                db, user_id, memory_type, memory_key,
+                memory_value, source, workflow_id=workflow_id,
+                importance=importance,
+            )
+        logger.info(
+            f"[memory] saved: user={user_id}, type={memory_type.value}, "
+            f"key={memory_key}, source={source}"
+        )
+    except Exception as e:
+        logger.warning(f"[memory] save_memory failed: {e}")
 
 
 # ============================================================================
@@ -175,6 +216,8 @@ async def load_for_workflow(user_id: str) -> dict[str, Any]:
         "avoided_topics": [],
         "recent_topics": [],
         "recent_copywrites": [],
+        "my_attribution": {},
+        "avoid_patterns": [],
     }
 
     try:
@@ -198,6 +241,20 @@ async def load_for_workflow(user_id: str) -> dict[str, Any]:
             avoid_topics = await _get_memory(db, user_id, MemoryType.PREFERENCES, "avoided_topics")
             if avoid_topics and avoid_topics.memory_value:
                 result["avoided_topics"] = list(avoid_topics.memory_value.get("items", []))
+
+            # 我的归因处方（SelfAttributionEngine 产出）
+            my_attr = await _get_memory(db, user_id, MemoryType.MY_ATTRIBUTION, "writing_prescription")
+            if my_attr and my_attr.memory_value:
+                result["my_attribution"] = my_attr.memory_value
+
+            # 我的避坑清单（我试过但效果差的模式）
+            my_avoid = await _get_memory(db, user_id, MemoryType.AVOID_PATTERNS, "avoid_list")
+            if my_avoid and my_avoid.memory_value:
+                mv = my_avoid.memory_value
+                if isinstance(mv, dict):
+                    result["avoid_patterns"] = list(mv.get("items", []))
+                elif isinstance(mv, list):
+                    result["avoid_patterns"] = list(mv)
 
             # 历史选题（按更新时间倒序，取前 N 条）
             topic_items = await _list_memory(db, user_id, MemoryType.TOPIC_HISTORY, _INJECT_TOPIC_LIMIT)
@@ -228,6 +285,50 @@ async def load_for_workflow(user_id: str) -> dict[str, Any]:
         logger.warning(f"[memory] load failed for user {user_id}: {e}")
 
     return result
+
+
+async def get_latest_copywrite(user_id: str, limit: int = 20) -> dict[str, Any] | None:
+    """取用户最近一条完整文案，供“发给我/发微信”等后续指令使用。
+
+    返回：
+        {title, topic, content, tags, workflow_id, created_at}
+        历史数据没有完整 content 时，content 为空，只有 content_summary。
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            copy_items = await _list_memory(
+                db, user_id, MemoryType.COPYWRITE_HISTORY, limit
+            )
+            for item in copy_items:
+                mv = item.memory_value or {}
+                if not mv.get("title"):
+                    continue
+                if str(mv.get("content", "")):
+                    return {
+                        "title": str(mv.get("title", "")),
+                        "topic": str(mv.get("topic", "")),
+                        "content": str(mv.get("content", "")),
+                        "content_summary": str(mv.get("content_summary", "")),
+                        "tags": mv.get("tags") or [],
+                        "workflow_id": str(item.workflow_id or mv.get("workflow_id") or ""),
+                        "created_at": str(mv.get("created_at", "")),
+                    }
+            for item in copy_items:
+                mv = item.memory_value or {}
+                if not mv.get("title"):
+                    continue
+                return {
+                    "title": str(mv.get("title", "")),
+                    "topic": str(mv.get("topic", "")),
+                    "content": str(mv.get("content", "")),
+                    "content_summary": str(mv.get("content_summary", "")),
+                    "tags": mv.get("tags") or [],
+                    "workflow_id": str(item.workflow_id or mv.get("workflow_id") or ""),
+                    "created_at": str(mv.get("created_at", "")),
+                }
+    except Exception as e:
+        logger.warning(f"[memory] get_latest_copywrite failed for user {user_id}: {e}")
+    return None
 
 
 async def record_workflow_result(
@@ -265,6 +366,10 @@ async def record_workflow_result(
             if copywrite_output and copywrite_output.get("title"):
                 title = str(copywrite_output.get("title", ""))[:100]
                 content = str(copywrite_output.get("content", ""))
+                tags = copywrite_output.get("tags") or []
+                if not isinstance(tags, list):
+                    tags = []
+                tags = [str(t) for t in tags[:8]]
                 # 摘要：取正文前 120 字（控制存储 + prompt token）
                 content_summary = content[:120] if content else ""
                 copy_key = f"copy_{abs(hash(title)) % 100000}"
@@ -273,6 +378,8 @@ async def record_workflow_result(
                     {
                         "title": title,
                         "topic": topic[:60],
+                        "content": content[:20000],
+                        "tags": tags,
                         "content_summary": content_summary,
                         "workflow_id": workflow_id,
                         "created_at": now,

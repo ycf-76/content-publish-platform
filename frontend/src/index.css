@@ -10,7 +10,7 @@
   --ma-accent: #EFF4FF; --ma-accent-foreground: #2342B8;
   --ma-border: #E5E7EB; --ma-text-primary: #111827;
   --ma-text-secondary: #6B7280; --ma-text-tertiary: #9CA3AF;
-  --ma-bg-base: #FFFFFF; --ma-bg-subtle: #F7F8FA;
+  --ma-bg-base: #F5F5F7; --ma-bg-subtle: #EEEEEF;
   --ma-border-default: #E5E7EB; --ma-border-strong: #E5E7EB;
   --ma-status-pending: #9CA3AF; --ma-status-running: #FF2442;
   --ma-status-passed: #10B981; --ma-status-error: #EF4444; --ma-status-awaiting: #F59E0B;

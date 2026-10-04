@@ -1,4 +1,4 @@
-﻿"""Executor subpackage."""
+"""Executor subpackage."""
 
 from app.engine.harness.executor.base import ExecutorBase
 from app.engine.harness.executor.loop import LoopExecutor

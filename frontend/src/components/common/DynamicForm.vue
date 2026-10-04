@@ -2,30 +2,30 @@
   <div class="dynamic-form">
     <!-- 无 Schema 时显示提示 -->
     <div v-if="!schema || Object.keys(schema).length === 0" class="no-schema">
-      <i data-lucide="file-json"></i>
+      <FileJson :size="20" />
       <p>此节点无需额外配置</p>
     </div>
 
     <!-- 有 Schema 时动态渲染 -->
     <template v-else>
       <!-- 遍历 properties -->
-      <div 
-        v-for="(propSchema, propName, idx) in schema.properties" 
+      <div
+        v-for="(propSchema, propName, idx) in schema.properties"
         :key="idx"
         class="form-group"
       >
         <!-- 字段标签 -->
         <label class="form-label">
           {{ propSchema.title || formatLabel(propName) }}
-          
+
           <span v-if="isRequired(propName)" class="required-mark">*</span>
-          
-          <span 
-            v-if="propSchema.description" 
+
+          <span
+            v-if="propSchema.description"
             class="field-desc"
             :title="propSchema.description"
           >
-            <i data-lucide="info"></i>
+            <Info :size="12" />
           </span>
         </label>
 
@@ -104,15 +104,15 @@
               @click="removeArrayItem(propName, index)"
               title="删除此项"
             >
-              <i data-lucide="x"></i>
+              <X :size="14" />
             </button>
           </div>
-          
-          <button 
+
+          <button
             class="add-item-btn"
             @click="addArrayItem(propName)"
           >
-            <i data-lucide="plus"></i>
+            <Plus :size="14" />
             添加项
           </button>
         </div>
@@ -144,6 +144,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { FileJson, Info, X, Plus } from 'lucide-vue-next'
 
 // Props
 const props = defineProps<{

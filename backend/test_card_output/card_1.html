@@ -1,0 +1,104 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1080,initial-scale=1">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  .xhs-card {
+    width: 1080px; height: 1440px; overflow: hidden; position: relative;
+    display: flex; flex-direction: column;
+    padding: 96px 80px 80px 80px;
+    background: #fafaf8;
+    font-family: 'Helvetica Neue', 'PingFang SC', 'Noto Sans SC', sans-serif;
+    color: #0a0a0a;
+  }
+  .method-head {
+    display: flex; align-items: baseline; gap: 28px;
+  }
+  .method-num {
+    font-size: 96px; font-weight: 200; color: #002FA7;
+    line-height: 1; letter-spacing: -0.03em;
+  }
+  .method-tag {
+    font-size: 24px; font-weight: 400; letter-spacing: 0.18em;
+    color: #737373; text-transform: uppercase;
+  }
+  .method-title {
+    font-size: 72px; font-weight: 300; line-height: 1.15;
+    margin-top: 40px; letter-spacing: -0.01em;
+  }
+  .method-title .hl { border-bottom: 6px solid #002FA7; padding-bottom: 4px; }
+  .divider { height: 1px; background: #d4d4d2; margin: 56px 0; }
+  .lede {
+    font-size: 32px; font-weight: 400; line-height: 1.75; color: #262626;
+  }
+  .lede strong { font-weight: 600; color: #0a0a0a; }
+  .steps { display: flex; flex-direction: column; gap: 32px; margin-top: 56px; }
+  .step {
+    display: flex; gap: 28px; align-items: flex-start;
+  }
+  .step-marker {
+    flex: 0 0 40px; height: 40px; border: 1.5px solid #002FA7;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: #002FA7; font-variant-numeric: tabular-nums;
+  }
+  .step-body { flex: 1; }
+  .step-h { font-size: 34px; font-weight: 500; line-height: 1.4; }
+  .step-d { font-size: 26px; font-weight: 400; color: #737373; line-height: 1.6; margin-top: 8px; }
+  .spacer { flex: 1; }
+  .info-bar {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-top: 1px solid #d4d4d2; padding-top: 28px;
+  }
+  .info-left { font-size: 24px; color: #737373; }
+  .info-right { font-size: 24px; color: #737373; font-variant-numeric: tabular-nums; }
+  .watermark {
+    position: absolute; bottom: 32px; right: 80px;
+    font-size: 20px; color: #b0b0ae; letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+<div class="xhs-card">
+  <div class="method-head">
+    <div class="method-num">01</div>
+    <div class="method-tag">Method · 方法</div>
+  </div>
+  <div class="method-title">先给大脑<br><span class="hl">一个明确的靶子</span></div>
+  <div class="divider"></div>
+  <div class="lede">
+    注意力涣散，往往不是因为你不想专注，而是<strong>任务本身太模糊</strong>。大脑面对「写报告」会本能逃避，面对「写第一段 200 字」才会启动。
+  </div>
+  <div class="steps">
+    <div class="step">
+      <div class="step-marker">1</div>
+      <div class="step-body">
+        <div class="step-h">把任务拆到 30 分钟内可完成</div>
+        <div class="step-d">颗粒度越细，启动阻力越小</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-marker">2</div>
+      <div class="step-body">
+        <div class="step-h">用动词开头写下来</div>
+        <div class="step-d">「整理」不如「删掉 3 个旧文件」</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-marker">3</div>
+      <div class="step-body">
+        <div class="step-h">一次只留一个目标在桌面</div>
+        <div class="step-d">其余全部收进抽屉或关掉标签页</div>
+      </div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="info-bar">
+    <div class="info-left">方法一 · 目标具体化</div>
+    <div class="info-right">02 / 07</div>
+  </div>
+  <div class="watermark">@专注力笔记</div>
+</div>
+</body>
+</html>

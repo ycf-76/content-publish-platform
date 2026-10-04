@@ -116,8 +116,15 @@ class WeChatILinkClient:
     async def _get_session(self) -> aiohttp.ClientSession:
         """获取或创建HTTP会话"""
         if self._session is None or self._session.closed:
+            import aiohttp.resolver
+            resolver = aiohttp.resolver.DefaultResolver()
             self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=60)
+                timeout=aiohttp.ClientTimeout(total=60, connect=15),
+                connector=aiohttp.TCPConnector(
+                    resolver=resolver,
+                    ttl_dns_cache=300,
+                    enable_cleanup_closed=True,
+                ),
             )
         return self._session
     
@@ -174,25 +181,37 @@ class WeChatILinkClient:
     async def _api_post(self, path: str, body: Dict[str, Any], 
                         token: Optional[str] = None,
                         base_url: Optional[str] = None) -> Dict[str, Any]:
-        """POST请求封装"""
+        """POST请求封装（含网络重试）"""
         session = await self._get_session()
         url = f"{base_url or BASE_URL}/{path}"
         headers = self._make_headers(token)
         
-        try:
-            async with session.post(url, json=body, headers=headers) as response:
-                text = await response.text()
-                logger.debug(f"[POST {path}] HTTP {response.status} → {text[:200]}")
-                
-                try:
-                    return json.loads(text)
-                except json.JSONDecodeError:
-                    logger.error(f"[POST {path}] JSON解析失败: {text[:200]}")
-                    return {}
+        last_err = None
+        for attempt in range(3):
+            try:
+                async with session.post(url, json=body, headers=headers) as response:
+                    text = await response.text()
+                    logger.debug(f"[POST {path}] HTTP {response.status} → {text[:200]}")
                     
-        except Exception as e:
-            logger.error(f"[POST {path}] 请求失败: {e}")
-            raise
+                    try:
+                        return json.loads(text)
+                    except json.JSONDecodeError:
+                        logger.error(f"[POST {path}] JSON解析失败: {text[:200]}")
+                        return {}
+                        
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    wait = 2 ** attempt
+                    logger.warning(f"[POST {path}] 请求失败(重试{attempt+1}/3): {e}，{wait}秒后重试...")
+                    await asyncio.sleep(wait)
+                    if self._session and not self._session.closed:
+                        await self._session.close()
+                    self._session = None
+                    session = await self._get_session()
+                else:
+                    logger.error(f"[POST {path}] 请求失败(已重试3次): {e}")
+                    raise
     
     # ==================== 登录相关 API ====================
     
@@ -411,6 +430,7 @@ class WeChatILinkClient:
                     
                     # 更新断点续传缓冲区
                     self._get_updates_buf = result.get("get_updates_buf", "") or self._get_updates_buf
+                    self._poll_retry_delay = 5
                     
                     # 解析消息列表
                     msgs = result.get("msgs", [])
@@ -456,8 +476,13 @@ class WeChatILinkClient:
                     logger.info("[WeChatILinkClient] 消息监听被取消")
                     break
                 except Exception as e:
-                    logger.error(f"[WeChatILinkClient] 消息轮询出错: {e}，5秒后重试...")
-                    await asyncio.sleep(5)
+                    _poll_retry_delay = min(getattr(self, '_poll_retry_delay', 5) * 1.5, 120)
+                    self._poll_retry_delay = _poll_retry_delay
+                    if _poll_retry_delay <= 10:
+                        logger.error(f"[WeChatILinkClient] 消息轮询出错: {e}，{_poll_retry_delay:.0f}秒后重试...")
+                    else:
+                        logger.warning(f"[WeChatILinkClient] 消息轮询出错（网络不通?），{_poll_retry_delay:.0f}秒后重试: {e}")
+                    await asyncio.sleep(_poll_retry_delay)
                     
         finally:
             self._running = False
@@ -487,8 +512,15 @@ class WeChatILinkClient:
         if not self._credentials or not self._credentials.is_valid:
             raise Exception("未登录，无法发送消息")
         
-        if not to_user_id or not context_token:
-            logger.error(f"[WeChatILinkClient] 发送失败: 参数缺失 to_user_id={to_user_id}, context_token={context_token}")
+        if not to_user_id:
+            logger.error(f"[WeChatILinkClient] 发送失败: to_user_id 为空")
+            return False
+
+        if not context_token:
+            context_token = await self.ensure_context_token(to_user_id) or ""
+
+        if not context_token:
+            logger.error(f"[WeChatILinkClient] 发送失败: 无法获取 context_token, to_user_id={to_user_id}")
             return False
         
         logger.info(f"[WeChatILinkClient] 📤 发送消息给 {to_user_id}: {text[:50]}...")
@@ -630,8 +662,15 @@ class WeChatILinkClient:
         if not self._credentials or not self._credentials.is_valid:
             raise Exception("未登录，无法发送图片")
         
-        if not to_user_id or not context_token:
-            logger.error(f"[WeChatILinkClient] 发送图片失败: 参数缺失")
+        if not to_user_id:
+            logger.error(f"[WeChatILinkClient] 发送图片失败: to_user_id 为空")
+            return False
+
+        if not context_token:
+            context_token = await self.ensure_context_token(to_user_id) or ""
+
+        if not context_token:
+            logger.error(f"[WeChatILinkClient] 发送图片失败: 无法获取 context_token, to_user_id={to_user_id}")
             return False
 
         try:
@@ -800,6 +839,191 @@ class WeChatILinkClient:
             if show_typing:
                 await self.show_typing(to_user_id, False)
 
+    async def send_file(self, to_user_id: str, context_token: str,
+                        file_data: bytes, file_ext: str = "mp4",
+                        file_name: str = "video.mp4",
+                        show_typing: bool = True) -> bool:
+        """
+        发送文件消息 (视频/文档等, iLink 2.x CDN + AES-128-ECB 协议)
+
+        流程与 send_image 相同:
+        1. AES-128-ECB 加密文件
+        2. getuploadurl 获取 CDN 上传参数 (media_type=4 表示文件)
+        3. POST 加密文件到 CDN
+        4. sendmessage 带 file_item
+
+        Args:
+            to_user_id: 目标用户ID
+            context_token: 会话令牌
+            file_data: 文件二进制数据
+            file_ext: 文件扩展名(mp4/pdf/docx等)
+            file_name: 文件名(显示在微信端)
+            show_typing: 是否显示"正在输入..."
+
+        Returns:
+            bool: 是否发送成功
+        """
+        if not self._credentials or not self._credentials.is_valid:
+            raise Exception("未登录，无法发送文件")
+
+        if not to_user_id:
+            logger.error(f"[WeChatILinkClient] 发送文件失败: to_user_id 为空")
+            return False
+
+        if not context_token:
+            context_token = await self.ensure_context_token(to_user_id) or ""
+
+        if not context_token:
+            logger.error(f"[WeChatILinkClient] 发送文件失败: 无法获取 context_token, to_user_id={to_user_id}")
+            return False
+
+        try:
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+            from cryptography.hazmat.backends import default_backend
+            _HAS_CRYPTOGRAPHY = True
+        except ImportError:
+            _HAS_CRYPTOGRAPHY = False
+
+        if not _HAS_CRYPTOGRAPHY:
+            try:
+                from Crypto.Cipher import AES
+                from Crypto.Util.Padding import pad as crypto_pad
+                _HAS_PYCRYPTODOME = True
+            except ImportError:
+                logger.error("[WeChatILinkClient] 发送文件需要 cryptography 或 pycryptodome: pip install cryptography")
+                return False
+        else:
+            _HAS_PYCRYPTODOME = False
+
+        import hashlib
+        import os as _os
+
+        logger.info(f"[WeChatILinkClient] 📤 发送文件给 {to_user_id}, name={file_name}, size={len(file_data)}bytes")
+
+        if show_typing:
+            await self.show_typing(to_user_id, True)
+
+        try:
+            aes_key = _os.urandom(16)
+            aes_key_hex = aes_key.hex()
+            aes_key_b64 = base64.b64encode(aes_key_hex.encode()).decode()
+
+            if _HAS_CRYPTOGRAPHY:
+                pad_len = 16 - (len(file_data) % 16)
+                padded = file_data + bytes([pad_len] * pad_len)
+                cipher = Cipher(algorithms.AES(aes_key), modes.ECB(), backend=default_backend())
+                encryptor = cipher.encryptor()
+                encrypted = encryptor.update(padded) + encryptor.finalize()
+            else:
+                encrypted = AES.new(aes_key, AES.MODE_ECB).encrypt(crypto_pad(file_data, 16))
+
+            raw_md5 = hashlib.md5(file_data).hexdigest()
+            file_key = _os.urandom(8).hex()
+            raw_size = len(file_data)
+            enc_size = len(encrypted)
+
+            upload_result = await self._api_post(
+                "ilink/bot/getuploadurl",
+                {
+                    "filekey": file_key,
+                    "media_type": 4,
+                    "to_user_id": to_user_id,
+                    "rawsize": raw_size,
+                    "rawfilemd5": raw_md5,
+                    "filesize": enc_size,
+                    "no_need_thumb": True,
+                    "aeskey": aes_key_hex,
+                    "base_info": self._base_info(),
+                },
+                token=self._credentials.bot_token,
+                base_url=self._credentials.base_url
+            )
+
+            logger.info(f"[WeChatILinkClient] getuploadurl 响应: {json.dumps(upload_result, ensure_ascii=False)[:500]}")
+
+            upload_url = upload_result.get("upload_full_url")
+            upload_param = upload_result.get("upload_param", "")
+
+            if not upload_url and upload_param:
+                cdn_base = "https://novac2c.cdn.weixin.qq.com/c2c"
+                upload_url = f"{cdn_base}?{upload_param}"
+
+            if not upload_url:
+                upload_url = (
+                    upload_result.get("upload_url")
+                    or upload_result.get("url")
+                    or upload_result.get("cdn_url")
+                )
+
+            if not upload_url:
+                logger.error(f"[WeChatILinkClient] getuploadurl 未返回上传地址: {upload_result}")
+                return False
+
+            download_param = ""
+            async with aiohttp.ClientSession() as session:
+                async with session.post(upload_url, data=encrypted) as resp:
+                    if resp.status not in (200, 201, 204):
+                        body = await resp.text()
+                        logger.error(f"[WeChatILinkClient] CDN上传失败: status={resp.status}, body={body[:200]}")
+                        return False
+                    download_param = resp.headers.get("x-encrypted-param", "")
+
+            if not download_param:
+                download_param = (
+                    upload_result.get("download_encrypted_query_param")
+                    or upload_result.get("encrypt_query_param")
+                    or upload_result.get("download_param")
+                    or ""
+                )
+
+            client_id = f"pulse-studio-{random.randint(0, 0xFFFFFFFF):08x}"
+
+            result = await self._api_post(
+                "ilink/bot/sendmessage",
+                {
+                    "msg": {
+                        "from_user_id": "",
+                        "to_user_id": to_user_id,
+                        "client_id": client_id,
+                        "message_type": 6,
+                        "message_state": 2,
+                        "context_token": context_token,
+                        "item_list": [{
+                            "type": 6,
+                            "file_item": {
+                                "media": {
+                                    "encrypt_query_param": download_param,
+                                    "aes_key": aes_key_b64,
+                                    "encrypt_type": 1,
+                                },
+                                "file_name": file_name,
+                                "file_size": raw_size,
+                                "file_ext": file_ext,
+                            }
+                        }]
+                    },
+                    "base_info": self._base_info(),
+                },
+                token=self._credentials.bot_token,
+                base_url=self._credentials.base_url
+            )
+
+            success = ("message_id" in result) or (result.get("ret", -1) == 0)
+            if success:
+                msg_id = result.get("message_id", "N/A")
+                logger.info(f"[WeChatILinkClient] ✅ 文件发送成功! msg_id={msg_id}")
+                return True
+            else:
+                logger.error(f"[WeChatILinkClient] ❌ 文件发送失败: {result}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[WeChatILinkClient] ❌ 发送文件异常: {e}", exc_info=True)
+            return False
+        finally:
+            if show_typing:
+                await self.show_typing(to_user_id, False)
+
     # ==================== 会话管理 ====================
     
     def _update_user_session(self, user_id: str, context_token: str):
@@ -815,9 +1039,102 @@ class WeChatILinkClient:
             )
     
     def get_context_token(self, user_id: str) -> Optional[str]:
-        """获取用户的最新context_token"""
+        """获取用户的最新context_token（仅查缓存，不发起网络请求）"""
         session = self._user_sessions.get(user_id)
         return session.context_token if session else None
+
+    async def ensure_context_token(self, user_id: str) -> Optional[str]:
+        """确保获取到指定用户的 context_token。
+
+        iLink 协议硬限制：context_token 只能从收到的消息中获取。
+        机器人只能回复消息，不能主动发起对话。
+
+        策略（按优先级）：
+        1. 缓存中已有 → 直接返回
+        2. 调用 getupdates 轮询一次，看是否有新消息带 token
+        3. 调用 getconfig API（不返回 context_token，但可获取 typing_ticket）
+        4. 任意其他用户的 token（最后手段，可能无效）
+        5. 全部失败 → 返回 None
+        """
+        cached = self.get_context_token(user_id)
+        if cached:
+            logger.info(f"[WeChatILinkClient] ensure_context_token: 缓存命中 user={user_id}")
+            return cached
+
+        if not self._credentials or not self._credentials.is_valid:
+            logger.warning(f"[WeChatILinkClient] ensure_context_token: 未登录")
+            return self._fallback_context_token(user_id)
+
+        logger.info(f"[WeChatILinkClient] ensure_context_token: 缓存未命中，尝试 getupdates 轮询一次 user={user_id}")
+
+        try:
+            result = await self._api_post(
+                "ilink/bot/getupdates",
+                {
+                    "get_updates_buf": self._get_updates_buf,
+                    "base_info": self._base_info(),
+                },
+                token=self._credentials.bot_token,
+                base_url=self._credentials.base_url,
+            )
+
+            self._get_updates_buf = result.get("get_updates_buf", "") or self._get_updates_buf
+
+            msgs = result.get("msgs", [])
+            for msg_data in msgs:
+                if msg_data.get("message_type") != 1:
+                    continue
+                from_uid = msg_data.get("from_user_id", "")
+                ct = msg_data.get("context_token", "")
+                if from_uid and ct:
+                    self._update_user_session(from_uid, ct)
+                    logger.info(f"[WeChatILinkClient] ensure_context_token: 从 getupdates 缓存了 {from_uid} 的 token")
+
+            cached_after = self.get_context_token(user_id)
+            if cached_after:
+                logger.info(f"[WeChatILinkClient] ensure_context_token: ✅ getupdates 后缓存命中 user={user_id}")
+                return cached_after
+        except Exception as e:
+            logger.warning(f"[WeChatILinkClient] ensure_context_token: getupdates 失败: {e}")
+
+        try:
+            config = await self._api_post(
+                "ilink/bot/getconfig",
+                {
+                    "ilink_user_id": user_id,
+                    "context_token": "",
+                    "base_info": self._base_info(),
+                },
+                token=self._credentials.bot_token,
+                base_url=self._credentials.base_url,
+            )
+
+            token_from_config = config.get("context_token", "")
+            typing_ticket = config.get("typing_ticket", "")
+
+            if token_from_config:
+                self._update_user_session(user_id, token_from_config)
+                if typing_ticket and user_id in self._user_sessions:
+                    self._user_sessions[user_id].typing_ticket = typing_ticket
+                logger.info(f"[WeChatILinkClient] ensure_context_token: ✅ getconfig 返回 token, user={user_id}")
+                return token_from_config
+
+            if typing_ticket and user_id in self._user_sessions:
+                self._user_sessions[user_id].typing_ticket = typing_ticket
+
+            logger.info(f"[WeChatILinkClient] ensure_context_token: getconfig 无 context_token (ret={config.get('ret')}), user={user_id}")
+        except Exception as e:
+            logger.warning(f"[WeChatILinkClient] ensure_context_token: getconfig 失败: {e}")
+
+        return self._fallback_context_token(user_id)
+
+    def _fallback_context_token(self, user_id: str) -> Optional[str]:
+        """从其他用户会话中借用 context_token（最后手段）"""
+        for uid, session in self._user_sessions.items():
+            if uid != user_id and session.context_token:
+                logger.info(f"[WeChatILinkClient] fallback: 借用 session {uid} 的 token 给 {user_id}")
+                return session.context_token
+        return None
     
     @property
     def is_logged_in(self) -> bool:

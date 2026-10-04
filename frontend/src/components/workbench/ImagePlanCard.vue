@@ -5,7 +5,7 @@
         <div class="mint-wf-step">04</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="layout-template" class="wf-node-icon"></i>
+            <LayoutTemplate class="wf-node-icon" :size="16" />
             图片规划
             <code class="wf-node-key">image_plan</code>
           </div>
@@ -24,7 +24,7 @@
 
     <div class="wf-node-body">
       <div v-if="nodeStatus === 'idle'" class="wf-plan-empty">
-        <i data-lucide="image" style="width:20px;height:20px;color:#E5E7EB;"></i>
+        <Image :size="20" style="color:#E5E7EB" />
         <span>等待文案撰写完成后自动进入图片规划</span>
       </div>
 
@@ -36,30 +36,30 @@
       </div>
 
       <div v-else-if="nodeStatus === 'error'" class="wf-plan-error">
-        <i data-lucide="alert-circle" style="width:18px;height:18px;"></i>
+        <AlertCircle :size="18" />
         <span>{{ errorMessage || '图片规划失败' }}</span>
       </div>
 
       <div v-else-if="nodeStatus === 'completed' && result" class="wf-plan-content">
         <div class="wf-plan-overview">
           <div class="wf-plan-overview-item" v-if="result.content_plan">
-            <i data-lucide="palette" style="width:14px;height:14px;"></i>
+            <Palette :size="14" />
             <span class="wf-plan-overview-label">模板</span>
             <span class="wf-plan-overview-value">{{ templateLabel(result.content_plan.suggested_template) }}</span>
           </div>
           <div class="wf-plan-overview-item" v-if="result.content_plan?.custom_accent">
-            <i data-lucide="droplets" style="width:14px;height:14px;"></i>
+            <Droplets :size="14" />
             <span class="wf-plan-overview-label">主题色</span>
             <span class="wf-plan-accent-dot" :style="{ background: result.content_plan.custom_accent }"></span>
             <span class="wf-plan-overview-value">{{ result.content_plan.custom_accent }}</span>
           </div>
           <div class="wf-plan-overview-item" v-if="result.content_plan?.suggested_decoration?.type">
-            <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
+            <Sparkles :size="14" />
             <span class="wf-plan-overview-label">装饰</span>
             <span class="wf-plan-overview-value">{{ decorationLabel(result.content_plan.suggested_decoration.type) }}</span>
           </div>
           <div class="wf-plan-overview-item">
-            <i data-lucide="layers" style="width:14px;height:14px;"></i>
+            <Layers :size="14" />
             <span class="wf-plan-overview-label">页数</span>
             <span class="wf-plan-overview-value">{{ pageCount }} 页</span>
           </div>
@@ -89,30 +89,43 @@
         </div>
 
         <div v-if="result._model_used" class="wf-plan-model">
-          <i data-lucide="cpu" style="width:11px;height:11px;"></i>
+          <Cpu :size="11" />
           {{ result._model_used }}
         </div>
       </div>
 
       <!-- completed 状态但无数据（checkpoint 丢失时二次兜底） -->
       <div v-else-if="nodeStatus === 'completed'" class="wf-empty-hint">
-        <i data-lucide="check-circle" style="width:14px; height:14px; color:#60A5FA;"></i>
+        <CheckCircle :size="14" style="color:#60A5FA" />
         图片规划已完成（详细数据不可用）
       </div>
     </div>
 
     <div class="wf-node-meta" v-if="nodeMeta">
-      <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ nodeMeta.duration }}</span>
-      <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ nodeMeta.model }}</span>
-      <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ nodeMeta.tokens }} tokens</span>
+      <span class="wf-meta-item"><Clock :size="12" />{{ nodeMeta.duration }}</span>
+      <span class="wf-meta-item"><Cpu :size="12" />{{ nodeMeta.model }}</span>
+      <span class="wf-meta-item"><Zap :size="12" />{{ nodeMeta.tokens }} tokens</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, watch, nextTick, onMounted } from 'vue'
-import { createIcons, icons } from 'lucide'
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Cpu,
+  Droplets,
+  Image,
+  Layers,
+  LayoutTemplate,
+  Palette,
+  Sparkles,
+  Zap,
+} from 'lucide-vue-next'
 import { useTemplateStore } from '@/stores/templates'
+import { FULL_PAGE_TYPE_LABELS, type FullPageType } from '@/card-editor/templates'
 
 const props = defineProps<{
   nodeStatus: string
@@ -127,8 +140,8 @@ onMounted(() => {
   void templateStore.ensureLoaded()
 })
 
-watch(() => props.nodeStatus, () => nextTick(() => createIcons({ icons })))
-watch(() => props.result, () => nextTick(() => createIcons({ icons })), { deep: true })
+watch(() => props.nodeStatus, () => {})
+watch(() => props.result, () => {}, { deep: true })
 
 const statusColor = computed(() => {
   const map: Record<string, string> = {
@@ -173,21 +186,12 @@ function templateLabel(template: string): string {
     minimal_white: '极简白',
     warm_card: '暖色卡片',
     dark_tech: '暗色科技',
-    esther_brand: 'Esther 品牌',
-    esther_dark: 'Esther 墨韵',
-    esther_warm: 'Esther 暖阳',
   }
   return map[template] || template || '默认'
 }
 
 function pageTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    cover: '封面',
-    content: '正文',
-    quote: '金句',
-    list: '清单',
-  }
-  return map[type] || type
+  return FULL_PAGE_TYPE_LABELS[type as FullPageType] || type || '页面'
 }
 
 function decorationLabel(type: string): string {

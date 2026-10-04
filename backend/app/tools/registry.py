@@ -1,4 +1,4 @@
-﻿"""Skill 注册表 + 第三方插件扫描加载器。
+"""Skill 注册表 + 第三方插件扫描加载器。
 
 架构：
 - 全局单例 SkillRegistry，按 (node_type, skill_name) 索引 Skill 子类
@@ -45,14 +45,19 @@ logger = logging.getLogger(__name__)
 
 
 BUILTIN_SKILL_MODULES = (
-    "app.tools.analyze_skill",
     "app.tools.copywrite_builder",
-    "app.tools.audit_skill",
-    "app.tools.blueprint_skill",
     "app.tools.trending_search",
     "app.tools.vl_analyze",
     "app.tools.xhs_search",
-    "app.tools.xhs_publish",
+    "app.tools.dev_tools",
+    "app.tools.file_tools",
+    "app.tools.workflow_skill",
+    "app.tools.wechat_send_file_skill",
+    "app.tools.wechat_send_text_skill",
+    "app.tools.feishu_file_ops_skill",
+    "app.tools.feishu_wiki_doc_skill",
+    "app.tools.prompt_skills",
+    "app.tools.comment_insights",
 )
 
 
@@ -60,6 +65,8 @@ def ensure_builtin_skills_registered() -> None:
     """确保内置 Skill 模块已导入并完成 @register。"""
     for module_name in BUILTIN_SKILL_MODULES:
         importlib.import_module(module_name)
+    from app.tools.prompt_skills import scan_and_register_prompt_skills
+    scan_and_register_prompt_skills()
 
 
 class SkillRegistry:
@@ -150,6 +157,84 @@ class SkillRegistry:
                 matches.append(skill_cls)
         return matches
 
+    def find_by_description(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        """语义发现：按 query 与 Skill description 的关键词重叠度排序。
+
+        不依赖向量模型，用简单的关键词匹配 + Jaccard 相似度。
+        供 Agent 在不确定该调哪个 Skill 时使用。
+
+        Args:
+            query: 用户意图描述（如"搜索热点"、"写种草文案"）
+            top_k: 返回前 K 个最相关的 Skill
+
+        Returns:
+            list of dicts: [{"skill": SkillClass, "name": ..., "node_type": ..., "description": ..., "score": 0.0~1.0}]
+        """
+        import jieba
+
+        query_words = set(jieba.cut(query)) - {" ", "\n", "的", "了", "是", "在", "和", "我", "要", "把", "被", "让", "用"}
+        candidates: list[dict[str, Any]] = []
+
+        for node_type, skills_map in self._skills.items():
+            for skill_cls in skills_map.values():
+                desc = getattr(skill_cls, "description", "") or ""
+                name = getattr(skill_cls, "name", "") or ""
+                display_name = getattr(skill_cls, "display_name", "") or ""
+                trigger_words = getattr(skill_cls, "trigger_words", []) or []
+
+                desc_words = set(jieba.cut(desc + " " + display_name + " " + " ".join(trigger_words)))
+                desc_words -= {" ", "\n", "的", "了", "是", "在", "和", "我", "要", "把", "被", "让", "用"}
+
+                if not query_words or not desc_words:
+                    continue
+
+                intersection = query_words & desc_words
+                union = query_words | desc_words
+                score = len(intersection) / len(union) if union else 0.0
+
+                name_match = 1.0 if any(w in name for w in query_words if len(w) > 1) else 0.0
+                score = max(score, name_match * 0.8)
+
+                if score > 0:
+                    candidates.append({
+                        "skill": skill_cls,
+                        "name": name,
+                        "node_type": node_type,
+                        "description": desc[:100],
+                        "score": round(score, 3),
+                    })
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:top_k]
+
+    def all_skill_classes(self) -> list[type[Skill]]:
+        """收集所有已注册的 Skill 类（去重）。
+
+        供动态装载：不指定 skill 白名单时，把所有已注册 skill 装给 Agent。
+        """
+        seen: dict[str, type[Skill]] = {}
+        for skills_map in self._skills.values():
+            for name, skill_cls in skills_map.items():
+                seen.setdefault(name, skill_cls)
+        return list(seen.values())
+
+    def all_trigger_words_for_non_local_platforms(self) -> dict[str, str]:
+        """收集所有非本地平台 Skill 的触发词。
+
+        Returns:
+            dict mapping trigger_word -> platform_name
+            e.g. {"飞书": "feishu", "wiki": "feishu", "微信": "wechat", ...}
+        """
+        result: dict[str, str] = {}
+        for skills_map in self._skills.values():
+            for skill_cls in skills_map.values():
+                platform = getattr(skill_cls, "platform", "") or ""
+                if platform and platform != "local":
+                    for tw in getattr(skill_cls, "trigger_words", []) or []:
+                        if tw and tw not in result:
+                            result[tw] = platform
+        return result
+
     def scan_third_party(self, force: bool = False) -> int:
         """扫描 backend/skills/ 目录，自动加载第三方 Skill 模块。
 
@@ -169,9 +254,9 @@ class SkillRegistry:
             return 0
 
         # 定位 backend/skills/ 目录（与 app/ 同级）
-        # __file__ = backend/app/agents/skills/registry.py
-        # 上溯 4 层：registry.py -> skills -> agents -> app -> backend
-        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        # __file__ = backend/app/tools/registry.py
+        # 上溯 3 层：registry.py -> tools -> app -> backend
+        backend_root = Path(__file__).resolve().parent.parent.parent
         skills_dir = backend_root / "skills"
 
         if not skills_dir.exists():
@@ -204,12 +289,13 @@ class SkillRegistry:
         """动态加载一个 .py 文件或包作为模块。
 
         模块名前缀 _third_party_skill_ 避免与 app 内模块冲突。
+        文件用 _file 后缀、包用 _pkg 后缀避免同名冲突。
         """
         if path.is_file():
-            module_name = f"_third_party_skill_{path.stem}"
+            module_name = f"_third_party_skill_{path.stem}_file"
             file_path = path
         else:
-            module_name = f"_third_party_skill_{path.name}"
+            module_name = f"_third_party_skill_{path.name}_pkg"
             file_path = path / "__init__.py"
 
         try:
@@ -232,6 +318,26 @@ class SkillRegistry:
         """清空注册表（仅用于测试）。"""
         self._skills.clear()
         self._third_party_scanned = False
+
+    def unregister(self, node_type: str, skill_name: str) -> bool:
+        """注销一个第三方 Skill。
+
+        内置 Skill（模块名不以 _third_party_skill_ 开头）不可注销。
+        Returns True if successfully removed.
+        """
+        skills_map = self._skills.get(node_type)
+        if skills_map is None or skill_name not in skills_map:
+            return False
+        skill_cls = skills_map[skill_name]
+        module_name = getattr(skill_cls, "__module__", "")
+        if not module_name.startswith("_third_party_skill_"):
+            logger.warning(f"[SkillRegistry] cannot unregister builtin skill: {node_type}.{skill_name}")
+            return False
+        del skills_map[skill_name]
+        if not skills_map:
+            del self._skills[node_type]
+        logger.info(f"[SkillRegistry] unregistered: {node_type}.{skill_name}")
+        return True
 
 
 # 全局单例

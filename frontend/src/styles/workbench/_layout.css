@@ -206,17 +206,18 @@ body {
 
 body::before {
   content: '';
-  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: none;
 }
 
 
 
-@keyframes bgDrift {
-  0% { background-position: 0% 50%; }
-  25% { background-position: 50% 0%; }
-  50% { background-position: 100% 50%; }
-  75% { background-position: 50% 100%; }
-  100% { background-position: 0% 50%; }
+@keyframes oceanBreathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.06); }
 }
 
 @keyframes blobDrift {
@@ -230,11 +231,11 @@ body::before {
 
 .mint-shell {
   position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: auto 1fr var(--right-panel-width, 280px);
   grid-template-rows: minmax(0, 1fr);
-  gap: 0 12px;
-  padding: 16px 20px 16px 24px;
+  gap: 0;
   height: 100vh;
   max-width: 1920px;
   margin: 0 auto;
@@ -248,6 +249,7 @@ body::before {
 .mint-global-user {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   background: transparent;
   border: none;
   border-radius: 50%;
@@ -256,6 +258,7 @@ body::before {
   top: 12px;
   right: 36px;
   z-index: var(--z-global-ui);
+  overflow: visible;
   transition: opacity 0.2s ease;
 }
 .mint-global-user:hover {
@@ -479,10 +482,6 @@ body::before {
   flex: 1;
   min-width: 500px;
   min-height: 0;
-  background: #FFFFFF;
-  border-radius: 16px;
-  border: 1px solid var(--ma-border-default);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
   overflow: hidden;

@@ -4,8 +4,9 @@ import secrets
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, Boolean, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, Boolean, UniqueConstraint, func
 from sqlalchemy import JSON
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base, is_sqlite, is_mysql
@@ -28,20 +29,6 @@ def generate_ulid() -> str:
 
 
 # ===== Enums =====
-
-class LoginMethod(enum.StrEnum):
-    """D1 layered login method."""
-    PLUGIN = "plugin"
-    SESSION_REFRESH = "session_refresh"
-    QRCODE = "qrcode"
-    EMAIL = "email"
-
-
-class AccountStatus(enum.StrEnum):
-    """XHS account status."""
-    ACTIVE = "active"
-    EXPIRED = "expired"
-    BANNED = "banned"
 
 
 class WorkflowStatus(enum.StrEnum):
@@ -87,43 +74,131 @@ class User(Base):
     )
 
 
-class XhsAccount(Base):
-    """XHS account table."""
-    __tablename__ = "xhs_accounts"
+# ===== D18 用户画像枚举 =====
+
+class PrimaryDomain(enum.StrEnum):
+    """创作者主领域（必填）"""
+    TECH = "tech"            # 科技
+    BEAUTY = "beauty"        # 美妆
+    FOOD = "food"            # 美食
+    TRAVEL = "travel"        # 旅行
+    EDUCATION = "education"  # 教育
+    PARENTING = "parenting"  # 母婴
+    FITNESS = "fitness"      # 健身
+    FINANCE = "finance"      # 财经
+    OTHER = "other"          # 其他
+
+
+class CreatorTone(enum.StrEnum):
+    """内容调性"""
+    PROFESSIONAL = "professional"  # 专业
+    FRIENDLY = "friendly"          # 亲和
+    LIVELY = "lively"              # 活泼
+    SERIOUS = "serious"            # 严肃
+    HUMOROUS = "humorous"          # 幽默
+
+
+class VisualStyle(enum.StrEnum):
+    """视觉风格"""
+    WARM = "warm"        # 暖色调
+    COOL = "cool"        # 冷色调
+    MINIMAL = "minimal"  # 极简
+    RICH = "rich"        # 丰富
+
+
+class UserProfile(Base):
+    """D18 创作者画像。与 users 1:1（user_id 唯一）。
+
+    红线（开发红线手册 7.4）：
+    - primary_domain 必填（应用层校验）
+    - 每次启动工作流前必须读取注入 WorkflowState
+    - 画像缺失时拒绝启动工作流
+    - 只存创作偏好，不存敏感个人信息
+    """
+    __tablename__ = "user_profiles"
     __table_args__ = (
-        Index("ix_xhs_accounts_user_id", "user_id"),
-        Index("ix_xhs_accounts_xhs_user_id", "xhs_user_id"),
+        Index("ix_user_profiles_user_id", "user_id", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
     user_id: Mapped[str] = mapped_column(
         String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    xhs_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    xhs_nickname: Mapped[str | None] = mapped_column(String(255))
-    xhs_avatar_url: Mapped[str | None] = mapped_column(String(1024))
-    session_data_encrypted: Mapped[str | None] = mapped_column(Text)
-    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)
-    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    login_method: Mapped[LoginMethod] = mapped_column(
-        Enum(LoginMethod, native_enum=True, name="login_method",
+    primary_domain: Mapped[str] = mapped_column(
+        Enum(PrimaryDomain, native_enum=True, name="primary_domain",
              values_callable=lambda e: [x.value for x in e]),
-        default=LoginMethod.PLUGIN,
         nullable=False,
     )
-    status: Mapped[AccountStatus] = mapped_column(
-        Enum(AccountStatus, native_enum=True, name="account_status",
+    sub_domain: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    tone: Mapped[str] = mapped_column(
+        Enum(CreatorTone, native_enum=True, name="creator_tone",
              values_callable=lambda e: [x.value for x in e]),
-        default=AccountStatus.ACTIVE,
+        default=CreatorTone.PROFESSIONAL,
         nullable=False,
     )
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    visual_style: Mapped[str] = mapped_column(
+        Enum(VisualStyle, native_enum=True, name="visual_style_enum",
+             values_callable=lambda e: [x.value for x in e]),
+        default=VisualStyle.WARM,
+        nullable=False,
+    )
+    taboo_topics: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    taboo_words: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    identity: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    differentiation: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    content_direction: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    target_audience: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    audience_pain_points: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    opening_style: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    content_rhythm: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    signature_elements: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class FeishuOAuthConnection(Base):
+    """用户绑定的飞书 OAuth 账号。
+
+    access_token / refresh_token 只能以 AES-GCM 密文保存；user_id 唯一，
+    用于在智能体调用 Wiki/Doc 时按当前平台用户选择对应的 user_access_token。
+    """
+    __tablename__ = "feishu_oauth_connections"
+    __table_args__ = (
+        Index("ix_feishu_oauth_connections_user_id", "user_id", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    open_id: Mapped[str | None] = mapped_column(String(128))
+    user_name: Mapped[str | None] = mapped_column(String(255))
+    access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FeishuOAuthState(Base):
+    """短期 OAuth state/PKCE 状态，防止回调被伪造。"""
+    __tablename__ = "feishu_oauth_states"
+    __table_args__ = (Index("ix_feishu_oauth_states_state", "state", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    state: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    user_id: Mapped[str] = mapped_column(String(26), nullable=False)
+    code_verifier: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Workflow(Base):
@@ -144,7 +219,7 @@ class Workflow(Base):
         String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     account_id: Mapped[str | None] = mapped_column(
-        String(26), ForeignKey("xhs_accounts.id", ondelete="SET NULL"), nullable=True
+        String(26), nullable=True
     )
     
     # Phase 2 新增：关联的工作流定义（可选）
@@ -174,6 +249,13 @@ class Workflow(Base):
         String(20),
         default="sequential",
         comment="执行模式：sequential（顺序）/ dynamic（动态DAG）"
+    )
+    
+    # 来源标记
+    source: Mapped[str] = mapped_column(
+        String(20),
+        default="gui",
+        comment="发起来源: gui | chat_agent"
     )
     
     created_at: Mapped[datetime] = mapped_column(
@@ -207,6 +289,10 @@ class NodeType(enum.StrEnum):
     IMAGE_PLAN = "image_plan"
     # 第二期预留：用户编排工作台（替代 image_review，本期待定）
     IMAGE_WORKSHOP = "image_workshop"
+    # 后处理节点：卡片生成 + 微信推送 + 飞书推送
+    CARD_GEN = "card_gen"
+    WECHAT_PUSH = "wechat_push"
+    FEISHU_PUSH = "feishu_push"
 
 
 class NodeStatus(enum.StrEnum):
@@ -517,11 +603,17 @@ class MemoryType(enum.StrEnum):
     - topic_history: 历史选题记录，避免重复创作
     - copywrite_history: 最近文案摘要，供 LLM 学习用户风格
     - publish_history: 已发布笔记记录
+    - my_works_summary: 我的作品归因摘要（SelfAttributionEngine 产出）
+    - my_attribution: 写作处方（什么标题模式/情绪触发/内容结构对我有效）
+    - avoid_patterns: 避坑清单（我试过但效果差的模式）
     """
     PREFERENCES = "preferences"
     TOPIC_HISTORY = "topic_history"
     COPYWRITE_HISTORY = "copywrite_history"
     PUBLISH_HISTORY = "publish_history"
+    MY_WORKS_SUMMARY = "my_works_summary"
+    MY_ATTRIBUTION = "my_attribution"
+    AVOID_PATTERNS = "avoid_patterns"
 
 
 class AgentMemory(Base):
@@ -562,53 +654,7 @@ class AgentMemory(Base):
     )
 
 
-# ===== Esther Factory 品牌配置 =====
 
-class EstherBrandConfig(Base):
-    """Esther Factory 品牌配置（每用户一行，头像存 base64）。"""
-    __tablename__ = "esther_brand_configs"
-    __table_args__ = (
-        Index("ix_esther_brand_configs_user_id", "user_id", unique=True),
-    )
-
-    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
-    user_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    brand_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
-    gender: Mapped[str] = mapped_column(String(10), default="man", nullable=False)
-    primary: Mapped[str] = mapped_column(String(7), default="#2B7FD8", nullable=False)
-    accent: Mapped[str] = mapped_column(String(7), default="#F4D758", nullable=False)
-    spot: Mapped[str] = mapped_column(String(7), default="#E84A5F", nullable=False)
-    avatar_data: Mapped[str | None] = mapped_column(Text, nullable=True)
-    avatar_content_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class EstherTemplate(Base):
-    """Esther Factory 模板（每用户每模板一行）。"""
-    __tablename__ = "esther_templates"
-    __table_args__ = (
-        Index("ix_esther_templates_user_id", "user_id"),
-        Index("ix_esther_templates_user_tplid", "user_id", "template_id", unique=True),
-    )
-
-    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
-    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    template_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    schema_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    template_html: Mapped[str] = mapped_column(Text, nullable=False)
-    meta_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    scene: Mapped[str] = mapped_column(String(32), default="cards", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
 
 
 class ImageAsset(Base):
@@ -640,12 +686,20 @@ class PublishedContentPerformance(Base):
     分析智能体优化方案 阶段4：反馈闭环。
     记录每次发布内容采用了哪个分析模式/选题方向，
     7天后回采实际表现数据，用于校准 viral_score 权重。
+
+    扩展字段（AI多平台分析文档 P0）：
+    - platform: 目标平台标识（xiaohongshu/douyin/bilibili/wechat）
+    - predicted_viral_score / actual_viral_score / prediction_error: 预测校准
+    - title / content_text / tags / cover_img_url: 内容特征快照
+    - title_pattern / emotion_trigger / content_structure: 归因标签
     """
     __tablename__ = "published_content_performance"
     __table_args__ = (
         Index("ix_pcp_workflow_id", "workflow_id"),
         Index("ix_pcp_published_at", "published_at"),
         Index("ix_pcp_collected", "collected_at"),
+        Index("ix_pcp_user_platform", "user_id", "platform"),
+        Index("ix_pcp_user_status", "user_id", "content_status"),
     )
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
@@ -665,6 +719,28 @@ class PublishedContentPerformance(Base):
 
     performance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_replicated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    platform: Mapped[str] = mapped_column(String(32), default="xiaohongshu", nullable=False)
+    content_status: Mapped[str] = mapped_column(
+        String(16), default="published", nullable=False,
+        comment="draft=草稿 / published=已发布待采集 / collected=已采集有数据"
+    )
+    predicted_viral_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    actual_viral_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prediction_error: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    content_text: Mapped[Text | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    cover_img_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    images: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    title_pattern: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    emotion_trigger: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    content_structure: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    card_draft: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    first_page_html: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -893,17 +969,23 @@ class ChatSession(Base):
 
     一个 Session 可触发多个 Workflow；关系通过 ChatMessage.agent_meta.workflow_id
     间接建立，不在这里加 workflow 外键。
+    work_id 将对话绑定到具体作品，实现对话隔离。
     """
     __tablename__ = "chat_sessions"
     __table_args__ = (
         Index("ix_chat_sessions_user_id", "user_id"),
+        Index("ix_chat_sessions_work_id", "work_id"),
+        Index("ix_chat_sessions_folder_id", "folder_id"),
     )
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
     user_id: Mapped[str] = mapped_column(
         String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    work_id: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+    folder_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     title: Mapped[str] = mapped_column(String(255), default="新会话", nullable=False)
+    creative_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -931,3 +1013,243 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class ChatFile(Base):
+    """Chat 会话中创建的文件（文案、搜索结果、分析报告等）。
+
+    关联 session_id，点击文件可跳回所属对话。
+    """
+    __tablename__ = "chat_files"
+    __table_args__ = (
+        Index("ix_chat_files_session_id", "session_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    session_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(100), default="text/plain", nullable=False)
+    size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    url: Mapped[str] = mapped_column(String(1024), default="", nullable=False)
+    folder_id: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    content_text: Mapped[str | None] = mapped_column(
+        Text().with_variant(LONGTEXT(), "mysql"), nullable=True
+    )
+    meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# ===== 任务清单（多日定时发布）=====
+
+class TaskPlanStatus(enum.StrEnum):
+    """任务清单状态。
+
+    draft: 拆解完成待用户确认；active: 生效中（调度器扫描）；
+    paused: 暂停（保留现场，可恢复）；completed: 全部发布完成；cancelled: 取消。
+    """
+    DRAFT = "draft"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class TaskItemStatus(enum.StrEnum):
+    """逐日子任务状态。"""
+    PENDING = "pending"
+    RUNNING = "running"
+    SKIPPED = "skipped"
+    PUBLISHED = "published"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class TaskRunStatus(enum.StrEnum):
+    """单日执行记录状态。
+
+    awaiting_confirmation: 工作流挂起中，已发飞书卡片等待用户决策。
+    """
+    RUNNING = "running"
+    AWAITING_CONFIRMATION = "awaiting_confirmation"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    TIMEOUT = "timeout"
+
+
+class TaskPlan(Base):
+    """多日任务清单（用户一句话意图 → 智能体拆解 → 每日定时执行）。
+
+    plan_config 结构：
+    - daily_time: "09:00" 每日发布时间（HH:MM，Asia/Shanghai）
+    - review_mode: quality_gate | auto | manual（审核三档）
+    - model_settings: 传给 start_workflow 的模型配置（含 auto_publish）
+    - definition_name: 使用的内置工作流定义名（默认「定时发布流水线」）
+    - confirm_timeout_min: 飞书确认超时分钟数（默认 30）
+    - max_retry: 当日失败重试上限（默认 1）
+    - feishu_open_id: 接收确认卡片的用户 open_id（可选）
+    """
+    __tablename__ = "task_plans"
+    __table_args__ = (
+        Index("ix_task_plans_user_id", "user_id"),
+        Index("ix_task_plans_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    intent_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[TaskPlanStatus] = mapped_column(
+        Enum(TaskPlanStatus, native_enum=True, name="task_plan_status",
+             values_callable=lambda e: [x.value for x in e]),
+        default=TaskPlanStatus.DRAFT,
+        nullable=False,
+    )
+    plan_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    total_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    published_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TaskItem(Base):
+    """逐日子任务（清单拆解后的单日条目）。
+
+    扫描主索引 (status, plan_time)：调度器每分钟捞
+    status=pending AND plan_time<=now 且所属 plan 为 active 的条目。
+    """
+    __tablename__ = "task_items"
+    __table_args__ = (
+        Index("ix_task_items_due", "status", "plan_time"),
+        Index("ix_task_items_plan_id", "plan_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    plan_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("task_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    day_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    topic: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    keyword: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    plan_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[TaskItemStatus] = mapped_column(
+        Enum(TaskItemStatus, native_enum=True, name="task_item_status",
+             values_callable=lambda e: [x.value for x in e]),
+        default=TaskItemStatus.PENDING,
+        nullable=False,
+    )
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class TaskRun(Base):
+    """单日执行记录（一次 TaskItem 触发的工作流运行现场 + 异常快照）。"""
+    __tablename__ = "task_runs"
+    __table_args__ = (
+        Index("ix_task_runs_item", "task_item_id"),
+        Index("ix_task_runs_plan", "plan_id"),
+        Index("ix_task_runs_workflow", "workflow_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    task_item_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("task_items.id", ondelete="CASCADE"), nullable=False
+    )
+    plan_id: Mapped[str] = mapped_column(
+        String(26), ForeignKey("task_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    workflow_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    status: Mapped[TaskRunStatus] = mapped_column(
+        Enum(TaskRunStatus, native_enum=True, name="task_run_status",
+             values_callable=lambda e: [x.value for x in e]),
+        default=TaskRunStatus.RUNNING,
+        nullable=False,
+    )
+    failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ===== 通用浏览器自动化：审计日志 =====
+
+class BrowserAuditLog(Base):
+    """浏览器自动化审计日志（G4）。
+
+    记录每次导航 / 交互动作（来源 agent 或 mcp），供回溯「谁在什么时候
+    对哪个网站做了什么」。写入方为 BrowserClient 的 audit sink
+    （fire-and-forget，失败不影响主流程）。
+    """
+    __tablename__ = "browser_audit_logs"
+    __table_args__ = (
+        Index("ix_browser_audit_created_at", "created_at"),
+        Index("ix_browser_audit_domain", "domain"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    source: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="agent",
+        comment="调用来源：agent（内部智能体）/ mcp（外部 MCP 客户端）"
+    )
+    action: Mapped[str] = mapped_column(String(50), nullable=False, comment="动作：navigate / act:click / act:fill ...")
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, default="", comment="目标域名")
+    url: Mapped[str] = mapped_column(Text, nullable=False, default="", comment="目标 URL")
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="是否成功")
+    detail: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="失败原因等补充信息")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# ===== 平台账号管理（账号绑定 + 作品数据回收）=====
+
+class PlatformAccount(Base):
+    """用户绑定的各平台账号。
+
+    存储扫码登录获取的 cookies 和平台用户信息，
+    供 Spider 爬取该账号下的全部已发布作品数据。
+    platform 枚举值对齐 PublishedContentPerformance.platform：
+    xiaohongshu / douyin / bilibili
+    """
+    __tablename__ = "platform_accounts"
+    __table_args__ = (
+        Index("ix_pa_user_id", "user_id"),
+        Index("ix_pa_platform", "platform"),
+        UniqueConstraint("user_id", "platform", name="uq_pa_user_platform"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False)
+    platform_uid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    platform_nickname: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    platform_avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    platform_home_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    cookies_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sync_status: Mapped[str] = mapped_column(String(16), default="idle", nullable=False)
+    sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    works_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fans_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

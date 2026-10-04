@@ -2,13 +2,13 @@
   <div class="pdv-wrap">
     <div class="pdv-header">
       <button class="pdv-back" @click="$emit('back')">
-        <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+        <ArrowLeft :size="16" />
         <span>返回插件管理</span>
       </button>
     </div>
 
     <div v-if="!plugin" class="pdv-empty">
-      <i data-lucide="package-open" style="width:32px;height:32px;opacity:0.4;"></i>
+      <PackageOpen :size="32" style="opacity:0.4" />
       <p>插件不存在</p>
     </div>
 
@@ -16,7 +16,7 @@
       <div class="pdv-hero">
         <div class="pdv-hero-icon">
           <span v-if="plugin.display_icon" class="pdv-hero-emoji">{{ plugin.display_icon }}</span>
-          <i v-else data-lucide="puzzle" style="width:32px;height:32px;"></i>
+          <Puzzle v-else :size="32" />
         </div>
         <div class="pdv-hero-info">
           <div class="pdv-hero-name">{{ plugin.name }}</div>
@@ -26,7 +26,7 @@
             <span class="pdv-tag pdv-tag-tp" v-else>第三方</span>
             <span class="pdv-version">v{{ plugin.version }}</span>
             <span class="pdv-author" v-if="plugin.author_name">
-              <i data-lucide="user" style="width:12px;height:12px;"></i>
+              <User :size="12" />
               {{ plugin.author_name }}
             </span>
           </div>
@@ -37,7 +37,7 @@
             class="pdv-action-btn pdv-action-install"
             @click="handleInstall"
           >
-            <i data-lucide="download" style="width:14px;height:14px;"></i>
+            <Download :size="14" />
             <span>安装</span>
           </button>
           <template v-else>
@@ -46,7 +46,7 @@
               :class="pluginStore.isEnabled(plugin.id) ? 'pdv-action-on' : 'pdv-action-off'"
               @click="handleToggleEnable(!pluginStore.isEnabled(plugin.id))"
             >
-              <i :data-lucide="pluginStore.isEnabled(plugin.id) ? 'power' : 'power-off'" style="width:14px;height:14px;"></i>
+              <Power v-if="pluginStore.isEnabled(plugin.id) " :size="14" /><PowerOff v-else :size="14" />
               <span>{{ pluginStore.isEnabled(plugin.id) ? '运行中' : '启动' }}</span>
             </button>
             <button
@@ -54,14 +54,14 @@
               class="pdv-action-btn pdv-action-danger"
               @click="handleUninstall"
             >
-              <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+              <Trash2 :size="14" />
               <span>卸载</span>
             </button>
             <button
               class="pdv-action-btn pdv-action-secondary"
               @click="openConfig"
             >
-              <i data-lucide="settings" style="width:14px;height:14px;"></i>
+              <Settings :size="14" />
               <span>配置</span>
             </button>
           </template>
@@ -92,7 +92,7 @@
               </div>
             </template>
             <div v-else class="pdv-no-screenshots">
-              <i data-lucide="image" style="width:28px;height:28px;opacity:0.3;"></i>
+              <Image :size="28" style="opacity:0.3" />
               <span>暂无使用详情图片</span>
             </div>
           </div>
@@ -133,8 +133,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { ref, computed, onMounted } from 'vue'
+import {
+  ArrowLeft, Download, Image, PackageOpen, Power, PowerOff,
+  Puzzle, Settings, Trash2, User,
+} from 'lucide-vue-next'
 import { usePluginStore } from '@/stores/plugin'
 import type { Plugin } from '@/api/plugins'
 import PluginConfigDrawer from '@/components/plugins/PluginConfigDrawer.vue'
@@ -190,13 +193,13 @@ const usageHtml = computed(() => {
   return `<p>安装并启用此插件后，相关功能将自动集成到系统中。可在插件管理页面随时启用或禁用。</p>`
 })
 
-const screenshots = computed(() => {
+const screenshots = computed<string[]>(() => {
   if (!props.plugin) return []
   const custom = PLUGIN_USAGE[props.plugin.id]
   if (custom) return custom.screenshots
   const manifest = (props.plugin as any).manifest_json
   if (manifest?.screenshots && Array.isArray(manifest.screenshots)) {
-    return manifest.screenshots
+    return manifest.screenshots as string[]
   }
   return []
 })
@@ -242,7 +245,7 @@ async function handleSaveConfig(pluginId: string, config: Record<string, any>) {
 }
 
 onMounted(() => {
-  nextTick(() => { try { createIcons({ icons }) } catch {} })
+  
 })
 </script>
 

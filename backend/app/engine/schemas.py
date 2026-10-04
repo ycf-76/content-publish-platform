@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 class Permission(str, Enum):
     """所有可授予的权限。
 
-    高危权限（BASH_EXEC / FILE_WRITE / NET_HTTP_POST / XHS_PUBLISH）
+    高危权限（BASH_EXEC / FILE_WRITE / NET_HTTP_POST）
     在 settings 里必须显式 allow 才会被放行。
     """
 
@@ -27,8 +27,8 @@ class Permission(str, Enum):
     NET_HTTP_GET = "net:http_get"
     NET_HTTP_POST = "net:http_post"
     XHS_SEARCH = "xhs:search"
-    XHS_PUBLISH = "xhs:publish"
-    XHS_ACCOUNT_READ = "xhs:account_read"
+    SKILL_IMPORT = "skill:import"
+    BROWSER_AUTOMATE = "browser:automate"
 
 
 class PermissionDeniedError(Exception):
@@ -89,6 +89,9 @@ class WorkflowContext(BaseModel):
     topic: str = ""
     upstream_outputs: dict[str, Any] = Field(default_factory=dict)
     extra: dict[str, Any] = Field(default_factory=dict)
+    # D18 创作者画像：由 _run_node_harness 从 WorkflowState 透传。
+    # 注入失败时 fail-fast 已在 start_workflow 入口处理，这里只读不查 DB。
+    user_profile: dict[str, Any] | None = None
 
 
 class AgentOutput(BaseModel):

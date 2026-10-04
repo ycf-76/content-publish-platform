@@ -17,7 +17,7 @@
           <option value="cancelled">已取消</option>
         </select>
         <button class="mint-btn mint-btn-primary" @click="$emit('new-workflow')" style="white-space:nowrap;">
-          <i data-lucide="plus" style="width:16px;height:16px;"></i>
+          <Plus :size="16" />
           新建工作流
         </button>
       </div>
@@ -37,7 +37,7 @@
       </svg>
       <p>暂无工作流记录</p>
       <button class="mint-btn mint-btn-primary" @click="$emit('new-workflow')">
-        <i data-lucide="plus" style="width:16px;height:16px;"></i>
+        <Plus :size="16" />
         创建第一个工作流
       </button>
     </div>
@@ -68,21 +68,21 @@
         </div>
         <div style="display:flex; gap:12px; padding:8px 0; flex-wrap:wrap;">
           <div v-if="wf.current_node" style="font-size: 14px; color:#6B7280;">
-            <i data-lucide="git-branch" style="width:12px;height:12px;margin-right:4px;"></i>
+            <GitBranch :size="12" />
             {{ nodeLabel(wf.current_node) }}
           </div>
           <div v-if="wf.updated_at" style="font-size: 14px; color:#6B7280;">
-            <i data-lucide="clock" style="width:12px;height:12px;margin-right:4px;"></i>
+            <Clock :size="12" />
             {{ formatRelativeTime(wf.updated_at) }}
           </div>
           <div v-if="draftMap[wf.workflow_id]" class="wf-draft-badge">
-            <i data-lucide="file-edit" style="width:12px;height:12px;margin-right:3px;"></i>
+            <FileEdit :size="12" />
             有草稿
           </div>
         </div>
         <div class="mint-wf-footer">
           <button class="mint-btn mint-btn-ghost" @click.stop="onCardClick(wf)">
-            <i data-lucide="external-link" style="width:16px;height:16px;"></i>
+            <ExternalLink :size="16" />
             在工作台查看
           </button>
           <button
@@ -90,7 +90,7 @@
             class="mint-btn mint-btn-outline wf-draft-btn"
             @click.stop="$emit('open-draft', wf.workflow_id)"
           >
-            <i data-lucide="edit" style="width:16px;height:16px;"></i>
+            <Edit :size="16" />
             继续编辑草稿
           </button>
           <button
@@ -98,14 +98,14 @@
             class="mint-btn mint-btn-outline"
             @click.stop="$emit('restart-workflow', wf)"
           >
-            <i data-lucide="rotate-ccw" style="width:16px;height:16px;"></i>
+            <RotateCcw :size="16" />
             重新执行
           </button>
           <button
             class="mint-btn mint-btn-ghost mint-btn-delete"
             @click.stop="confirmDelete(wf)"
           >
-            <i data-lucide="trash-2" style="width:16px;height:16px;"></i>
+            <Trash2 :size="16" />
             删除
           </button>
         </div>
@@ -156,7 +156,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick, onActivated } from 'vue'
-import { createIcons, icons } from 'lucide'
+import {
+  Clock,
+  Edit,
+  ExternalLink,
+  FileEdit,
+  GitBranch,
+  Plus,
+  RotateCcw,
+  Trash2,
+} from 'lucide-vue-next'
 import { useWorkflowStore } from '@/stores/workflow'
 import { workflowApi } from '@/api/workflow'
 import type { WorkflowListItem } from '@/api/workflow'
@@ -302,7 +311,7 @@ async function loadList() {
     limit: pageSize,
     offset: currentOffset.value,
   })
-  nextTick(() => createIcons({ icons }))
+  
   checkDrafts()
 }
 
@@ -361,7 +370,7 @@ watch(() => props.visible, (newVal) => {
 })
 
 watch(() => workflowStore.workflowList, () => {
-  nextTick(() => createIcons({ icons }))
+  
 }, { deep: true })
 </script>
 

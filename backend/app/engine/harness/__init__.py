@@ -1,4 +1,4 @@
-﻿"""Harness subpackage (Layer B).
+"""Harness subpackage (Layer B).
 
 Exports: AgentHarness, ExecutorBase, SingleShotExecutor, LoopExecutor, AgentMemory, Observer.
 Red line: this subpackage must NOT import langgraph or fastapi.

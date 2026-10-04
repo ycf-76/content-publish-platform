@@ -9,17 +9,17 @@
       <span class="node-title">{{ data.label || '未命名' }}</span>
       <div class="node-actions">
         <button class="action-btn" @click.stop="$emit('configure', id)" title="配置">
-          <i data-lucide="settings-2"></i>
+          <Settings2 :size="14" />
         </button>
         <button class="action-btn danger" @click.stop="$emit('delete', id)" title="删除">
-          <i data-lucide="trash-2"></i>
+          <Trash2 :size="14" />
         </button>
       </div>
     </div>
 
     <div class="node-body">
       <div v-if="data.status" class="node-status" :class="data.status">
-        <i :data-lucide="statusIcon(data.status)"></i>
+        <component :is="statusIconComponent(data.status)" :size="14" />
         {{ statusText(data.status) }}
       </div>
       <div v-else class="node-type-line">{{ data.nodeType }}</div>
@@ -40,6 +40,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
+import {
+  Settings2, Trash2, Clock, Loader, CheckCircle,
+  XCircle, FastForward, HelpCircle,
+} from 'lucide-vue-next'
 
 const props = defineProps<{
   id: string
@@ -85,15 +89,15 @@ const configSummary = computed(() => {
   return summary
 })
 
-function statusIcon(status: string): string {
-  const icons: Record<string, string> = {
-    pending: 'clock',
-    running: 'loader',
-    completed: 'check-circle',
-    failed: 'x-circle',
-    skipped: 'fast-forward',
+function statusIconComponent(status: string) {
+  const icons: Record<string, any> = {
+    pending: Clock,
+    running: Loader,
+    completed: CheckCircle,
+    failed: XCircle,
+    skipped: FastForward,
   }
-  return icons[status] || 'help-circle'
+  return icons[status] || HelpCircle
 }
 
 function statusText(status: string): string {

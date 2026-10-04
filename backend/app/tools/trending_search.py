@@ -1,4 +1,4 @@
-﻿"""Trending search skill（多平台版本）。
+"""Trending search skill（多平台版本）。
 
 替代 XhsSearchSkill，支持从多个平台（Reddit / HackerNews / 小红书）搜索热门内容。
 返回统一的 TrendingContent 数据结构，下游 analyze 节点不关心数据来自哪个平台。
@@ -58,9 +58,10 @@ class TrendingSearchSkill(Skill):
     node_type = "search"
     name = "trending_search"
     description = (
-        "Search trending content from multiple platforms "
-        "(Reddit / HackerNews / Xiaohongshu). "
-        "Returns unified TrendingContent list sorted by interactions."
+        "跨平台热点搜索。仅在用户明确要求搜索热点/趋势/竞品时调用。"
+        "不要在以下场景调用：用户只要求分析已有内容、基于已有内容写文案、"
+        "追问/确认/闲聊、用户已提供参考素材。"
+        "输入 keyword，返回热门笔记列表和趋势数据"
     )
     input_schema = TrendingSearchInput
     required_permissions = [Permission.XHS_SEARCH]  # 复用搜索权限
@@ -214,21 +215,88 @@ class TrendingSearchSkill(Skill):
             logger.warning("[skill] no content source after excluding xiaohongshu")
             return [], []
 
+        # 英文平台列表：这些平台内容以英文为主，中文关键词需翻译
+        _EN_PLATFORMS = {
+            "hackernews", "github", "reddit", "pinterest", "instagram",
+            "twitter", "youtube", "tiktok", "medium", "devto",
+        }
+
+        # 搜索并发控制
+        _MAX_CONCURRENT = 6       # 同时搜索的平台数（避免代理连接池打满）
+        _PER_PLATFORM_TIMEOUT = 15.0  # 单平台超时（秒），超时视为该平台无结果
+
+        # 中文关键词 → 英文关键词映射（本地翻译，不依赖外部 API）
+        _ZH_EN_MAP = {
+            "教育": "education", "学习": "learning", "课程": "course",
+            "培训": "training", "考试": "exam", "学校": "school",
+            "大学": "university", "英语": "english", "数学": "math",
+            "编程": "programming", "科技": "technology", "人工智能": "artificial intelligence",
+            "AI": "AI", "机器学习": "machine learning", "深度学习": "deep learning",
+            "大数据": "big data", "云计算": "cloud computing", "区块链": "blockchain",
+            "创业": "startup", "投资": "investment", "金融": "finance",
+            "健康": "health", "医疗": "medical", "减肥": "weight loss",
+            "健身": "fitness", "美食": "food", "旅行": "travel",
+            "穿搭": "fashion", "美妆": "beauty", "护肤": "skincare",
+            "职场": "career", "副业": "side hustle", "赚钱": "make money",
+            "读书": "reading", "写作": "writing", "设计": "design",
+            "摄影": "photography", "音乐": "music", "电影": "movie",
+            "游戏": "gaming", "宠物": "pet", "家居": "home decor",
+            "育儿": "parenting", "心理": "psychology", "社交": "social media",
+            "电商": "ecommerce", "直播": "livestream", "短视频": "short video",
+        }
+
+        def _translate_keyword_zh_to_en(kw: str) -> str:
+            """本地中文关键词翻译为英文（用于英文平台搜索）。
+
+            策略：逐词替换，保留英文部分不变。
+            """
+            result = kw
+            for zh, en in sorted(_ZH_EN_MAP.items(), key=lambda x: -len(x[0])):
+                if zh in result:
+                    result = result.replace(zh, en)
+            # 清理多余空格
+            result = " ".join(result.split())
+            # 如果翻译后和原文一样（全是中文），尝试 MyMemory
+            if result == kw and any("\u4e00" <= ch <= "\u9fff" for ch in kw):
+                return kw  # fallback to original
+            return result
+
+        # 预翻译中文关键词（用于英文平台搜索）
+        en_keyword: str | None = None
+        has_chinese = any("\u4e00" <= ch <= "\u9fff" for ch in keyword)
+        if has_chinese:
+            en_keyword = _translate_keyword_zh_to_en(keyword)
+            if en_keyword != keyword:
+                logger.info(f"[skill] translated keyword '{keyword}' → '{en_keyword}' for EN platforms")
+            else:
+                logger.info(f"[skill] keyword '{keyword}' could not be translated, using original for EN platforms")
+
         async def _search_one(plat: str) -> tuple[list, str]:
             src = source_manager.get_source(plat)
             if src is None:
                 return [], plat
             try:
-                # 每个平台各抓 limit 条（不多抓，避免单个平台占用过多配额）
-                r = await src.search_trending(keyword, limit, time_range)
+                kw = en_keyword if (plat in _EN_PLATFORMS and en_keyword) else keyword
+                r = await asyncio.wait_for(
+                    src.search_trending(kw, limit, time_range),
+                    timeout=_PER_PLATFORM_TIMEOUT,
+                )
                 return r, plat
+            except asyncio.TimeoutError:
+                logger.warning(f"[skill] trending_search timed out on {plat} ({_PER_PLATFORM_TIMEOUT}s)")
+                return [], plat
             except Exception as e:
                 logger.error(f"[skill] trending_search failed on {plat}: {e}")
                 return [], plat
 
-        # 并发搜索所有平台
-        # return_exceptions=True：单平台异常/超时不拖累其他平台
-        tasks = [_search_one(p) for p in platforms]
+        # 并发搜索所有平台（信号量控制并发数，避免代理连接池打满）
+        sem = asyncio.Semaphore(_MAX_CONCURRENT)
+
+        async def _search_one_limited(plat: str) -> tuple[list, str]:
+            async with sem:
+                return await _search_one(plat)
+
+        tasks = [_search_one_limited(p) for p in platforms]
         results_per_platform = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_results: list = []

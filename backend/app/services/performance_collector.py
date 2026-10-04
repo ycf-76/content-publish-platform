@@ -32,6 +32,7 @@ _current_weights: dict[str, float] = {
     "rate_weight": 0.5,
     "viral_weight": 0.3,
     "likes_weight": 0.2,
+    "collect_weight": 0.15,
 }
 
 # 校准门槛
@@ -48,22 +49,27 @@ def compute_performance_score(note: dict) -> float:
     """计算单条发布内容的综合表现分（复用 Layer 1 同样的公式思路）。
 
     用发布者自己的粉丝数作为分母，衡量内容本身的引爆能力。
+    扩展（AI多平台分析文档 P0-6）：加入 collects/shares 输入。
     """
     import math
 
     likes = max(note.get("likes", 0), 0)
+    collects = max(note.get("collects", 0), 0)
     comments = max(note.get("comments", 0), 0)
+    shares = max(note.get("shares", 0), 0)
     fans = max(note.get("author_fans", 1), 1)
 
     interaction_rate = likes / fans
     viral_coefficient = likes / (math.sqrt(fans) + 1)
     quality_score = comments / max(likes, 1)
+    collect_rate = collects / max(likes, 1) if collects else 0.0
 
     weights = get_current_weights()
     score = (
         interaction_rate * weights["rate_weight"]
         + viral_coefficient * weights["viral_weight"]
         + likes * weights["likes_weight"]
+        + collect_rate * weights.get("collect_weight", 0.15)
     )
     return round(score, 4)
 
@@ -75,10 +81,24 @@ async def record_publication(
     selected_pattern: dict | None = None,
     selected_direction: dict | None = None,
     published_note_id: str | None = None,
+    platform: str = "xiaohongshu",
+    predicted_viral_score: float | None = None,
+    title: str | None = None,
+    content_text: str | None = None,
+    tags: list[str] | None = None,
+    cover_img_url: str | None = None,
+    images: list | None = None,
+    card_draft: dict | None = None,
 ) -> str:
     """记录一次发布行为，供 T+7 回采。
 
     在工作流产出内容并成功发布后调用。
+    扩展参数（AI多平台分析文档 P0-3）：
+    - platform: 目标平台
+    - predicted_viral_score: analyze_node 预测的 viral_score
+    - title/content_text/tags/cover_img_url: 内容特征快照
+    - images: 图片 URL 列表
+    - card_draft: 卡片草稿结构（含 pages）
     """
     from datetime import UTC, datetime
 
@@ -91,13 +111,22 @@ async def record_publication(
             selected_pattern=selected_pattern,
             selected_direction=selected_direction,
             published_at=datetime.now(UTC),
+            platform=platform,
+            predicted_viral_score=predicted_viral_score,
+            title=title[:512] if title else None,
+            content_text=content_text,
+            tags={"items": tags} if tags else None,
+            cover_img_url=cover_img_url,
+            images=images,
+            card_draft=card_draft,
         )
         db.add(record)
         await db.commit()
         await db.refresh(record)
         logger.info(
             f"[performance_collector] recorded publication: "
-            f"workflow={workflow_id}, note={published_note_id}"
+            f"workflow={workflow_id}, note={published_note_id}, "
+            f"platform={platform}, predicted_viral={predicted_viral_score}"
         )
         return record.id
 
@@ -138,10 +167,16 @@ async def collect_performance_7d() -> int:
 
                 perf_score = compute_performance_score({
                     "likes": stats.get("likes", 0),
+                    "collects": stats.get("collects", 0),
                     "comments": stats.get("comments", 0),
+                    "shares": stats.get("shares", 0),
                     "author_fans": stats.get("author_fans", 1),
                 })
                 is_replicated = perf_score > _REPLICATION_THRESHOLD
+
+                prediction_error = None
+                if record.predicted_viral_score is not None:
+                    prediction_error = round(perf_score - record.predicted_viral_score, 4)
 
                 await db.execute(
                     update(PublishedContentPerformance)
@@ -154,6 +189,8 @@ async def collect_performance_7d() -> int:
                         collected_at=now,
                         performance_score=perf_score,
                         is_replicated=is_replicated,
+                        actual_viral_score=perf_score,
+                        prediction_error=prediction_error,
                     )
                 )
                 collected += 1
@@ -168,6 +205,21 @@ async def collect_performance_7d() -> int:
         logger.info(
             f"[performance_collector] T+7: collected {collected}/{len(records)} records"
         )
+
+        # 回采后检查是否触发归因分析
+        if collected > 0:
+            try:
+                user_ids = {r.user_id for r in records if r.collected_at}
+                from app.services.self_attribution import maybe_trigger_attribution
+                for uid in user_ids:
+                    triggered = await maybe_trigger_attribution(uid)
+                    if triggered:
+                        logger.info(
+                            f"[performance_collector] attribution triggered for user {uid}"
+                        )
+            except Exception as attr_err:
+                logger.warning(f"[performance_collector] attribution check failed: {attr_err}")
+
         return collected
 
 

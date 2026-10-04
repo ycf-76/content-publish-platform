@@ -1,38 +1,7 @@
 <template>
-<main class="min-h-screen" style="position: relative;">
+<div class="min-h-screen" style="position: relative;">
 
-  <!-- ============ 右上角全局用户头像（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
-  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
-    <img
-      v-if="authStore.user.avatar_url"
-      :src="authStore.user.avatar_url"
-      alt="头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <img
-      v-else
-      src="/images/avatar/@man.svg"
-      alt="默认头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <transition name="mint-dropdown">
-      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
-        <div class="mint-dropdown-user-section">
-          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
-          <span class="mint-dropdown-user-method">{{ authStore.user.login_method === 'wechat' ? '微信登录' : '邮箱登录' }}</span>
-        </div>
-        <div class="mint-dropdown-body">
-          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
-            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
-          </button>
-        </div>
-      </div>
-    </transition>
-  </div>
-
-  <div class="mint-shell" :class="{ 'mint-collapsed': isSidebarCollapsed }" :style="{ '--right-panel-width': '0px', '--left-sidebar-width': leftSidebarWidth + 'px' }">
+  <div class="mint-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }" :style="{ '--right-panel-width': '0px', '--left-sidebar-width': leftSidebarWidth + 'px' }">
 
     <!-- ============ 左侧导航 ============ -->
     <SidebarNav
@@ -43,9 +12,20 @@
       @go-eco="goToEco"
       @new-workflow="goToWorkbench"
       @open-settings="openSettings"
-      @new-chat="goToWorkbench"
-      @delete-chat="() => {}"
+      @new-chat="goToChat"
     />
+
+    <!-- left sidebar resize handle -->
+    <div
+      class="mint-left-resize-handle"
+      v-show="!isSidebarCollapsed"
+      :class="{ 'is-left-resizing': isLeftResizing }"
+      title="拖拽调整侧边栏宽度 · 双击恢复默认"
+      @mousedown="startLeftResize"
+      @dblclick.prevent="resetLeftSidebarWidth"
+    >
+      <div class="mint-resize-line"></div>
+    </div>
 
     <!-- ============ 中间主工作区 ============ -->
     <div class="mint-content-card-wrapper">
@@ -67,27 +47,27 @@
           <section class="ws-entry-section">
           <div class="ws-entry-card ws-entry-quick" @click="goToWorkbench">
             <div class="ws-entry-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
             </div>
             <div class="ws-entry-body">
               <h3 class="ws-entry-title">快速启动</h3>
               <p class="ws-entry-desc">一键跑标准流程：搜索 → 分析 → 写作 → 配图 → 发布</p>
             </div>
             <div class="ws-entry-arrow">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </div>
           </div>
 
           <div class="ws-entry-card ws-entry-orchestrate" @click="goToWorkflowTemplates">
             <div class="ws-entry-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
             </div>
             <div class="ws-entry-body">
               <h3 class="ws-entry-title">动态编排</h3>
               <p class="ws-entry-desc">拖拽节点、自由连线，构建你自己的 AI 工作流</p>
             </div>
             <div class="ws-entry-arrow">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </div>
           </div>
         </section>
@@ -171,7 +151,7 @@
   </div>
 
   <SettingsView v-if="showSettings" @close="showSettings = false" />
-</main>
+</div>
 </template>
 
 <script setup lang="ts">
@@ -188,17 +168,21 @@ const router = useRouter()
 const { isSidebarCollapsed, toggleSidebar } = useUIState()
 const authStore = useAuthStore()
 
-const leftSidebarWidth = ref(220)
+import { useResizeHandle } from '@/composables/useResizeHandle'
+const {
+  width: leftSidebarWidth,
+  isResizing: isLeftResizing,
+  startResize: startLeftResize,
+  resetWidth: resetLeftSidebarWidth,
+} = useResizeHandle({
+  direction: 'left',
+  minWidth: 170,
+  maxWidth: 520,
+  storageKey: 'mint-left-sidebar-width-v2',
+})
+
 const showSettings = ref(false)
-const userDropdownOpen = ref(false)
-
-function handleLogout() {
-  authStore.logout()
-  userDropdownOpen.value = false
-  router.push('/login')
-}
 const scrollRef = ref<HTMLElement | null>(null)
-
 const heroLines = ['从灵感到发布', '一条工作流搞定']
 
 interface ShowcaseItem {
@@ -281,6 +265,10 @@ function goToWorkbench() {
   router.push({ path: '/workbench', query: { page: 'workflow' } })
 }
 
+function goToChat() {
+  router.push({ path: '/workbench', query: { page: 'chat' } })
+}
+
 function goToWorkflowTemplates() {
   router.push('/workflow-templates')
 }
@@ -298,9 +286,11 @@ function openSettings() {
 }
 
 function handleNavClick(page: string) {
-  if (page === 'workflow') {
-    goToWorkbench()
+  if (page === 'topic-pool' || page === 'my-works' || page === 'task-plans' || page === 'portfolio') {
+    router.push(`/${page}`).catch(() => {})
+    return
   }
+  router.push({ path: '/workbench', query: { page } })
 }
 
 onMounted(async () => {

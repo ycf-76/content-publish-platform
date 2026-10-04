@@ -5,7 +5,7 @@
       <div class="cd-header">
         <h2 class="cd-title">插件配置</h2>
         <button @click="$emit('close')" class="cd-close-btn">
-          <i data-lucide="x"></i>
+          <X :size="16" />
         </button>
       </div>
 
@@ -148,22 +148,22 @@
                     @click="removeArrayItem(key, index)"
                     class="cd-btn-remove"
                   >
-                    <i data-lucide="x"></i>
+                    <X :size="14" />
                   </button>
                 </div>
-                <button 
+                <button
                   type="button"
                   @click="addArrayItem(key)"
                   class="cd-btn-add"
                 >
-                  <i data-lucide="plus"></i>
+                  <Plus :size="14" />
                   添加项
                 </button>
               </div>
               
               <!-- 不支持的类型提示 -->
               <div v-else class="cd-unsupported">
-                <i data-lucide="alert-triangle"></i>
+                <AlertTriangle :size="14" />
                 暂不支持 {{ schema.type }} 类型的编辑，请使用JSON格式
               </div>
               
@@ -181,7 +181,7 @@
 
           <!-- 无配置Schema的提示 -->
           <div v-else class="cd-no-schema">
-            <i data-lucide="settings"></i>
+            <Settings :size="20" />
             <h3>该插件无需配置</h3>
             <p>此插件没有可自定义的配置选项。</p>
           </div>
@@ -203,7 +203,7 @@
           :disabled="loading || hasErrors"
           class="cd-btn cd-btn-save"
         >
-          <i data-lucide="save"></i>
+          <Save :size="14" />
           保存配置
         </button>
       </div>
@@ -213,6 +213,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { X, Plus, AlertTriangle, Settings, Save } from 'lucide-vue-next'
 import type { Plugin, PluginCategory } from '@/api/plugins'
 
 // ==================== Props & Emits ====================

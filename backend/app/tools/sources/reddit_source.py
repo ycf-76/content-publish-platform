@@ -1,4 +1,4 @@
-﻿"""Reddit 内容数据源。
+"""Reddit 内容数据源。
 
 Reddit API v2 认证方式（OAuth2 Client Credentials）：
 - 个人脚本：用 script app 类型，username + password + client_id + client_secret
@@ -61,9 +61,12 @@ class RedditSource(ContentSource):
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            from app.tools.sources.base import get_proxy_url
+            proxy = get_proxy_url()
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0),
                 headers={"User-Agent": _REDDIT_USER_AGENT},
+                proxy=proxy or None,
             )
         return self._client
 

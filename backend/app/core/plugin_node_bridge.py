@@ -85,7 +85,7 @@ async def initialize_plugin_nodes(
                 backend_dir = Path(__file__).parent.parent.parent
                 plugin_dirs = [
                     str(backend_dir / "plugins" / "builtin"),
-                    # third_party 目录可能不存在，跳过
+                    str(backend_dir / "plugins" / "third_party"),
                 ]
             
             # 过滤存在的目录
@@ -96,8 +96,9 @@ async def initialize_plugin_nodes(
                 _initialized = True
                 return result
             
-            from app.core.plugin_manager import PluginManager
+            from app.core.plugin_manager import PluginManager, set_global_plugin_manager
             pm = PluginManager(plugin_dirs=existing_dirs)
+            set_global_plugin_manager(pm)
             
             # 发现并加载所有插件
             try:

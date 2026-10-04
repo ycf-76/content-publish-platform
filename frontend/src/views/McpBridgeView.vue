@@ -19,7 +19,7 @@
         <button class="hint-btn" @click="showHint = !showHint" type="button">？</button>
       </div>
       <div class="config-hint" v-if="showHint">
-        获取扩展ID：打开 chrome://extensions → 开启"开发者模式" → 找到"多智能体小红书发布平台 MCP 插件" → 复制 ID 栏的字符串
+        获取扩展ID：打开 chrome://extensions → 开启"开发者模式" → 找到"多智能体内容平台 MCP 插件" → 复制 ID 栏的字符串
       </div>
       <div class="config-actions">
         <button class="btn-primary" @click="toggleConnect" type="button" :disabled="!canConnect">

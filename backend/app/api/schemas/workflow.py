@@ -35,6 +35,10 @@ class StartWorkflowRequest(BaseModel):
         default_factory=dict,
         description="选题池参考素材（标题/摘要/URL/平台/互动数据等）",
     )
+    source: str = Field(
+        default="gui",
+        description="发起来源: gui | chat_agent",
+    )
 
 
 class WorkflowResponse(BaseModel):

@@ -27,7 +27,7 @@ def create_jwt(user_id: str, extra_claims: dict[str, Any] | None = None) -> str:
 
     Args:
         user_id: 用户唯一 ID（写入 sub claim）
-        extra_claims: 额外 claims（如 xhs_user_id / nickname），可选
+        extra_claims: 额外 claims（如 nickname），可选
 
     Returns:
         编码后的 JWT 字符串

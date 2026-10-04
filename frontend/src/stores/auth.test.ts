@@ -53,8 +53,7 @@ describe('useAuthStore', () => {
       store.$patch({
         user: {
           user_id: 'u1',
-          xhs_user_id: 'xhs1',
-          nickname: 'Test',
+                    nickname: 'Test',
           avatar_url: '',
           has_xhs_auth: true,
           login_method: 'email',
@@ -69,8 +68,7 @@ describe('useAuthStore', () => {
       store.$patch({
         user: {
           user_id: 'u1',
-          xhs_user_id: '',
-          nickname: 'Test',
+                    nickname: 'Test',
           avatar_url: '',
           has_xhs_auth: false,
           login_method: 'email',
@@ -86,8 +84,7 @@ describe('useAuthStore', () => {
         data: {
           token: 'jwt-token-123',
           user_id: 'u1',
-          xhs_user_id: '',
-          nickname: 'TestUser',
+                    nickname: 'TestUser',
           avatar_url: 'https://avatar.url',
           has_xhs_auth: false,
           login_method: 'email',

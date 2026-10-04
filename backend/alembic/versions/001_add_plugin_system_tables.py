@@ -20,7 +20,7 @@ from datetime import datetime
 
 # revision identifiers
 revision = '001_plugin_system'
-down_revision = None
+down_revision = '20260724074510'
 branch_labels = None
 depends_on = None
 

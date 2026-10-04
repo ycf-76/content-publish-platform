@@ -20,6 +20,8 @@ Endpoints:
 - GET    /api/plugins/my                       - 我的插件
 - POST   /api/plugins/bulk                     - 批量操作
 - POST   /api/plugins/upload                   - 上传插件包（开发者）
+- POST   /api/plugins/install-from-github      - 从 GitHub 安装插件 ⭐新增
+- POST   /api/plugins/{plugin_id}/update-from-github  - 从 GitHub 更新插件 ⭐新增
 """
 
 import sys
@@ -37,7 +39,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, Uplo
 from fastapi import Path as FastPath
 from sqlalchemy.ext.asyncio import AsyncSession
 
-sys.path.insert(0, "D:/My_Project/多智能体小红书发布平台/backend")
+sys.path.insert(0, "D:/My_Project/多智能体内容运营创作平台/backend")
 
 from sqlalchemy import select
 
@@ -64,6 +66,7 @@ from app.api.schemas.plugin_schemas import (
     BulkActionRequest,
     BulkActionResponse,
 )
+from pydantic import BaseModel, Field
 
 
 logger = logging.getLogger(__name__)
@@ -402,6 +405,24 @@ async def upload_plugin(
         except Exception as install_err:
             logger.warning(f"[upload_plugin] Auto-install after upload failed (non-fatal): {install_err}")
 
+        try:
+            from app.core.plugin_manager import get_global_plugin_manager
+            pm = get_global_plugin_manager()
+            if pm:
+                load_result = await pm.load_plugin_from_dir(str(target_dir))
+                if load_result.success:
+                    logger.info(f"[upload_plugin] Hot-loaded plugin into runtime PluginManager: {plugin_id}")
+                else:
+                    logger.warning(f"[upload_plugin] PluginManager hot-load failed: {load_result.error}")
+        except Exception as e:
+            logger.warning(f"[upload_plugin] PluginManager hot-load skipped: {e}")
+
+        try:
+            from app.agents.graph import refresh_node_func_map
+            refresh_node_func_map()
+        except Exception:
+            pass
+
         return {
             "success": True,
             "message": "Plugin installed successfully",
@@ -493,7 +514,20 @@ async def delete_plugin(
     plugin_id: str = FastPath(..., description="Plugin ID"),
     service: PluginService = Depends(get_plugin_service),
 ):
-    """删除插件（管理员权限）"""
+    """删除插件（管理员权限）
+
+    同时执行：
+    1. 从 PluginManager 运行时卸载
+    2. 删除第三方插件文件目录
+    3. 从数据库删除记录（级联删除 versions/configs/reviews/stats）
+    """
+    try:
+        plugin = await service.get_plugin(plugin_id)
+    except Exception:
+        plugin = None
+
+    is_builtin = getattr(plugin, 'is_builtin', True) if plugin else True
+
     try:
         await service.delete_plugin(plugin_id)
     except ValueError as e:
@@ -507,11 +541,21 @@ async def delete_plugin(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(e),
             )
+
+    if not is_builtin:
+        tp_dir = Path(__file__).parent.parent.parent.parent / "plugins" / "third_party" / plugin_id
+        if tp_dir.exists():
+            shutil.rmtree(tp_dir, ignore_errors=True)
+            logger.info(f"Removed third-party plugin directory: {tp_dir}")
+
+    try:
+        from app.core.plugin_manager import get_global_plugin_manager
+        pm = get_global_plugin_manager()
+        if pm and plugin_id in pm:
+            await pm.unload_plugin(plugin_id)
+            logger.info(f"Unloaded plugin from runtime PluginManager: {plugin_id}")
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete plugin: {str(e)}",
-        )
+        logger.warning(f"Failed to unload plugin from PluginManager: {e}")
 
 
 # ==================== 安装管理端点 ====================
@@ -531,7 +575,13 @@ async def install_plugin(
     """为当前用户安装插件"""
     try:
         result = await service.install_plugin(user_id, plugin_id, request)
-        
+
+        try:
+            from app.agents.graph import refresh_node_func_map
+            refresh_node_func_map()
+        except Exception:
+            pass
+
         return PluginActionResponse(
             success=result["success"],
             message=result["message"],
@@ -562,16 +612,46 @@ async def uninstall_plugin(
     user_id: str = Depends(get_current_user_id),
     service: PluginService = Depends(get_plugin_service),
 ):
-    """卸载用户的插件（第三方插件会同时删除其文件目录）"""
+    """卸载用户的插件
+
+    完整卸载流程：
+    1. 删除用户的 PluginConfig 记录（取消安装）
+    2. 第三方插件：删除文件目录 + 删除 Plugin 主记录（级联删除 versions/reviews/stats）
+    3. 从 PluginManager 运行时卸载
+    """
     try:
+        plugin_info = await service.get_plugin(plugin_id)
+        is_builtin = getattr(plugin_info, 'is_builtin', True) if plugin_info else True
+
         result = await service.uninstall_plugin(user_id, plugin_id)
 
-        plugin_info = await service.get_plugin(plugin_id)
-        if plugin_info and not getattr(plugin_info, 'is_builtin', True):
+        if not is_builtin:
             tp_dir = Path(__file__).parent.parent.parent.parent / "plugins" / "third_party" / plugin_id
             if tp_dir.exists():
                 shutil.rmtree(tp_dir, ignore_errors=True)
                 logger.info(f"Removed third-party plugin directory: {tp_dir}")
+
+            if plugin_info:
+                try:
+                    await service.delete_plugin(plugin_id)
+                    logger.info(f"Deleted third-party plugin DB record: {plugin_id}")
+                except ValueError:
+                    pass
+
+        try:
+            from app.core.plugin_manager import get_global_plugin_manager
+            pm = get_global_plugin_manager()
+            if pm and plugin_id in pm:
+                await pm.unload_plugin(plugin_id)
+                logger.info(f"Unloaded plugin from runtime PluginManager: {plugin_id}")
+        except Exception as e:
+            logger.warning(f"Failed to unload plugin from PluginManager: {e}")
+
+        try:
+            from app.agents.graph import refresh_node_func_map
+            refresh_node_func_map()
+        except Exception:
+            pass
 
         return PluginActionResponse(
             success=result["success"],
@@ -982,3 +1062,161 @@ async def get_marketplace_plugins(
         page_size=page_size,
         items=[PluginResponse.model_validate(p) for p in plugins],
     )
+
+
+# ==================== GitHub 安装端点 ⭐新增 ====================
+
+class GithubInstallRequest(BaseModel):
+    """GitHub 安装请求"""
+    repo_url: str = Field(..., description="GitHub 仓库 URL (如 https://github.com/user/plugin-repo)")
+    branch: str = Field(default="main", description="分支名（默认 main）")
+    use_git_clone: bool = Field(default=False, description="是否使用 git clone（需要本地安装 git）")
+
+
+@router.post(
+    "/install-from-github",
+    response_model=dict,
+    summary="Install plugin from GitHub",
+    description="从 GitHub 仓库安装插件（支持 git clone 或 zip 下载两种模式）",
+)
+async def install_from_github(
+    request: GithubInstallRequest = Body(...),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    从 GitHub 仓库安装插件
+    
+    支持两种安装模式：
+    1. ZIP 下载模式（默认）：通过 GitHub API 下载仓库 zip 包，无需本地 git
+    2. Git Clone 模式：使用 git clone 命令克隆仓库，支持后续 git pull 更新
+    
+    示例请求：
+    ```json
+    {
+        "repo_url": "https://github.com/username/awesome-plugin",
+        "branch": "main",
+        "use_git_clone": false
+    }
+    ```
+    
+    返回示例：
+    ```json
+    {
+        "success": true,
+        "plugin_id": "username__awesome-plugin",
+        "plugin_name": "Awesome Plugin",
+        "version": "1.0.0",
+        "message": "插件 Awesome Plugin v1.0.0 安装成功（ZIP 下载）",
+        "install_method": "zip"
+    }
+    ```
+    """
+    try:
+        from app.services.github_installer import get_github_installer
+        
+        installer = get_github_installer()
+        result = await installer.install_from_github(
+            repo_url=request.repo_url,
+            branch=request.branch,
+            use_git_clone=request.use_git_clone,
+        )
+        
+        if result.get("success"):
+            # 安装成功后，尝试自动加载插件
+            try:
+                from app.core.plugin_manager import get_global_plugin_manager
+                pm = get_global_plugin_manager()
+                if pm and result.get("plugin_id"):
+                    # 重新扫描并加载新插件
+                    await pm.discover_and_load_all()
+                    logger.info(f"[plugins] 已重新加载插件，包含新安装的: {result['plugin_id']}")
+            except Exception as e:
+                logger.warning(f"[plugins] 自动加载新插件失败: {e}")
+
+            try:
+                from app.agents.graph import refresh_node_func_map
+                refresh_node_func_map()
+            except Exception:
+                pass
+            
+            # 记录安装历史（可选）
+            logger.info(f"[plugins] 用户 {user_id} 从 GitHub 安装插件: {result}")
+        
+        return result
+        
+    except Exception as e:
+        logger.exception(f"[plugins] GitHub 安装异常: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"GitHub 安装失败: {str(e)}",
+        )
+
+
+@router.post(
+    "/{plugin_id}/update-from-github",
+    response_model=dict,
+    summary="Update plugin from GitHub",
+    description="更新已安装的 GitHub 插件到最新版本",
+)
+async def update_from_github(
+    plugin_id: str = FastPath(..., description="插件 ID"),
+    use_git_pull: bool = Query(False, description="是否使用 git pull（仅限 git clone 安装的插件）"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    更新已安装的 GitHub 插件
+    
+    对于通过 git clone 安装的插件：
+    - 使用 git pull --ff-only 快速更新
+    - 保留完整的 git 历史，支持回滚
+    
+    对于通过 zip 下载安装的插件：
+    - 重新从 GitHub 下载最新版本
+    - 替换旧版本文件
+    
+    返回示例：
+    ```json
+    {
+        "success": true,
+        "message": "插件更新成功 (v1.2.0)",
+        "details": "Updating abc1234..def5678  Fast-forward"
+    }
+    ```
+    """
+    try:
+        from app.services.github_installer import get_github_installer
+        
+        installer = get_github_installer()
+        result = await installer.update_plugin(
+            plugin_id=plugin_id,
+            use_git_pull=use_git_pull,
+        )
+        
+        if result.get("success"):
+            # 更新成功后，重新加载插件
+            try:
+                from app.core.plugin_manager import get_global_plugin_manager
+                pm = get_global_plugin_manager()
+                if pm and plugin_id in pm:
+                    await pm.unload_plugin(plugin_id)
+                    await pm.discover_and_load_all()
+                    logger.info(f"[plugins] 已重新加载更新的插件: {plugin_id}")
+            except Exception as e:
+                logger.warning(f"[plugins] 重新加载插件失败: {e}")
+
+            try:
+                from app.agents.graph import refresh_node_func_map
+                refresh_node_func_map()
+            except Exception:
+                pass
+            
+            logger.info(f"[plugins] 用户 {user_id} 更新 GitHub 插件: {plugin_id}")
+        
+        return result
+        
+    except Exception as e:
+        logger.exception(f"[plugins] GitHub 更新异常: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"GitHub 更新失败: {str(e)}",
+        )

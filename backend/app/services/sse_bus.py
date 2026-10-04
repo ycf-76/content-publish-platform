@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _TERMINAL_TYPES = frozenset({
     'workflow_completed', 'workflow_error', 'workflow_terminated',
     'workflow_failed', 'workflow_suspended', 'workflow_cancelled',
+    'shortcut_completed',
 })
 
 _CLEANUP_DELAY_SECONDS = 300
@@ -34,6 +35,8 @@ _CLEANUP_DELAY_SECONDS = 300
 # 任意事件类型，这里只做显式声明，便于引用与文档对齐。
 EVENT_INTENT_PARSED = 'intent_parsed'
 EVENT_AGENT_CHAT_ERROR = 'agent_chat_error'
+EVENT_DRAFT_PATCH = 'draft_patch'
+EVENT_CARD_DRAFT_READY = 'card_draft_ready'
 
 
 class SSEEvent(BaseModel):
@@ -203,7 +206,7 @@ class SSEEventBus:
             while True:
                 try:
                     # Wait for event with timeout for heartbeat
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=5.0)
                     heartbeat_counter = 0
                     yield self._format_sse(event)
                     # 终态事件：结束订阅，关闭 SSE 流
@@ -211,10 +214,10 @@ class SSEEventBus:
                         logger.debug(f"[{workflow_id}] Stream ended after terminal event {event.event_type}")
                         return
                 except TimeoutError:
-                    # Send heartbeat every 15 seconds
+                    # Send heartbeat every 5 seconds
                     heartbeat_counter += 1
                     yield ": heartbeat\n\n"
-                    if heartbeat_counter > 4:
+                    if heartbeat_counter > 24:
                         # 60 seconds without events, check connection
                         logger.debug(f"[{workflow_id}] Heartbeat check")
         finally:

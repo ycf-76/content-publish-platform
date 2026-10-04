@@ -1,4 +1,4 @@
-﻿"""VL analyze skill (Qwen-VL).
+"""VL analyze skill (Qwen-VL).
 
 Analyzes uploaded images and returns structured tags.
 """

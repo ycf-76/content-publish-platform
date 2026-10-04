@@ -29,10 +29,9 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = response.data.token
       user.value = {
         user_id: response.data.user_id,
-        xhs_user_id: response.data.xhs_user_id,
         nickname: response.data.nickname,
         avatar_url: response.data.avatar_url,
-        has_xhs_auth: response.data.has_xhs_auth ?? !!response.data.xhs_user_id,
+        has_xhs_auth: response.data.has_xhs_auth ?? false,
         login_method: response.data.login_method || 'email',
       }
 

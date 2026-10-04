@@ -1,6 +1,12 @@
 """Observer layer (D16 process transparency).
 
-Pushes trace events via dependency-injected callbacks.
+Codex-style two-phase event model:
+  Phase 1 (Delta):  streaming incremental updates (reasoning_summary_text_delta, agent_message_delta)
+  Phase 2 (Completed): item finalization (reasoning_completed, agent_message_completed)
+
+Delta events update status bar and stream tail only — they do NOT write to history.
+Completed events write the final item to history, replacing the stream tail.
+
 Red line: must NOT import SSE or FastAPI directly.
 """
 
@@ -13,50 +19,148 @@ EmitCallback = Callable[[str, str, dict[str, Any]], Awaitable[None]]
 
 
 async def _noop(node_id: str, event_type: str, payload: dict[str, Any]) -> None:
-    """Default no-op callback when none is injected."""
     pass
 
 
 class Observer:
-    """D16 observation layer.
-
-    Emits 7 trace event types via a dependency-injected callback.
-    The SSE layer (Phase 5) injects a real callback; defaults to no-op.
-    """
+    """D16 observation layer with Codex-style two-phase events."""
 
     def __init__(self, emit_callback: EmitCallback | None = None):
+        self._emit_callback = emit_callback
         self._emit = emit_callback or _noop
 
-    async def emit_trace(self, node_id: str, event_type: str, payload: dict[str, Any]) -> None:
-        """Push a generic trace event."""
+    async def emit(self, node_id: str, event_type: str, payload: dict[str, Any]) -> None:
         await self._emit(node_id, event_type, payload)
 
+    # ------------------------------------------------------------------
+    # Phase 1: Delta events (streaming, do NOT write to history)
+    # ------------------------------------------------------------------
+
+    async def emit_reasoning_delta(self, node_id: str, delta: str) -> None:
+        """Push a reasoning summary text delta.
+
+        Codex: ReasoningSummaryTextDelta → on_agent_reasoning_delta()
+        - Frontend accumulates into reasoning_buffer
+        - Frontend extracts first **bold** header for status bar (once, then cached)
+        - summary_header is pre-extracted here as a hint, frontend may ignore if empty
+        """
+        import re
+        bold_match = re.search(r'\*\*(.+?)\*\*', delta)
+        summary_header = bold_match.group(1) if bold_match else ""
+        await self._emit(node_id, "reasoning_summary_text_delta", {
+            "delta": delta,
+            "summary_header": summary_header,
+            "item_id": node_id,
+        })
+
+    async def emit_agent_message_delta(self, node_id: str, delta: str) -> None:
+        """Push an agent message text delta.
+
+        Codex: AgentMessageDelta → on_agent_message_delta()
+        - Goes through StreamController for line-by-line commit animation
+        - Only the readable reply text, never raw JSON
+        """
+        import logging as _logging
+        _logging.getLogger(__name__).info(f"[Observer] emit_agent_message_delta: node_id={node_id}, delta_len={len(delta)}, preview={delta[:60]!r}")
+        await self._emit(node_id, "agent_message_delta", {
+            "delta": delta,
+            "item_id": node_id,
+        })
+
+    # ------------------------------------------------------------------
+    # Phase 2: Completed events (finalize item, write to history)
+    # ------------------------------------------------------------------
+
+    async def emit_reasoning_completed(self, node_id: str, summary_parts: list[str]) -> None:
+        """Push a reasoning item completion.
+
+        Codex: ItemCompleted(ThreadItem::Reasoning) → on_agent_reasoning_final()
+        - Takes the accumulated reasoning_buffer parts
+        - Frontend creates a ReasoningSummaryCell (dim + italic, collapsible)
+        - Adds to history, clears streaming state
+        """
+        await self._emit(node_id, "reasoning_completed", {
+            "summary_parts": summary_parts,
+            "item_id": node_id,
+        })
+
+    async def emit_agent_message_completed(self, node_id: str, text: str) -> None:
+        """Push an agent message item completion.
+
+        Codex: ItemCompleted(ThreadItem::AgentMessage) → on_agent_message_item_completed()
+        - Takes the final message text
+        - Frontend finalizes StreamController → AgentMarkdownCell
+        - Consolidates streaming tail into permanent history
+        """
+        await self._emit(node_id, "agent_message_completed", {
+            "text": text,
+            "item_id": node_id,
+        })
+
+    # ------------------------------------------------------------------
+    # Legacy: emit_llm_stream (kept for backward compat, delegates to new methods)
+    # ------------------------------------------------------------------
+
     async def emit_llm_stream(self, node_id: str, chunk: dict[str, Any]) -> None:
-        """Push an LLM streaming chunk (reasoning_content -> agent_thinking)."""
-        await self._emit(node_id, "agent_thinking", {"chunk": chunk})
+        """Push an LLM streaming chunk (reasoning only, NOT content).
+
+        Content (LLM formal output) contains structured JSON and must be
+        parsed by loop.py, not streamed directly.
+        """
+        reasoning = chunk.get("reasoning_content", "")
+        if reasoning:
+            await self.emit_reasoning_delta(node_id, reasoning)
+
+    # ------------------------------------------------------------------
+    # Tool call events
+    # ------------------------------------------------------------------
 
     async def emit_tool_call_start(
         self, node_id: str, tool_name: str, inputs: dict[str, Any]
     ) -> None:
-        """Push a tool_call_start event."""
+        payload: dict[str, Any] = {"tool_name": tool_name, "inputs": inputs}
+        if node_id.startswith("sub:"):
+            payload["sub_agent_id"] = node_id[4:]
+        import logging as _log
+        _log.getLogger(__name__).info(
+            f"[Observer] emit_tool_call_start: node={node_id}, tool={tool_name}, "
+            f"sub_agent_id={payload.get('sub_agent_id', '')}, "
+            f"has_callback={self._emit_callback is not None}"
+        )
         await self._emit(
-            node_id, "tool_call_start", {"tool_name": tool_name, "inputs": inputs}
+            node_id, "tool_call_start", payload
         )
 
     async def emit_tool_call_end(
-        self, node_id: str, tool_name: str, success: bool, summary: str = ""
+        self, node_id: str, tool_name: str, success: bool, summary: str = "",
+        result_data: Any = None,
     ) -> None:
-        """Push a tool_call_end event."""
-        await self._emit(
-            node_id,
-            "tool_call_end",
-            {"tool_name": tool_name, "success": success, "summary": summary},
+        payload: dict[str, Any] = {
+            "tool_name": tool_name,
+            "success": success,
+            "summary": summary,
+        }
+        if result_data is not None:
+            payload["result_data"] = result_data
+        if node_id.startswith("sub:"):
+            payload["sub_agent_id"] = node_id[4:]
+        import logging as _log
+        _log.getLogger(__name__).info(
+            f"[Observer] emit_tool_call_end: node={node_id}, tool={tool_name}, "
+            f"success={success}, sub_agent_id={payload.get('sub_agent_id', '')}"
         )
+        await self._emit(node_id, "tool_call_end", payload)
+
+    # ------------------------------------------------------------------
+    # Other trace events
+    # ------------------------------------------------------------------
+
+    async def emit_trace(self, node_id: str, event_type: str, payload: dict[str, Any]) -> None:
+        await self._emit(node_id, event_type, payload)
 
     async def emit_progress(
         self, node_id: str, current: int, total: int, label: str = ""
     ) -> None:
-        """Push a progress_update event."""
         await self._emit(
             node_id, "progress_update",
             {"current": current, "total": total, "label": label},
@@ -65,19 +169,15 @@ class Observer:
     async def emit_model_switched(
         self, node_id: str, from_model: str, to_model: str
     ) -> None:
-        """Push a model_switched event."""
         await self._emit(
             node_id, "model_switched", {"from": from_model, "to": to_model}
         )
 
     async def emit_decision(self, node_id: str, decision_text: str) -> None:
-        """Push a decision_made event."""
         await self._emit(node_id, "decision_made", {"decision": decision_text})
 
     # ------------------------------------------------------------------
-    # Recovery 观测（项目书 4.8 要求的 log_attempt / log_attempt_failed）
-    # RecoveryLoop 通过这两个方法记录每次 attempt 的策略、调整和结果
-    # 与通用的 emit_trace 相比，这两个方法有明确的语义和字段约定
+    # Recovery observation
     # ------------------------------------------------------------------
 
     async def log_attempt(
@@ -87,14 +187,6 @@ class Observer:
         strategy: str,
         adjusted: dict[str, Any] | None = None,
     ) -> None:
-        """记录一次 recovery attempt 开始。
-
-        参数:
-            node_id: 节点 ID
-            attempt: 第几次尝试（从 0 开始）
-            strategy: 策略名（retry / broaden_keyword / switch_model 等）
-            adjusted: 调整后的输入摘要（用于追踪策略如何修改了输入）
-        """
         await self._emit(
             node_id,
             "recovery_attempt",
@@ -113,15 +205,6 @@ class Observer:
         error: str,
         error_type: str = "",
     ) -> None:
-        """记录一次 recovery attempt 失败。
-
-        参数:
-            node_id: 节点 ID
-            attempt: 第几次尝试（从 0 开始）
-            strategy: 策略名
-            error: 错误消息
-            error_type: 错误类型名（如 NodeExecutionError / TimeoutError）
-        """
         await self._emit(
             node_id,
             "recovery_attempt_failed",
@@ -139,7 +222,6 @@ class Observer:
         attempt: int,
         strategy: str,
     ) -> None:
-        """记录 recovery 最终成功（在第 N 次尝试后成功）。"""
         await self._emit(
             node_id,
             "recovery_success",
@@ -155,7 +237,6 @@ class Observer:
         attempts: int,
         last_error: str,
     ) -> None:
-        """记录 recovery 所有策略耗尽，最终失败。"""
         await self._emit(
             node_id,
             "recovery_exhausted",
@@ -170,7 +251,6 @@ class Observer:
         node_id: str,
         state: str,
     ) -> None:
-        """记录熔断器开启，请求被拒绝。"""
         await self._emit(
             node_id,
             "circuit_open",

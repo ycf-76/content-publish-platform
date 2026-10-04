@@ -140,6 +140,8 @@ async def sync_all_plugins_to_db() -> Dict[str, int]:
     """
     扫描内置 + 第三方插件的 plugin.json，upsert 到数据库
 
+    同时清理孤儿记录：DB 中有但文件系统不存在的第三方插件将被删除。
+
     Returns:
         {"scanned": int, "synced": int, "skipped": int}
     """
@@ -150,6 +152,10 @@ async def sync_all_plugins_to_db() -> Dict[str, int]:
             result = await _sync_plugin_dir(plugin_dir, is_builtin=is_builtin, session=session)
             for k in total:
                 total[k] += result[k]
+
+        orphaned = await _cleanup_orphaned_third_party(session)
+        if orphaned > 0:
+            logger.info(f"Cleaned up {orphaned} orphaned third-party plugin(s) from DB")
 
         await session.commit()
 
@@ -190,3 +196,29 @@ async def sync_single_third_party_plugin(plugin_id: str) -> Dict[str, int]:
         await session.commit()
 
     return result
+
+
+async def _cleanup_orphaned_third_party(session: AsyncSession) -> int:
+    """
+    清理孤儿第三方插件记录：DB 中有记录但文件系统没有对应目录
+
+    Args:
+        session: 数据库会话
+
+    Returns:
+        清理的记录数
+    """
+    result = await session.execute(
+        select(PluginModel).where(PluginModel.is_builtin == False)
+    )
+    third_party_plugins = result.scalars().all()
+
+    cleaned = 0
+    for plugin in third_party_plugins:
+        plugin_dir = THIRD_PARTY_DIR / plugin.id
+        if not plugin_dir.exists() or not (plugin_dir / "plugin.json").exists():
+            await session.delete(plugin)
+            cleaned += 1
+            logger.debug(f"Cleaned orphaned third-party plugin: {plugin.id}")
+
+    return cleaned

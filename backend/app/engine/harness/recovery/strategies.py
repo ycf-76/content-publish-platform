@@ -1,4 +1,4 @@
-﻿"""Recovery 策略库（架构文档 4.4.4 + 手册 Phase 6 Part B）。
+"""Recovery 策略库（架构文档 4.4.4 + 手册 Phase 6 Part B）。
 
 6 种策略：
 1. RetryStrategy             — 原样重试（瞬时错误）
@@ -211,9 +211,9 @@ class SwitchModelStrategy(RecoveryStrategy):
 
 
 class RefreshTokenStrategy(RecoveryStrategy):
-    """策略4：刷新小红书 Token（应对 publish 时 token 过期）。
+    """策略4：刷新 Token（应对 publish 时 token 过期）— xhs_publish 已移除，保留占位。
 
-    通过 context.extra.refresh_token_first 标记，由 XhsPublishSkill 在 execute
+    通过 context.extra.refresh_token_first 标记，由发布技能在 execute
     前主动刷新。仅对 publish 节点生效，其他节点原样返回。
     """
 

@@ -217,7 +217,10 @@ export const usePluginStore = defineStore('plugin', () => {
         installedPlugins.value = installedPlugins.value.filter(id => id !== pluginId)
         enabledPlugins.value.delete(pluginId)
         pluginConfigs.value.delete(pluginId)
-        
+
+        // 第三方插件卸载后从DB删除，需要刷新全量列表
+        allPlugins.value = allPlugins.value.filter(p => p.id !== pluginId)
+
         return true
       }
       

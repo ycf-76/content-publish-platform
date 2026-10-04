@@ -1,36 +1,5 @@
 <template>
-<main class="min-h-screen" style="position: relative;">
-
-  <!-- ============ 右上角全局用户信息（放在 shell 外，避免 overflow:hidden 裁切） ============ -->
-  <div v-if="authStore.user" class="mint-global-user" :class="{ 'mint-global-user-active': userDropdownOpen }" @click="userDropdownOpen = !userDropdownOpen">
-    <img
-      v-if="authStore.user.avatar_url"
-      :src="authStore.user.avatar_url"
-      alt="头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <img
-      v-else
-      src="/images/avatar/@man.svg"
-      alt="默认头像"
-      class="mint-avatar"
-      style="width:36px;height:36px;border-radius:50%;object-fit:cover;"
-    />
-    <transition name="mint-dropdown">
-      <div v-if="userDropdownOpen" class="mint-global-dropdown" @click.stop>
-        <div class="mint-dropdown-user-section">
-          <span class="mint-dropdown-user-name">{{ authStore.user.nickname || '未设置' }}</span>
-          <span class="mint-dropdown-user-method">{{ loginMethodLabel }}</span>
-        </div>
-        <div class="mint-dropdown-body">
-          <button class="mint-dropdown-item mint-dropdown-logout" @click="handleLogout">
-            <i data-lucide="log-out" style="width:14px;height:14px;"></i> 退出登录
-          </button>
-        </div>
-      </div>
-    </transition>
-  </div>
+<div class="min-h-screen" style="position: relative;">
 
   <div class="mint-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'mint-right-collapsed': isRightPanelCollapsed || currentPage === 'chat', 'mint-shell-chat': currentPage === 'chat', 'is-left-resizing': isLeftResizing, 'settings-blur': showSettings }" :style="{ '--right-panel-width': rightPanelWidth + 'px', '--left-sidebar-width': leftSidebarWidth + 'px' }">
 
@@ -45,6 +14,16 @@
       @open-settings="openSettings"
       @new-chat="handleNewChat"
       @delete-chat="handleDeleteChat"
+      @select-work="handleSelectWork"
+      @add-work="handleAddWork"
+      @create-draft="handleCreateDraft"
+      @refresh-works="handleRefreshWorks"
+      @select-file="handleSelectFile"
+      @select-conversation="handleSelectConversation"
+      @new-chat-in-folder="handleNewChatInFolder"
+      @select-folder="handleSelectFolder"
+      @exit-creation="handleExitCreation"
+      @switch-creation-panel="handleSwitchCreationPanel"
     />
 
     <!-- left sidebar resize handle -->
@@ -52,18 +31,18 @@
       class="mint-left-resize-handle"
       v-show="!isSidebarCollapsed"
       :class="{ 'is-left-resizing': isLeftResizing }"
-      title="拖拽调整侧边栏宽度"
+      title="拖拽调整侧边栏宽度 · 双击恢复默认"
       @mousedown="startLeftResize"
+      @dblclick.prevent="resetLeftSidebarWidth"
     >
       <div class="mint-resize-line"></div>
     </div>
 
     <!-- ============ 中间主工作区 ============ -->
-    <div class="mint-content-card-wrapper">
-    <section class="mint-main" :class="{ 'mint-main-chat': currentPage === 'chat' }" id="mint-main">
+    <main class="wf-page" id="mint-main">
 
       <!-- ========== 工作流页面 ========== -->
-      <div class="page-container" id="page-workflow" v-show="currentPage === 'workflow'">
+      <div class="wf-content-card-wrapper" v-show="currentPage === 'workflow'">
         <div class="wf-content-card">
 
         <!-- 登录欢迎语 -->
@@ -93,132 +72,147 @@
           </div>
         </div>
 
-        <!-- ===== 节点容器（固定大小，内部滚动） ===== -->
-        <div class="wf-nodes-container" ref="nodesContainerRef" @scroll="onContainerScroll">
+        <!-- ===== 两栏节点容器（前期 + 后期，各自保留时间线） ===== -->
+        <div class="wf-columns-container" ref="nodesContainerRef" @scroll="onContainerScroll">
 
-          <!-- ===== 阶段1：search 节点 ===== -->
-          <div class="wf-step" :class="wfStepClass('search')" data-node="search" data-width="normal" @click="onStepClick('search', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <SearchCard
-                :keyword="keyword"
-                :creative-brief="creativeBrief"
-                :search-platforms="searchPlatforms"
-                :selected-platform="selectedPlatform"
-                :search-status="searchStatus"
-                :search-results="searchResults"
-                :search-error="searchError"
-                :node-status="getNodeStatus('search')"
-                :node-meta="getNodeMeta('search')"
-                @update:keyword="keyword = $event"
-                @update:creative-brief="creativeBrief = $event"
-                @start-flow="startSearchFlow"
-                @cancel-and-restart="cancelAndRestart"
-                @select-platform="onSelectPlatform"
-                @start-from-result="startFromResult"
-                @search-similar="searchSimilar"
-                @enter-analyze="onEnterAnalyze"
-              />
+          <!-- ===== 左栏：前期（搜索 → 分析 → 写作 → 配图规划） ===== -->
+          <div class="wf-column wf-column-early">
+            <div class="wf-nodes-column">
+
+              <!-- 阶段1：search 节点 -->
+              <div class="wf-step" :class="wfStepClass('search')" data-node="search" data-width="normal" @click="onStepClick('search', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <SearchCard
+                    :keyword="keyword"
+                    :creative-brief="creativeBrief"
+                    :search-platforms="searchPlatforms"
+                    :selected-platform="selectedPlatform"
+                    :search-status="searchStatus"
+                    :search-results="searchResults"
+                    :search-error="searchError"
+                    :node-status="getNodeStatus('search')"
+                    :node-meta="getNodeMeta('search')"
+                    @update:keyword="keyword = $event"
+                    @update:creative-brief="creativeBrief = $event"
+                    @start-flow="startSearchFlow"
+                    @cancel-and-restart="cancelAndRestart"
+                    @select-platform="onSelectPlatform"
+                    @start-from-result="startFromResult"
+                    @search-similar="searchSimilar"
+                    @enter-analyze="onEnterAnalyze"
+                  />
+                </div>
+              </div>
+
+              <!-- 阶段2：analyze 节点 -->
+              <div class="wf-step" :class="wfStepClass('analyze')" data-node="analyze" data-width="normal" @click="onStepClick('analyze', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <AnalyzeCard
+                    :node-status="getNodeStatus('analyze')"
+                    :node-meta="getNodeMeta('analyze')"
+                    :result="getNodeResult('analyze')"
+                    :error-message="getNodeError('analyze')"
+                    :streaming-text="getNodeStreamingText('analyze')"
+                    @enter-copywrite="onEnterCopywrite"
+                  />
+                </div>
+              </div>
+
+              <!-- 阶段3：copywrite 节点 -->
+              <div class="wf-step" :class="wfStepClass('copywrite')" data-node="copywrite" data-width="normal" @click="onStepClick('copywrite', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <CopywriteCard
+                    :node-status="getNodeStatus('copywrite')"
+                    :node-meta="getNodeMeta('copywrite')"
+                    :result="getNodeResult('copywrite')"
+                    :error-message="getNodeError('copywrite')"
+                    :streaming-text="getNodeStreamingText('copywrite')"
+                    :workflow-id="currentWorkflowId"
+                    @continue-to-image="onContinueToImage"
+                  />
+                </div>
+              </div>
+
+              <!-- 阶段4：image_plan 节点 -->
+              <div class="wf-step" :class="wfStepClass('image_plan')" data-node="image_plan" data-width="normal" @click="onStepClick('image_plan', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <ImagePlanCard
+                    :node-status="getNodeStatus('image_plan')"
+                    :node-meta="getNodeMeta('image_plan')"
+                    :result="getNodeResult('image_plan')"
+                    :error-message="getNodeError('image_plan')"
+                  />
+                </div>
+              </div>
+
             </div>
           </div>
 
-          <!-- ===== 阶段2：analyze 节点 ===== -->
-          <div class="wf-step" :class="wfStepClass('analyze')" data-node="analyze" data-width="normal" @click="onStepClick('analyze', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <AnalyzeCard
-                :node-status="getNodeStatus('analyze')"
-                :node-meta="getNodeMeta('analyze')"
-                :result="getNodeResult('analyze')"
-                :error-message="getNodeError('analyze')"
-                :streaming-text="getNodeStreamingText('analyze')"
-                @enter-copywrite="onEnterCopywrite"
-              />
+          <!-- ===== 右栏：后期（生图 → 审图 → 发布） ===== -->
+          <div class="wf-column wf-column-late">
+            <div class="wf-nodes-column">
+
+              <!-- 阶段5：image_gen 节点 -->
+              <div class="wf-step" :class="wfStepClass('image_gen')" data-node="image_gen" data-width="normal" @click="onStepClick('image_gen', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <ImageGenCard
+                    :node-status="getNodeStatus('image_gen')"
+                    :node-meta="getNodeMeta('image_gen')"
+                    :result="getNodeResult('image_gen')"
+                    :error-message="getNodeError('image_gen')"
+                    :card-draft="imagePlanCardDraft"
+                    :workflow-id="currentWorkflowId"
+                    @open-workspace="openImageWorkspace"
+                  />
+                </div>
+              </div>
+
+              <!-- 阶段6：image_review 节点 -->
+              <div class="wf-step" :class="wfStepClass('image_review')" data-node="image_review" data-width="normal" @click="onStepClick('image_review', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <ImageReviewCard
+                    :node-status="getNodeStatus('image_review')"
+                    :node-meta="getNodeMeta('image_review')"
+                    :result="getNodeResult('image_review')"
+                    :error-message="getNodeError('image_review')"
+                    :workflow-id="currentWorkflowId"
+                  />
+                </div>
+              </div>
+
+              <!-- 阶段7：发布预览（含合规审核 + 终审 + 发布） -->
+              <div class="wf-step" :class="wfStepClass('final_review')" data-node="final_review" data-width="normal" @click="onStepClick('final_review', $event)">
+                <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
+                <div class="wf-step-content">
+                  <FinalReviewCard
+                    :audit-status="getNodeStatus('audit')"
+                    :audit-meta="getNodeMeta('audit')"
+                    :audit-result="getNodeResult('audit')"
+                    :audit-error="getNodeError('audit')"
+                    :final-review-status="getNodeStatus('final_review')"
+                    :final-review-meta="getNodeMeta('final_review')"
+                    :final-review-result="getNodeResult('final_review')"
+                    :final-review-error="getNodeError('final_review')"
+                    :publish-status="getNodeStatus('publish')"
+                    :publish-meta="getNodeMeta('publish')"
+                    :publish-result="getNodeResult('publish')"
+                    :publish-error="getNodeError('publish')"
+                    :copywrite-result="getNodeResult('copywrite')"
+                    :image-gen-result="getNodeResult('image_gen')"
+                    :workflow-id="currentWorkflowId"
+                  />
+                </div>
+              </div>
+
             </div>
           </div>
 
-          <!-- ===== 阶段3：copywrite 节点 ===== -->
-          <div class="wf-step" :class="wfStepClass('copywrite')" data-node="copywrite" data-width="normal" @click="onStepClick('copywrite', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <CopywriteCard
-                :node-status="getNodeStatus('copywrite')"
-                :node-meta="getNodeMeta('copywrite')"
-                :result="getNodeResult('copywrite')"
-                :error-message="getNodeError('copywrite')"
-                :streaming-text="getNodeStreamingText('copywrite')"
-                :workflow-id="currentWorkflowId"
-                @continue-to-image="onContinueToImage"
-              />
-            </div>
-          </div>
-
-          <!-- ===== 阶段4：image_plan 节点 ===== -->
-          <div class="wf-step" :class="wfStepClass('image_plan')" data-node="image_plan" data-width="normal" @click="onStepClick('image_plan', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <ImagePlanCard
-                :node-status="getNodeStatus('image_plan')"
-                :node-meta="getNodeMeta('image_plan')"
-                :result="getNodeResult('image_plan')"
-                :error-message="getNodeError('image_plan')"
-              />
-            </div>
-          </div>
-
-          <!-- ===== 阶段5：image_gen 节点 ===== -->
-          <div class="wf-step" :class="wfStepClass('image_gen')" data-node="image_gen" data-width="normal" @click="onStepClick('image_gen', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <ImageGenCard
-                :node-status="getNodeStatus('image_gen')"
-                :node-meta="getNodeMeta('image_gen')"
-                :result="getNodeResult('image_gen')"
-                :error-message="getNodeError('image_gen')"
-                :card-draft="imagePlanCardDraft"
-                :workflow-id="currentWorkflowId"
-                @open-workspace="openImageWorkspace"
-              />
-            </div>
-          </div>
-
-          <!-- ===== 阶段6：image_review 节点 ===== -->
-          <div class="wf-step" :class="wfStepClass('image_review')" data-node="image_review" data-width="normal" @click="onStepClick('image_review', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <ImageReviewCard
-                :node-status="getNodeStatus('image_review')"
-                :node-meta="getNodeMeta('image_review')"
-                :result="getNodeResult('image_review')"
-                :error-message="getNodeError('image_review')"
-                :workflow-id="currentWorkflowId"
-              />
-            </div>
-          </div>
-
-          <!-- ===== 阶段7：发布预览（含合规审核 + 终审 + 发布） ===== -->
-          <div class="wf-step" :class="wfStepClass('final_review')" data-node="final_review" data-width="normal" @click="onStepClick('final_review', $event)">
-            <div class="wf-step-rail"><div class="wf-step-dot"></div></div>
-            <div class="wf-step-content">
-              <FinalReviewCard
-                :audit-status="getNodeStatus('audit')"
-                :audit-meta="getNodeMeta('audit')"
-                :audit-result="getNodeResult('audit')"
-                :audit-error="getNodeError('audit')"
-                :final-review-status="getNodeStatus('final_review')"
-                :final-review-meta="getNodeMeta('final_review')"
-                :final-review-result="getNodeResult('final_review')"
-                :final-review-error="getNodeError('final_review')"
-                :publish-status="getNodeStatus('publish')"
-                :publish-meta="getNodeMeta('publish')"
-                :publish-result="getNodeResult('publish')"
-                :publish-error="getNodeError('publish')"
-                :copywrite-result="getNodeResult('copywrite')"
-                :image-gen-result="getNodeResult('image_gen')"
-                :workflow-id="currentWorkflowId"
-              />
-            </div>
-          </div>
         </div>
         </div>
       </div>
@@ -236,11 +230,10 @@
 
       <!-- AI conversation page (DSH-style chat window) -->
       <div class="page-container page-container-chat" id="page-chat" v-show="currentPage === 'chat'">
-        <ChatView ref="chatViewRef" />
+        <ChatView ref="chatViewRef" :model-settings="modelSettings" @open-image-workspace="onChatOpenImageWorkspace" @start-cover-workflow="onChatStartCoverWorkflow" />
       </div>
 
-    </section>
-    </div>
+    </main>
 
     <!-- ============ 右侧面板 ============ -->
     <RightPanel v-if="currentPage !== 'chat'"
@@ -255,37 +248,43 @@
   </div>
 
   <ImageWorkspace
-    v-if="showImageWorkspace && imagePlanCardDraft"
-    :card-draft="imagePlanCardDraft"
+    v-if="showImageWorkspace && effectiveCardDraft"
+    :card-draft="effectiveCardDraft"
     :workflow-id="currentWorkflowId"
-    @close="showImageWorkspace = false"
+    :auto-inject="autoInjectImageWorkspace"
+    @close="onCloseImageWorkspace"
   />
 
   <SettingsView v-if="showSettings" @close="showSettings = false" />
-</main>
+  <AddWorkModal :visible="showAddWork" @close="showAddWork = false" />
+</div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { createIcons, icons } from 'lucide'
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
-import SettingsView from '@/views/SettingsView.vue'
 import RightPanel from '@/components/workbench/RightPanel.vue'
 import WelcomeGreeting from '@/components/workbench/WelcomeGreeting.vue'
-import HistoryPage from '@/components/workbench/HistoryPage.vue'
-import ChatView from '@/components/chat/ChatView.vue'
-import SearchCard from '@/components/workbench/SearchCard.vue'
-import AnalyzeCard from '@/components/workbench/AnalyzeCard.vue'
-import CopywriteCard from '@/components/workbench/CopywriteCard.vue'
-import ImagePlanCard from '@/components/workbench/ImagePlanCard.vue'
-import ImageGenCard from '@/components/workbench/ImageGenCard.vue'
-import ImageWorkspace from '@/components/workbench/ImageWorkspace.vue'
-import ImageReviewCard from '@/components/workbench/ImageReviewCard.vue'
-import FinalReviewCard from '@/components/workbench/FinalReviewCard.vue'
+
+const ChatView = defineAsyncComponent(() => import('@/components/chat/ChatView.vue'))
+const SettingsView = defineAsyncComponent(() => import('@/views/SettingsView.vue'))
+const HistoryPage = defineAsyncComponent(() => import('@/components/workbench/HistoryPage.vue'))
+const SearchCard = defineAsyncComponent(() => import('@/components/workbench/SearchCard.vue'))
+const AnalyzeCard = defineAsyncComponent(() => import('@/components/workbench/AnalyzeCard.vue'))
+const CopywriteCard = defineAsyncComponent(() => import('@/components/workbench/CopywriteCard.vue'))
+const ImagePlanCard = defineAsyncComponent(() => import('@/components/workbench/ImagePlanCard.vue'))
+const ImageGenCard = defineAsyncComponent(() => import('@/components/workbench/ImageGenCard.vue'))
+const ImageWorkspace = defineAsyncComponent(() => import('@/components/workbench/ImageWorkspace.vue'))
+const ImageReviewCard = defineAsyncComponent(() => import('@/components/workbench/ImageReviewCard.vue'))
+const FinalReviewCard = defineAsyncComponent(() => import('@/components/workbench/FinalReviewCard.vue'))
+const AddWorkModal = defineAsyncComponent(() => import('@/components/chat/AddWorkModal.vue'))
 import { useAuthStore } from '@/stores/auth'
 import { useAccountStore } from '@/stores/account'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkStore } from '@/stores/work'
+import { useChatContextStore } from '@/stores/chatContext'
+import { useFileStore } from '@/stores/files'
 import { useSearchFlow } from '@/composables/useSearchFlow'
 import { searchApi } from '@/api/search'
 
@@ -295,28 +294,18 @@ const authStore = useAuthStore()
 const accountStore = useAccountStore()
 const workflowStore = useWorkflowStore()
 
-const userDropdownOpen = ref(false)
 const showImageWorkspace = ref(false)
+const autoInjectImageWorkspace = ref(false)
+const chatCardDraft = ref<any>(null)
 
-const loginMethodLabel = computed(() => {
-  const method = authStore.user?.login_method || ''
-  const map: Record<string, string> = {
-    qrcode: '扫码登录',
-    email: '邮箱登录',
-    plugin: '插件登录',
-    session_refresh: '会话刷新',
-  }
-  return map[method] || (authStore.user?.xhs_user_id ? authStore.user.xhs_user_id : '')
+const effectiveCardDraft = computed(() => {
+  return chatCardDraft.value || imagePlanCardDraft.value
 })
 
-async function handleLogout() {
-  userDropdownOpen.value = false
-  try {
-    await authStore.logout()
-  } catch (e) {
-    console.error('[WorkbenchView] logout error:', e)
-  }
-  router.push('/login?force=true')
+function onCloseImageWorkspace() {
+  showImageWorkspace.value = false
+  autoInjectImageWorkspace.value = false
+  chatCardDraft.value = null
 }
 
 // ===== 页面切换 =====
@@ -329,21 +318,172 @@ watch(() => route.query.page, (newPage) => {
   }
 })
 const showSettings = ref(false)
-const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
+const showAddWork = ref(false)
+const chatViewRef = ref<any>(null)
+const workStore = useWorkStore()
+const fileStore = useFileStore()
 
 function handleNewChat() {
   currentPage.value = 'chat'
   nextTick(() => {
-    chatViewRef.value?.newConversation()
+    if (chatViewRef.value) {
+      chatViewRef.value.newConversation()
+    } else {
+      setTimeout(() => { chatViewRef.value?.newConversation() }, 300)
+    }
   })
 }
 
 function handleDeleteChat(convId: string) {
-  chatViewRef.value?.deleteConversation(convId)
+  if (chatViewRef.value) {
+    chatViewRef.value.deleteConversation(convId)
+  } else {
+    setTimeout(() => { chatViewRef.value?.deleteConversation(convId) }, 300)
+  }
 }
+function handleSelectWork(workId: string) {
+  workStore.setActiveWork(workId)
+  currentPage.value = 'chat'
+  const doLink = async () => {
+    const ctxStore = useChatContextStore()
+    await ctxStore.linkWork(workId)
+    if (!ctxStore.sidebarVisible) {
+      ctxStore.setSidebarVisible(true)
+    }
+  }
+  nextTick(() => {
+    if (chatViewRef.value) {
+      chatViewRef.value.showWorkDetail = true
+      doLink()
+    } else {
+      setTimeout(() => {
+        if (chatViewRef.value) {
+          chatViewRef.value.showWorkDetail = true
+          doLink()
+        } else {
+          setTimeout(() => {
+            if (chatViewRef.value) {
+              chatViewRef.value.showWorkDetail = true
+            }
+            doLink()
+          }, 500)
+        }
+      }, 300)
+    }
+  })
+}
+function handleAddWork() {
+  showAddWork.value = true
+}
+function handleCreateDraft(contentType: string) {
+  workStore.createDraft(contentType)
+  currentPage.value = 'chat'
+  nextTick(() => {
+    if (chatViewRef.value) {
+      chatViewRef.value.showWorkDetail = true
+      useChatContextStore().setSidebarVisible(true)
+    } else {
+      setTimeout(() => {
+        if (chatViewRef.value) {
+          chatViewRef.value.showWorkDetail = true
+          useChatContextStore().setSidebarVisible(true)
+        }
+      }, 300)
+    }
+  })
+}
+async function handleRefreshWorks() {
+  await Promise.all([workStore.fetchWorks(), workStore.fetchOutputWorks()])
+}
+function handleSelectFile(fileId: string) {
+  currentPage.value = 'chat'
+  fileStore.setActiveFile(fileId)
+  const sessionId = fileStore.getFileSessionId(fileId)
+  nextTick(() => {
+    if (chatViewRef.value) {
+      if (sessionId) {
+        chatViewRef.value.switchToConversation(sessionId)
+      } else {
+        const file = fileStore.activeFile
+        if (file) {
+          chatViewRef.value.newConversation(file.folderId)
+        }
+      }
+    }
+  })
+}
+function handleSelectConversation(convId: string) {
+  currentPage.value = 'chat'
+  nextTick(() => {
+    if (chatViewRef.value) {
+      chatViewRef.value.switchToConversation(convId)
+    } else {
+      setTimeout(() => {
+        chatViewRef.value?.switchToConversation(convId)
+      }, 300)
+    }
+  })
+}
+function handleNewChatInFolder(folderId: string) {
+  currentPage.value = 'chat'
+  nextTick(() => {
+    if (chatViewRef.value) {
+      chatViewRef.value.newConversation(folderId)
+    } else {
+      setTimeout(() => { chatViewRef.value?.newConversation(folderId) }, 300)
+    }
+  })
+}
+function handleSelectFolder(folderId: string) {
+  currentPage.value = 'chat'
+  nextTick(() => {
+    if (chatViewRef.value) {
+      chatViewRef.value.switchToFolder(folderId)
+    } else {
+      setTimeout(() => { chatViewRef.value?.switchToFolder(folderId) }, 300)
+    }
+  })
+}
+function handleExitCreation() {
+  workStore.setActiveWork(null)
+  fileStore.setActiveFile(null)
+  if (chatViewRef.value) {
+    chatViewRef.value.resetToInitial()
+  } else {
+    setTimeout(() => { chatViewRef.value?.resetToInitial() }, 300)
+  }
+}
+
+function handleSwitchCreationPanel(typeKey: string) {
+  workStore.activeCreationType = typeKey as any
+
+  const existingDraft = workStore.works.find(
+    (w: any) => w.isDraft && w.contentType === typeKey
+  )
+  if (existingDraft) {
+    workStore.setActiveWork(existingDraft.id)
+  } else {
+    workStore.createDraft(typeKey)
+  }
+
+  currentPage.value = 'chat'
+  nextTick(() => {
+    if (chatViewRef.value) {
+      chatViewRef.value.showWorkDetail = true
+    } else {
+      setTimeout(() => {
+        if (chatViewRef.value) chatViewRef.value.showWorkDetail = true
+      }, 300)
+    }
+  })
+}
+
 function handleNavClick(page: string) {
+  if (page === 'topic-pool' || page === 'my-works' || page === 'task-plans' || page === 'portfolio') {
+    router.push(`/${page}`).catch(() => {})
+    return
+  }
   currentPage.value = page
-  nextTick(() => createIcons({ icons }))
 }
 function goToEco() {
   router.push('/eco')
@@ -356,7 +496,6 @@ function openSettings() {
 function onNewWorkflow() {
   currentPage.value = 'workflow'
   nextTick(() => {
-    createIcons({ icons })
     const searchInput = document.querySelector('.wf-search-input') as HTMLInputElement | null
     searchInput?.focus()
   })
@@ -409,7 +548,6 @@ async function onOpenWorkflow(workflowId: string) {
   } catch (e) {
     console.error('[WorkbenchView] sync workflow route failed:', e)
   }
-  nextTick(() => createIcons({ icons }))
 }
 
  async function onOpenDraft(workflowId: string) {
@@ -443,7 +581,6 @@ async function onOpenWorkflow(workflowId: string) {
       message: '草稿数据加载中，请稍后点击"在图片工作区编辑"',
     })
   }
-  nextTick(() => createIcons({ icons }))
 }
 
 function openImageWorkspace() {
@@ -458,6 +595,33 @@ function openImageWorkspace() {
   showImageWorkspace.value = true
 }
 
+function onChatOpenImageWorkspace(draft?: any) {
+  if (draft && draft.pages && Array.isArray(draft.pages) && draft.pages.length > 0) {
+    chatCardDraft.value = draft
+    if (!showImageWorkspace.value) {
+      showImageWorkspace.value = true
+    }
+    return
+  }
+  if (showImageWorkspace.value) return
+  const existingDraft = imagePlanCardDraft.value
+  if (existingDraft && Array.isArray(existingDraft.pages) && existingDraft.pages.length > 0) {
+    showImageWorkspace.value = true
+  } else {
+    workflowStore.pushNotification({
+      type: 'workflow_info',
+      message: '正在准备封面草稿，请稍候...',
+    })
+  }
+}
+
+async function onChatStartCoverWorkflow(topic: string) {
+  currentPage.value = 'workflow'
+  keyword.value = topic
+  await nextTick()
+  startSearchFlow()
+}
+
 function onRestartWorkflow(wf: any) {
   if (workflowStore.isStreaming) {
     if (!confirm('当前有工作流正在执行，是否取消并以此主题发起新工作流？')) return
@@ -465,9 +629,6 @@ function onRestartWorkflow(wf: any) {
   }
   keyword.value = wf.topic || ''
   currentPage.value = 'workflow'
-  nextTick(() => {
-    createIcons({ icons })
-  })
 }
 
 // ===== 侧边栏折叠（使用全局 UI 状态） =====
@@ -479,42 +640,28 @@ const {
 
 
 // ===== left sidebar resize =====
-const leftSidebarWidth = ref(Number(localStorage.getItem('mint-left-sidebar-width')) || 216)
-const isLeftResizing = ref(false)
-const MIN_LEFT_WIDTH = 180
-const MAX_LEFT_WIDTH = 400
-let leftResizeStartX = 0
-let leftResizeStartWidth = 0
-
-function startLeftResize(e: MouseEvent) {
-  leftResizeStartX = e.clientX
-  leftResizeStartWidth = leftSidebarWidth.value
-  isLeftResizing.value = true
-  document.addEventListener('mousemove', onLeftResize)
-  document.addEventListener('mouseup', stopLeftResize)
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-}
-
-function onLeftResize(e: MouseEvent) {
-  if (!isLeftResizing.value) return
-  let newWidth = leftResizeStartWidth + (e.clientX - leftResizeStartX)
-  newWidth = Math.max(MIN_LEFT_WIDTH, Math.min(newWidth, MAX_LEFT_WIDTH))
-  leftSidebarWidth.value = newWidth
-}
-
-function stopLeftResize() {
-  isLeftResizing.value = false
-  document.removeEventListener('mousemove', onLeftResize)
-  document.removeEventListener('mouseup', stopLeftResize)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  localStorage.setItem('mint-left-sidebar-width', String(leftSidebarWidth.value))
-}
+import { useResizeHandle } from '@/composables/useResizeHandle'
+const {
+  width: leftSidebarWidth,
+  isResizing: isLeftResizing,
+  startResize: startLeftResize,
+  resetWidth: resetLeftSidebarWidth,
+} = useResizeHandle({
+  direction: 'left',
+  minWidth: 170,
+  maxWidth: 520,
+  storageKey: 'mint-left-sidebar-width-v2',
+})
 // ===== 右侧面板 =====
 const isRightPanelCollapsed = ref(false)
-const rightPanelWidth = ref(280)
-function onRightPanelWidthUpdate(w: number) { rightPanelWidth.value = w }
+function calcDefaultRightWidth() {
+  return Math.max(200, Math.min(560, Math.floor(window.innerWidth / 3)))
+}
+const rightPanelWidth = ref(Number(localStorage.getItem('mint-right-panel-width-v2')) || calcDefaultRightWidth())
+function onRightPanelWidthUpdate(w: number) {
+  rightPanelWidth.value = w
+  localStorage.setItem('mint-right-panel-width-v2', String(w))
+}
 function onRightPanelCollapsedUpdate(c: boolean) { isRightPanelCollapsed.value = c }
 
 // ===== 模型设置 =====
@@ -796,6 +943,37 @@ const currentWorkflowId = computed(() => {
   return workflowStore.currentWorkflow?.workflow_id || ''
 })
 
+// ===== 自动触发图片生成注入 =====
+// 当 image_gen 节点变为 awaiting_review 且 review_type=card_editor 时，
+// 自动打开 ImageWorkspace 并设置 autoInject=true
+watch(
+  () => {
+    const imageGenNode = workflowStore.nodes.find(
+      n => n.node_id === 'image_gen' || n.node_type === 'image_gen'
+    )
+    return {
+      status: imageGenNode?.status,
+      reviewType: imageGenNode?.output?.review_type,
+    }
+  },
+  (newVal, oldVal) => {
+    if (
+      newVal.status === 'awaiting_review' &&
+      newVal.reviewType === 'card_editor' &&
+      oldVal?.status !== 'awaiting_review' &&
+      !showImageWorkspace.value
+    ) {
+      const draft = imagePlanCardDraft.value
+      if (draft && Array.isArray(draft.pages) && draft.pages.length > 0) {
+        console.log('[WorkbenchView] image_gen awaiting_review + card_editor: auto opening ImageWorkspace with autoInject')
+        autoInjectImageWorkspace.value = true
+        showImageWorkspace.value = true
+      }
+    }
+  },
+  { deep: true },
+)
+
 // ===== 加载搜索平台列表 =====
 async function loadSearchPlatforms() {
   try {
@@ -817,12 +995,19 @@ async function loadSearchPlatforms() {
   }
 }
 
+watch(() => workStore.sidebarTab, (tab) => {
+  if (tab === 'content') {
+    workStore.fetchWorks().catch(() => {})
+    workStore.fetchOutputWorks().catch(() => {})
+  }
+})
+
 // ===== 生命周期 =====
 onMounted(async () => {
   await nextTick()
-  createIcons({ icons })
   welcomeGreetingRef.value?.trigger()
   try { await accountStore.fetchAccounts() } catch (e) { /* fetchAccounts failed */ }
+  workStore.fetchWorks().catch(() => {})
   await loadSearchPlatforms()
   const workflowId = Array.isArray(route.params.workflowId)
     ? route.params.workflowId[0]
@@ -847,10 +1032,7 @@ onMounted(async () => {
 let _iconTimer: ReturnType<typeof setTimeout> | null = null
 watch(() => workflowStore.nodes, () => {
   if (_iconTimer) clearTimeout(_iconTimer)
-  _iconTimer = setTimeout(() => {
-    nextTick(() => createIcons({ icons }))
-    _iconTimer = null
-  }, 200)
+  _iconTimer = null
 }, { deep: true })
 
 // search 节点完成时自动滚动到 analyze 卡片（analyze 已无 interrupt，会自动执行）
@@ -876,30 +1058,39 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
   transition: filter 0.25s ease;
 }
 
-.page-container {
+/* 工作流页面主容器：与选题池 .tp-page 完全一致 */
+.wf-page {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  min-height: 0;
-  flex: 1;
-  width: 100%;
-  max-width: 960px;
+  overflow: hidden;
+  padding: 56px 20px 16px;
 }
 
+/* 工作流内容卡片包装层：与选题池 .tp-content-card-wrapper 一致 */
+.wf-content-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 工作流内容卡片：与选题池 .tp-content-card 一致 */
 .wf-content-card {
   flex: 1;
   min-height: 0;
   min-width: 0;
-  width: 100%;
-  background: #F9FAFB;
+  background: #FFFFFF;
   border-radius: 16px;
-  border: 1px solid var(--ma-border-default);
+  border: 1px solid var(--ma-border-default, #EDEDED);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 20px 24px;
 }
 
 .page-container-chat {
@@ -909,24 +1100,51 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
   padding: 0;
   height: 100%;
   box-sizing: border-box;
+  border-radius: 16px 0 0 16px;
+  border-right: none;
 }
 .mint-shell.mint-shell-chat {
-  padding: 16px 10px 12px 24px;
+  overflow: hidden;
 }
-.mint-shell.mint-shell-chat .mint-content-card-wrapper {
-  margin-top: 44px;
-}
-.mint-main.mint-main-chat {
-  padding: 6px 8px 16px 18px;
-  gap: 0;
+.mint-shell.mint-shell-chat .wf-page {
+  padding-top: 44px;
 }
 
 
-/* 节点容器：固定高度，内部滚动 */
-.wf-nodes-container {
+/* 两栏节点容器 */
+.wf-columns-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: #E5E7EB transparent;
+  width: 100%;
+}
+.wf-columns-container::-webkit-scrollbar { width: 6px; }
+.wf-columns-container::-webkit-scrollbar-track { background: transparent; }
+.wf-columns-container::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+.wf-columns-container::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+/* 单栏容器 */
+.wf-column {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+}
+
+
+/* 栏内节点列（保留时间线） */
+.wf-nodes-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -934,11 +1152,11 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
   padding-left: 36px;
   padding-right: 4px;
   scrollbar-width: none;
-  width: 100%;
 }
-.wf-nodes-container::-webkit-scrollbar { display: none; }
-.wf-nodes-container::-webkit-scrollbar-track { background: transparent; }
-.wf-nodes-container::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.wf-nodes-column::-webkit-scrollbar { display: none; }
+.wf-nodes-column::-webkit-scrollbar-track { background: transparent; }
+.wf-nodes-column::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+
 /* 搜索行：搜索卡片 + 推荐卡片并排 */
 .wf-search-row {
   display: flex;
@@ -950,7 +1168,7 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
   min-width: 0;
 }
 
-.wf-nodes-container::-webkit-scrollbar-thumb:hover { background: transparent; }
+.wf-nodes-column::-webkit-scrollbar-thumb:hover { background: transparent; }
 
 /* 通知横幅 */
 .wf-notifications {
@@ -1005,5 +1223,26 @@ watch(() => getNodeStatus('analyze'), (newStatus) => {
 @keyframes wfBreathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ---- Dark theme for card shell & columns ---- */
+.mint-shell.dark-theme .wf-content-card {
+  background: rgba(30, 30, 30, 0.92);
+  border-color: rgba(80, 80, 80, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.mint-shell.dark-theme .wf-column-label {
+  color: #E2E8F0;
+}
+.mint-shell.dark-theme .wf-column-sub {
+  color: #64748B;
+}
+
+/* ---- Responsive: narrow screen fallback to single column ---- */
+@media (max-width: 900px) {
+  .wf-columns-container {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
 }
 </style>

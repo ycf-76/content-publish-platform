@@ -8,9 +8,44 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+def get_proxy_url() -> str:
+    """获取 httpx 代理 URL（供所有 ContentSource 共享）。
+
+    优先级：
+    1. settings.http_proxy 显式配置（如 http://127.0.0.1:7897）
+    2. settings.http_proxy == "system" → 读环境变量 HTTP_PROXY / HTTPS_PROXY
+    3. 空字符串 → 不走代理
+
+    Returns:
+        代理 URL 字符串，或空字符串（不走代理）
+    """
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        proxy = settings.http_proxy
+    except Exception:
+        proxy = ""
+
+    if not proxy:
+        return ""
+
+    if proxy == "system":
+        env_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
+        if env_proxy:
+            logger.info(f"[sources] using system proxy: {env_proxy}")
+        return env_proxy
+
+    logger.info(f"[sources] using configured proxy: {proxy}")
+    return proxy
 
 
 @dataclass

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useChatHistory } from './useChatHistory'
 
+const MAX_DISPLAY = 20
+
 describe('useChatHistory', () => {
   beforeEach(() => {
     const { clearAll } = useChatHistory()
@@ -105,32 +107,42 @@ describe('useChatHistory', () => {
   describe('displayItems & hasMore', () => {
     it('should show at most MAX_DISPLAY items when not expanded', () => {
       const { addConversation, displayItems, hasMore } = useChatHistory()
-      for (let i = 1; i <= 8; i++) {
+      for (let i = 1; i <= MAX_DISPLAY + 5; i++) {
         addConversation(String(i), `Chat ${i}`)
       }
 
-      expect(displayItems.value).toHaveLength(6)
+      expect(displayItems.value).toHaveLength(MAX_DISPLAY)
       expect(hasMore.value).toBe(true)
     })
 
     it('should show all items when expanded', () => {
       const { addConversation, displayItems, hasMore, toggleExpand } = useChatHistory()
-      for (let i = 1; i <= 8; i++) {
+      const total = MAX_DISPLAY + 5
+      for (let i = 1; i <= total; i++) {
         addConversation(String(i), `Chat ${i}`)
       }
       toggleExpand()
 
-      expect(displayItems.value).toHaveLength(8)
+      expect(displayItems.value).toHaveLength(total)
       expect(hasMore.value).toBe(true)
     })
 
     it('should not show hasMore when items <= MAX_DISPLAY', () => {
       const { addConversation, hasMore } = useChatHistory()
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= MAX_DISPLAY; i++) {
         addConversation(String(i), `Chat ${i}`)
       }
 
       expect(hasMore.value).toBe(false)
+    })
+
+    it('should show hasMore when items exceed MAX_DISPLAY by 1', () => {
+      const { addConversation, hasMore } = useChatHistory()
+      for (let i = 1; i <= MAX_DISPLAY + 1; i++) {
+        addConversation(String(i), `Chat ${i}`)
+      }
+
+      expect(hasMore.value).toBe(true)
     })
   })
 

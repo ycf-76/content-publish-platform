@@ -1,4 +1,4 @@
-﻿"""GitHub 内容数据源。
+"""GitHub 内容数据源。
 
 用 GitHub Search API 抓热门仓库作为 trending 内容：
 - get_trending: 拿当日推送的 stars 最多的仓库（sort=stars, order=desc）
@@ -54,6 +54,8 @@ class GitHubSource(ContentSource):
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            from app.tools.sources.base import get_proxy_url
+            proxy = get_proxy_url()
             headers = {
                 "User-Agent": _DEFAULT_UA,
                 "Accept": "application/vnd.github+json",
@@ -63,6 +65,7 @@ class GitHubSource(ContentSource):
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0),
                 headers=headers,
+                proxy=proxy or None,
             )
         return self._client
 

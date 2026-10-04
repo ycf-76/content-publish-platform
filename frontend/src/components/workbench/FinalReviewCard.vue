@@ -5,7 +5,7 @@
         <div class="mint-wf-step">07</div>
         <div class="wf-node-title-block">
           <div class="mint-wf-title">
-            <i data-lucide="smartphone" class="wf-node-icon"></i>
+            <Smartphone class="wf-node-icon" :size="16" />
             发布预览
           </div>
           <div class="wf-node-subtitle">合规审核 · 终审 · 发布</div>
@@ -23,14 +23,14 @@
 
       <!-- ===== 全 idle ===== -->
       <div v-if="combinedStatus === 'idle'" class="wf-empty-hint">
-        <i data-lucide="info" style="width:14px;height:14px;"></i>
+        <Info :size="14" />
         等待图片确认后进行合规审核与发布
       </div>
 
       <!-- ===== 合规审核区域 ===== -->
       <div class="wf-section wf-section-audit" v-if="auditStatus !== 'idle' && auditStatus !== 'pending'">
         <div class="wf-section-header">
-          <i data-lucide="shield-check" style="width:14px;height:14px;"></i>
+          <ShieldCheck :size="14" />
           <span class="wf-section-title">合规审核</span>
           <span class="wf-section-badge" :style="auditBadgeStyle">{{ auditStatusLabel }}</span>
         </div>
@@ -43,36 +43,36 @@
 
         <!-- error -->
         <div v-else-if="auditStatus === 'error'" class="mint-search-error">
-          <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+          <AlertCircle :size="16" />
           <span>{{ auditError || '合规审核失败' }}</span>
         </div>
 
         <!-- completed -->
         <template v-else-if="auditStatus === 'completed' && auditResult">
           <div class="wf-audit-summary" :style="{ background: auditResult.passed ? '#F0FDF4' : '#FEF2F2' }">
-            <i :data-lucide="auditResult.passed ? 'check-circle' : 'x-circle'" style="width:14px;height:14px;" :style="{ color: auditResult.passed ? '#059669' : '#DC2626' }"></i>
+            <CheckCircle v-if="auditResult.passed " :size="14" :style="{ color: auditResult.passed ? '#059669' : '#DC2626' }" /><XCircle v-else :size="14" :style="{ color: auditResult.passed ? '#059669' : '#DC2626' }" />
             <span :style="{ color: auditResult.passed ? '#059669' : '#DC2626', fontWeight: 600, fontSize: '13px' }">{{ auditResult.passed ? '审核通过' : '发现问题' }}</span>
           </div>
           <div v-if="auditResult.issues && auditResult.issues.length" class="wf-compact-list">
             <div v-for="(issue, i) in auditResult.issues" :key="'issue-'+i" class="wf-compact-item wf-compact-warn">
-              <i data-lucide="alert-triangle" style="width:11px;height:11px;flex-shrink:0;"></i>
+              <AlertTriangle :size="11" />
               <span>{{ formatIssueItem(issue) }}</span>
               <span v-if="getIssueSeverity(issue)" class="wf-severity-tag" :class="'wf-severity-' + getIssueSeverity(issue)">{{ severityLabel(getIssueSeverity(issue)) }}</span>
             </div>
           </div>
           <div v-if="auditResult.suggestions && auditResult.suggestions.length" class="wf-compact-list">
             <div v-for="(sug, i) in auditResult.suggestions" :key="'sug-'+i" class="wf-compact-item wf-compact-sug">
-              <i data-lucide="lightbulb" style="width:11px;height:11px;flex-shrink:0;color:#3B6CF6;"></i>
+              <Lightbulb :size="11" style="color:#3B6CF6" />
               <span>{{ formatSuggestionItem(sug) }}</span>
             </div>
           </div>
           <div v-if="auditResult.passed && !(auditResult.issues && auditResult.issues.length) && !(auditResult.suggestions && auditResult.suggestions.length)" class="wf-audit-all-pass">
-            <i data-lucide="check-circle" style="width:12px;height:12px;"></i>
+            <CheckCircle :size="12" />
             所有审核项均已通过
           </div>
         </template>
         <div v-else-if="auditStatus === 'completed'" class="wf-empty-hint" style="font-size:13px;">
-          <i data-lucide="check-circle" style="width:12px;height:12px;color:#60A5FA;"></i>
+          <CheckCircle :size="12" style="color:#60A5FA" />
           合规审核已完成（详细数据不可用）
         </div>
       </div>
@@ -80,7 +80,7 @@
       <!-- ===== 终审预览区域 ===== -->
       <div class="wf-section wf-section-review" v-if="finalReviewStatus !== 'idle' && finalReviewStatus !== 'pending'">
         <div class="wf-section-header">
-          <i data-lucide="eye" style="width:14px;height:14px;"></i>
+          <Eye :size="14" />
           <span class="wf-section-title">终审预览</span>
           <span class="wf-section-badge" :style="reviewBadgeStyle">{{ reviewStatusLabel }}</span>
         </div>
@@ -93,7 +93,7 @@
 
         <!-- error -->
         <div v-else-if="finalReviewStatus === 'error'" class="mint-search-error">
-          <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+          <AlertCircle :size="16" />
           <span>{{ finalReviewError || '终审失败' }}</span>
         </div>
 
@@ -166,11 +166,11 @@
           </div>
           <div class="wf-review-actions">
             <button class="wf-review-btn wf-review-pass" @click="submitReviewAction('pass')" :disabled="submitting">
-              <i data-lucide="check" style="width:16px;height:16px;"></i>
+              <Check :size="16" />
               {{ submitting ? '提交中...' : '确认，进入发布' }}
             </button>
             <button class="wf-review-btn wf-review-reject" @click="submitReviewAction('reject')" :disabled="submitting">
-              <i data-lucide="rotate-ccw" style="width:16px;height:16px;"></i>
+              <RotateCcw :size="16" />
               {{ submitting ? '提交中...' : '调优重做' }}
             </button>
           </div>
@@ -179,11 +179,11 @@
         <!-- completed (passed/rejected) -->
         <div v-else-if="finalReviewStatus === 'completed' || finalReviewStatus === 'passed' || finalReviewStatus === 'rejected'" class="wf-review-result-row">
           <div class="wf-audit-summary" :style="{ background: finalReviewPassed ? '#F0FDF4' : '#FEF2F2' }">
-            <i :data-lucide="finalReviewPassed ? 'check-circle' : 'x-circle'" style="width:14px;height:14px;" :style="{ color: finalReviewPassed ? '#059669' : '#DC2626' }"></i>
+            <CheckCircle v-if="finalReviewPassed " :size="14" :style="{ color: finalReviewPassed ? '#059669' : '#DC2626' }" /><XCircle v-else :size="14" :style="{ color: finalReviewPassed ? '#059669' : '#DC2626' }" />
             <span :style="{ color: finalReviewPassed ? '#059669' : '#DC2626', fontWeight: 600, fontSize: '13px' }">{{ finalReviewPassed ? '确认通过' : '调优重做' }}</span>
           </div>
           <div v-if="finalReviewResult?.feedback" class="wf-compact-item wf-compact-sug" style="margin-top:4px;">
-            <i data-lucide="message-square-warning" style="width:11px;height:11px;flex-shrink:0;color:#D97706;"></i>
+            <MessageSquareWarning :size="11" style="color:#D97706" />
             <span>{{ finalReviewResult.feedback }}</span>
           </div>
         </div>
@@ -192,7 +192,7 @@
       <!-- ===== 发布区域 ===== -->
       <div class="wf-section wf-section-publish" v-if="publishStatus !== 'idle' && publishStatus !== 'pending'">
         <div class="wf-section-header">
-          <i data-lucide="send" style="width:14px;height:14px;"></i>
+          <Send :size="14" />
           <span class="wf-section-title">发布</span>
           <span class="wf-section-badge" :style="publishBadgeStyle">{{ publishStatusLabel }}</span>
         </div>
@@ -200,12 +200,12 @@
         <!-- awaiting_review：手动确认发布 -->
         <div v-if="publishNodeStatus === 'awaiting_review'" class="wf-publish-manual">
           <div class="wf-publish-manual-hint">
-            <i data-lucide="check-circle" style="width:14px;height:14px;color:#10B981;"></i>
+            <CheckCircle :size="14" style="color:#10B981" />
             <span>终审已通过，确认发布到小红书？</span>
           </div>
           <div v-if="publishResult?.title" class="wf-publish-manual-title">{{ publishResult.title }}</div>
           <button class="wf-publish-confirm-btn" @click="confirmPublish" :disabled="publishing">
-            <i data-lucide="send" style="width:14px;height:14px;"></i>
+            <Send :size="14" />
             {{ publishing ? "发布中..." : "确认发布" }}
           </button>
         </div>
@@ -220,52 +220,59 @@
 
         <!-- error -->
         <div v-else-if="publishNodeStatus === 'error'" class="mint-search-error">
-          <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+          <AlertCircle :size="16" />
           <span>{{ publishError || '发布失败' }}</span>
         </div>
 
         <!-- completed -->
         <template v-else-if="publishNodeStatus === 'completed' && publishResult">
           <div class="wf-audit-summary" :style="{ background: publishBgColor }">
-            <i :data-lucide="publishIcon" style="width:14px;height:14px;" :style="{ color: publishIconColor }"></i>
+            <component :is="publishIcon" :size="14" :style="{ color: publishIconColor }" />
             <span :style="{ color: publishTextColor, fontWeight: 600, fontSize: '13px' }">{{ publishResultLabel }}</span>
           </div>
           <div v-if="publishResult.post_id" class="wf-compact-item" style="margin-top:4px;">
-            <i data-lucide="link" style="width:11px;height:11px;flex-shrink:0;"></i>
+            <Link :size="11" />
             <span style="font-family:monospace;font-size:13px;">{{ publishResult.post_id }}</span>
           </div>
           <div v-if="publishResult.message" class="wf-compact-item" style="margin-top:2px;">
-            <i data-lucide="message-circle" style="width:11px;height:11px;flex-shrink:0;"></i>
+            <MessageCircle :size="11" />
             <span>{{ publishResult.message }}</span>
           </div>
           <div v-if="publishResult.status === 'awaiting_manual'" class="wf-manual-hint">
-            <i data-lucide="mouse-pointer-click" style="width:12px;height:12px;color:#D97706;"></i>
+            <MousePointerClick :size="12" style="color:#D97706" />
             <span>内容已填好，请在浏览器窗口手动点击「发布」按钮完成发布</span>
           </div>
           <button class="wf-push-wechat-btn" @click="pushToWechat" :disabled="pushingToWechat" v-if="publishNodeStatus === 'completed' || finalReviewStatus === 'completed'">
-            <i data-lucide="send" style="width:12px;height:12px;"></i>
+            <Send :size="12" />
             {{ pushingToWechat ? '推送中...' : '推送到微信' }}
           </button>
         </template>
         <div v-else-if="publishNodeStatus === 'completed'" class="wf-empty-hint" style="font-size:13px;">
-          <i data-lucide="check-circle" style="width:12px;height:12px;color:#60A5FA;"></i>
+          <CheckCircle :size="12" style="color:#60A5FA" />
           发布已完成（详细数据不可用）
         </div>
       </div>
 
     </div>
     <div class="wf-node-meta" v-if="combinedMeta">
-      <span class="wf-meta-item"><i data-lucide="clock" style="width:12px;height:12px;"></i>{{ combinedMeta.duration }}</span>
-      <span class="wf-meta-item"><i data-lucide="cpu" style="width:12px;height:12px;"></i>{{ combinedMeta.model }}</span>
-      <span class="wf-meta-item"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ combinedMeta.tokens }} tokens</span>
+      <span class="wf-meta-item"><Clock :size="12" />{{ combinedMeta.duration }}</span>
+      <span class="wf-meta-item"><Cpu :size="12" />{{ combinedMeta.model }}</span>
+      <span class="wf-meta-item"><Zap :size="12" />{{ combinedMeta.tokens }} tokens</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import { ref, computed, watch } from 'vue'
+import {
+
+  AlertCircle, AlertTriangle, Check, CheckCircle, Clock,
+  Cpu, Eye, Info, Lightbulb, Link, MessageCircle,
+  MessageSquareWarning, MousePointerClick, RotateCcw,
+  Send, ShieldCheck, Smartphone, XCircle, Zap,
+} from 'lucide-vue-next'
 import { workflowApi } from '@/api/workflow'
+import { authFetch } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useAccountStore } from '@/stores/account'
 
@@ -298,7 +305,7 @@ watch([
   () => props.auditResult,
   () => props.finalReviewResult,
   () => props.publishResult,
-], () => nextTick(() => createIcons({ icons })), { deep: true })
+], () => {}, { deep: true })
 
 const workflowStore = useWorkflowStore()
 const accountStore = useAccountStore()
@@ -307,12 +314,20 @@ const publishing = ref(false)
 const pushingToWechat = ref(false)
 const currentImageIndex = ref(0)
 
-const accountNickname = computed(() => accountStore.currentAccount?.xhs_nickname || '创作者')
-const accountAvatar = computed(() => accountStore.currentAccount?.xhs_avatar_url || '')
+const accountNickname = computed(() => '创作者')
+const accountAvatar = computed(() => '')
+
+const _CDN_HOSTS = ['xhscdn.com', 'xiaohongshu.com', 'picasso-static']
 
 function imageDataUrl(img: string): string {
   if (img.startsWith('data:')) return img
-  if (img.startsWith('/uploads/') || img.startsWith('http://') || img.startsWith('https://')) return img
+  if (img.startsWith('/uploads/')) return img
+  if (img.startsWith('http://') || img.startsWith('https://')) {
+    if (_CDN_HOSTS.some(h => img.includes(h))) {
+      return '/api/proxy/image?url=' + encodeURIComponent(img)
+    }
+    return img
+  }
   const prefix = img.startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'
   return prefix + img
 }
@@ -416,10 +431,10 @@ const publishIconColor = computed(() => {
 })
 const publishIcon = computed(() => {
   const s = props.publishResult?.status
-  if (s === 'success') return 'check-circle'
-  if (s === 'awaiting_manual') return 'clock'
-  if (s === 'failed') return 'x-circle'
-  return 'send'
+  if (s === 'success') return CheckCircle
+  if (s === 'awaiting_manual') return Clock
+  if (s === 'failed') return XCircle
+  return Send
 })
 const publishTextColor = computed(() => {
   const s = props.publishResult?.status
@@ -475,7 +490,7 @@ async function fetchReviewImages() {
   } catch (e: any) {
     console.error('[FinalReviewCard] fetchReviewImages error:', e)
   } finally {
-    nextTick(() => createIcons({ icons }))
+    
   }
 }
 
@@ -507,26 +522,18 @@ async function confirmPublish() {
 }
 
 // ===== push to wechat =====
-function wechatAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('token')
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  return headers
-}
 
 async function pushToWechat() {
   if (pushingToWechat.value) return
   pushingToWechat.value = true
   try {
-    const statusRes = await fetch('/api/wechat/status', { headers: wechatAuthHeaders() })
+    const statusRes = await authFetch('/api/wechat/status')
     const statusData = await statusRes.json()
     if (!statusData.success || statusData.data?.status !== 'logged_in') {
       alert('微信机器人未连接，请先在设置中连接微信')
       return
     }
-    const msgRes = await fetch('/api/wechat/messages?limit=1', { headers: wechatAuthHeaders() })
+    const msgRes = await authFetch('/api/wechat/messages?limit=1')
     const msgData = await msgRes.json()
     const lastIncoming = msgData.success && msgData.data?.messages
       ? [...msgData.data.messages].reverse().find((m: any) => m.from_user_id !== 'bot')
@@ -536,7 +543,6 @@ async function pushToWechat() {
       return
     }
 
-    // 聚合整个工作流的输出
     const cw = props.copywriteResult || {}
     const fr = props.finalReviewResult || {}
     const ig = props.imageGenResult || {}
@@ -561,9 +567,8 @@ async function pushToWechat() {
       fullContent += '\n\n' + tags.map((t: string) => `#${t}`).join(' ')
     }
 
-    const pushRes = await fetch('/api/wechat/push', {
+    const pushRes = await authFetch('/api/wechat/push', {
       method: 'POST',
-      headers: wechatAuthHeaders(),
       body: JSON.stringify({
         to_user_id: lastIncoming.from_user_id,
         title,

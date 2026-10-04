@@ -1,4 +1,4 @@
-﻿"""工作流服务：封装 LangGraph 编排、启动、状态机。
+"""工作流服务：封装 LangGraph 编排、启动、状态机。
 
 对应 PRD 5.2 / 技术架构文档第3章 Layer A。
 """
@@ -23,7 +23,6 @@ from app.db.models import (
     Workflow,
     WorkflowNode,
     WorkflowStatus,
-    XhsAccount,
 )
 from app.services.sse_bus import sse_bus
 
@@ -188,6 +187,7 @@ class WorkflowService:
         model_settings: dict | None = None,
         reference: dict | None = None,
         definition_id: str | None = None,
+        source: str = "gui",
     ) -> Workflow:
         """启动新工作流。
 
@@ -209,6 +209,32 @@ class WorkflowService:
         # P0: 工作流并发上限检查（防止 LLM API 雪崩）
         await self._check_concurrency_limit()
 
+        # ★ D18 用户画像注入（核心验收标准）：
+        # 每次启动工作流前必须从 DB 读取画像，画像缺失时拒绝启动（fail-fast）。
+        # 画像作为 WorkflowState.user_profile 全流程传递，节点内禁止自己读 DB。
+        from app.api.schemas.profile import ProfileValidationError
+        from app.services.profile_service import get_profile_service
+
+        try:
+            profile = await get_profile_service(self.db).get_or_validate(user_id)
+        except ProfileValidationError as e:
+            logger.warning(
+                f"[start_workflow] user_id={user_id} profile invalid: {e.reason}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "PROFILE_NOT_FOUND",
+                    "message": "请先在设置页完善创作者画像",
+                    "detail": {"reason": e.reason},
+                },
+            )
+        profile_dict = profile.model_dump(mode="json")
+        logger.info(
+            f"[start_workflow] user_id={user_id} profile loaded: "
+            f"domain={profile_dict.get('primary_domain')}"
+        )
+
         # P0.5: 确保 user_id 在 users 表中存在（外键约束）
         # 如果不存在，自动创建一条记录
         from app.db.models import User
@@ -228,21 +254,7 @@ class WorkflowService:
         from app.services import agent_memory
         user_memory = await agent_memory.load_for_workflow(user_id)
 
-        # 验证 account_id 是否在 xhs_accounts 表中存在
-        # 邮箱登录用户传 'email_user' 等占位值，不存在于 xhs_accounts 表
-        # 外键约束要求 account_id 必须引用真实记录或为 NULL
-        resolved_account_id: str | None = account_id
-        if not account_id or account_id == "":
-            resolved_account_id = None
-        else:
-            stmt = select(XhsAccount).where(XhsAccount.id == account_id)
-            existing_account = await self.db.scalar(stmt)
-            if not existing_account:
-                logger.info(
-                    f"[start_workflow] account_id={account_id} not found in xhs_accounts, "
-                    f"setting to None (email-only user)"
-                )
-                resolved_account_id = None
+        resolved_account_id: str | None = None
 
         # 创建 Workflow 记录
         workflow = Workflow(
@@ -251,6 +263,7 @@ class WorkflowService:
             topic=topic,
             status="running",
             definition_id=definition_id,
+            source=source,
         )
         self.db.add(workflow)
         await self.db.flush()  # 获取 workflow_id
@@ -297,6 +310,8 @@ class WorkflowService:
                 NodeType.AUDIT,
                 NodeType.FINAL_REVIEW,
                 NodeType.PUBLISH,
+                NodeType.CARD_GEN,
+                NodeType.WECHAT_PUSH,
             ]
             for node_type in node_types:
                 node = WorkflowNode(
@@ -339,6 +354,7 @@ class WorkflowService:
                     reference=reference,
                     user_memory=user_memory,
                     graph_definition=graph_definition,
+                    user_profile=profile_dict,
                 )
             )
         else:
@@ -359,6 +375,7 @@ class WorkflowService:
         reference: dict | None = None,
         user_memory: dict | None = None,
         graph_definition: dict | None = None,
+        user_profile: dict | None = None,
     ) -> None:
         """异步执行 graph，捕获所有异常防止 task 静默失败。
 
@@ -376,6 +393,7 @@ class WorkflowService:
                     creative_brief, model_settings,
                     reference, user_memory=user_memory,
                     graph_definition=graph_definition,
+                    user_profile=user_profile,
                 )
             except Exception as e:
                 logger.exception(f"[{workflow_id}] graph execution failed: {e}")
@@ -404,6 +422,7 @@ class WorkflowService:
         reference: dict | None = None,
         user_memory: dict | None = None,
         graph_definition: dict | None = None,
+        user_profile: dict | None = None,
     ) -> None:
         """执行 LangGraph，流式处理节点事件。
 
@@ -445,6 +464,7 @@ class WorkflowService:
                 creative_brief, model_settings,
                 reference, user_memory=user_memory,
                 node_types=dynamic_node_types,
+                user_profile=user_profile,
             )
         else:
             graph = build_workflow_graph(checkpointer=get_global_checkpointer())
@@ -452,6 +472,7 @@ class WorkflowService:
                 workflow_id, user_id, account_id, topic, search_keyword,
                 creative_brief, model_settings,
                 reference, user_memory=user_memory,
+                user_profile=user_profile,
             )
 
         if graph is None:
@@ -772,49 +793,8 @@ class WorkflowService:
     async def _load_account_cookies_for_mcp(
         self, workflow_id: str, account_id: str
     ) -> None:
-        """从 DB 加载账号的 cookies，解密后注入到 MCP local client。
-
-        让 search 节点能用已登录的 cookies 调 worker 创建工作会话。
-        """
-        try:
-            from sqlalchemy import select
-            from app.db.models import XhsAccount
-            from app.crypto.token_crypto import TokenCrypto
-            from app.tools.mcp.xhs_client import sync_cookies_to_local_client
-
-            stmt = select(XhsAccount).where(XhsAccount.id == account_id)
-            account = await self.db.scalar(stmt)
-            if not account:
-                logger.warning(f"[{workflow_id}] account {account_id} not found")
-                return
-            if not account.session_data_encrypted:
-                logger.warning(
-                    f"[{workflow_id}] account {account_id} has no session cookies"
-                )
-                return
-
-            crypto = TokenCrypto()
-            session_data = crypto.decrypt_dict(account.session_data_encrypted)
-            # session_data 是 {"cookies": [list[dict]]}（Playwright export 格式）
-            cookies = (
-                session_data.get("cookies", [])
-                if isinstance(session_data, dict)
-                else session_data
-            )
-            if not cookies:
-                logger.warning(
-                    f"[{workflow_id}] account {account_id} cookies empty after decrypt"
-                )
-                return
-            sync_cookies_to_local_client(cookies)
-            logger.info(
-                f"[{workflow_id}] cookies loaded for account {account_id} "
-                f"({len(cookies)} items)"
-            )
-        except Exception as e:
-            logger.warning(
-                f"[{workflow_id}] load account cookies failed: {e}"
-            )
+        """XhsAccount removed - cookie sync skipped."""
+        pass
 
     async def _persist_node_output(
         self,
@@ -1468,7 +1448,6 @@ class WorkflowService:
                 },
                 "node_outputs": {
                     "image_gen": {
-                        "images_base64": images_base64,
                         "image_urls": image_urls,
                         "image_count": len(images_base64),
                         "image_details": image_details or [],

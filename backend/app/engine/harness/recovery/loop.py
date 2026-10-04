@@ -1,4 +1,4 @@
-﻿"""RecoveryLoop（架构文档 4.4.1 + 手册 Phase 6 Part C）。
+"""RecoveryLoop（架构文档 4.4.1 + 手册 Phase 6 Part C）。
 
 主流程：
 1. 熔断器拦截：最近失败率过高直接拒绝（抛 CircuitOpenError）

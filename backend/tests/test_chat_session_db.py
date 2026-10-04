@@ -18,7 +18,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-db-test")
 from sqlalchemy import desc, select, func, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.models import Base, ChatSession, ChatMessage, User, Workflow, WorkflowStatus, WorkflowDefinition, XhsAccount
+from app.db.models import Base, ChatSession, ChatMessage, User, Workflow, WorkflowStatus, WorkflowDefinition
 
 
 async def main():
@@ -35,7 +35,7 @@ async def main():
         cursor.close()
 
     async with engine.begin() as conn:
-        tables = [User.__table__, XhsAccount.__table__, WorkflowDefinition.__table__, Workflow.__table__, ChatSession.__table__, ChatMessage.__table__]
+        tables = [User.__table__, WorkflowDefinition.__table__, Workflow.__table__, ChatSession.__table__, ChatMessage.__table__]
         for t in tables:
             await conn.run_sync(t.create, checkfirst=True)
 
@@ -331,7 +331,7 @@ async def main():
 
     # === Cleanup ===
     async with engine.begin() as conn:
-        for t in [ChatMessage.__table__, ChatSession.__table__, Workflow.__table__, WorkflowDefinition.__table__, XhsAccount.__table__, User.__table__]:
+        for t in [ChatMessage.__table__, ChatSession.__table__, Workflow.__table__, WorkflowDefinition.__table__, User.__table__]:
             await conn.run_sync(t.drop, checkfirst=True)
     await engine.dispose()
 

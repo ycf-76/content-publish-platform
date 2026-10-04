@@ -2,7 +2,9 @@
   <!-- 可拖拽分割线 -->
   <div class="mint-resize-handle"
        @mousedown="startResize"
-       v-show="!isRightPanelCollapsed">
+       @dblclick.prevent="resetRightPanelWidth"
+       v-show="!isRightPanelCollapsed"
+       title="拖拽调整面板宽度 · 双击恢复默认">
     <div class="mint-resize-line"></div>
   </div>
 
@@ -19,7 +21,7 @@
       <!-- 卡片头部：标题 + 收起按钮 -->
       <div class="mint-config-card-header">
         <div class="mint-config-card-title">
-          <span class="mint-config-icon"><i data-lucide="sliders-horizontal" style="width:16px; height:16px;"></i></span>
+          <span class="mint-config-icon"><SlidersHorizontal :size="16" /></span>
           <div class="mint-config-card-title-text">
             <div class="mint-config-card-title-name">配置中心</div>
             <div class="mint-config-card-title-sub">模型、风格与发布参数</div>
@@ -35,7 +37,7 @@
       <!-- 技能模板快选 -->
       <div class="mint-template-bar" v-if="savedSkills.length > 0">
         <div class="mint-template-bar-label">
-          <i data-lucide="zap" style="width:12px;height:12px;"></i>
+          <Zap :size="12" />
           <span>技能模板</span>
         </div>
         <div class="mint-template-chips">
@@ -56,7 +58,7 @@
             @click="clearTemplate"
             title="清除模板，恢复手动配置"
           >
-            <i data-lucide="x" style="width:11px;height:11px;"></i>
+            <X :size="11" />
             <span>清除</span>
           </button>
         </div>
@@ -65,7 +67,7 @@
       <!-- Section 1: 模型选择 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <span class="mint-config-section-icon mint-config-section-icon-model"><i data-lucide="cpu" style="width:14px; height:14px;"></i></span>
+          <span class="mint-config-section-icon mint-config-section-icon-model"><Cpu :size="14" /></span>
           模型选择
         </div>
         <div class="mint-config-row">
@@ -92,10 +94,10 @@
       <!-- Section 2: 风格参数 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <span class="mint-config-section-icon mint-config-section-icon-style"><i data-lucide="palette" style="width:14px; height:14px;"></i></span>
+          <span class="mint-config-section-icon mint-config-section-icon-style"><Palette :size="14" /></span>
           风格参数
           <span style="margin-left:auto; font-size: 15px; color:#6B7280; cursor:pointer;" @click="refreshSkills" title="刷新 Skill 列表（用于加载新装入的第三方插件）">
-            <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i>
+            <RefreshCw :size="12" />
           </span>
         </div>
         <div class="mint-config-row">
@@ -138,7 +140,7 @@
       <!-- Section 3: 发布设置 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <span class="mint-config-section-icon mint-config-section-icon-publish"><i data-lucide="rocket" style="width:14px; height:14px;"></i></span>
+          <span class="mint-config-section-icon mint-config-section-icon-publish"><Rocket :size="14" /></span>
           发布设置
         </div>
         <div class="mint-config-row">
@@ -155,12 +157,42 @@
             <div class="mint-switch" :class="{ active: autoPublish }" @click="autoPublish = !autoPublish"></div>
           </div>
         </div>
+        <div class="mint-config-row">
+          <div class="mint-toggle">
+            <span class="mint-config-label">📱 推送到微信</span>
+            <div class="mint-switch" :class="{ active: enableWechatPush }" @click="enableWechatPush = !enableWechatPush"></div>
+          </div>
+        </div>
+        <div v-if="enableWechatPush" class="mint-config-row">
+          <label class="mint-config-label">微信目标用户ID</label>
+          <input
+            type="text"
+            class="mint-input"
+            v-model="wechatTargetUserId"
+            placeholder="输入微信用户ID或群ID"
+          />
+        </div>
+        <div class="mint-config-row">
+          <div class="mint-toggle">
+            <span class="mint-config-label">🚀 推送到飞书</span>
+            <div class="mint-switch" :class="{ active: enableFeishuPush }" @click="enableFeishuPush = !enableFeishuPush"></div>
+          </div>
+        </div>
+        <div v-if="enableFeishuPush" class="mint-config-row">
+          <label class="mint-config-label">飞书目标群Chat ID</label>
+          <input
+            type="text"
+            class="mint-input"
+            v-model="feishuChatId"
+            placeholder="输入飞书群聊ID (如 oc_xxxxx)"
+          />
+        </div>
       </section>
 
       <!-- Section 4: 本周数据 -->
       <section class="mint-config-section">
         <div class="mint-config-section-title">
-          <span class="mint-config-section-icon mint-config-section-icon-stats"><i data-lucide="trending-up" style="width:14px; height:14px;"></i></span>
+          <span class="mint-config-section-icon mint-config-section-icon-stats"><TrendingUp :size="14" /></span>
           本周数据
         </div>
         <div class="mint-config-stats">
@@ -188,7 +220,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { createIcons, icons } from 'lucide'
+import {
+  Cpu,
+  Palette,
+  RefreshCw,
+  Rocket,
+  SlidersHorizontal,
+  TrendingUp,
+  X,
+  Zap,
+} from 'lucide-vue-next'
 import { workflowApi, type SkillMeta } from '@/api/workflow'
 import { useSkillTemplates, type SavedSkill } from '@/composables/useSkillTemplates'
 import MintSelect from './MintSelect.vue'
@@ -209,12 +250,20 @@ const emit = defineEmits<{
 }>()
 
 // ===== 右侧面板宽度调整 =====
-const MIN_RIGHT_WIDTH = 200
-const MAX_RIGHT_WIDTH = 600
-const DEFAULT_RIGHT_WIDTH = 280
+import { useResizeHandle } from '@/composables/useResizeHandle'
 
-const rightPanelWidth = ref(DEFAULT_RIGHT_WIDTH)
-// 默认隐藏：未点开时不遮挡工作卡片
+const {
+  width: rightPanelWidth,
+  isResizing: isRightResizing,
+  startResize: startResize,
+  resetWidth: resetRightPanelWidth,
+} = useResizeHandle({
+  direction: 'right',
+  minWidth: 200,
+  maxWidth: 560,
+  storageKey: 'mint-right-panel-width-v2',
+})
+
 const isRightPanelCollapsed = ref(props.initialCollapsed ?? true)
 
 function toggleRightPanel() {
@@ -222,49 +271,9 @@ function toggleRightPanel() {
   emit('update:isCollapsed', isRightPanelCollapsed.value)
 }
 
-let isResizing = false
-let resizeStartX = 0
-let resizeStartWidth = 0
-
-function startResize(e: MouseEvent) {
-  isResizing = true
-  resizeStartX = e.clientX
-  resizeStartWidth = rightPanelWidth.value
-  document.addEventListener('mousemove', onResize)
-  document.addEventListener('mouseup', stopResize)
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-}
-
-function onResize(e: MouseEvent) {
-  if (!isResizing) return
-
-  const deltaX = resizeStartX - e.clientX
-  let newWidth = resizeStartWidth + deltaX
-
-  newWidth = Math.max(MIN_RIGHT_WIDTH, Math.min(newWidth, MAX_RIGHT_WIDTH))
-
-  const shellWidth = window.innerWidth > 1600 ? 1600 : window.innerWidth
-  const minMiddleWidth = 400
-
-  const leftSidebarWidth = props.isSidebarCollapsed ? 0 : 192
-  const maxRightWidth = shellWidth - leftSidebarWidth - 20 - minMiddleWidth - 20 - 20
-
-  if (newWidth > maxRightWidth) {
-    newWidth = maxRightWidth
-  }
-
-  rightPanelWidth.value = newWidth
-  emit('update:width', newWidth)
-}
-
-function stopResize() {
-  isResizing = false
-  document.removeEventListener('mousemove', onResize)
-  document.removeEventListener('mouseup', stopResize)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-}
+watch(rightPanelWidth, (w) => {
+  emit('update:width', w)
+}, { immediate: true })
 
 // ===== 右侧工作区：模型/温度/风格配置（用户可调） =====
 const TEXT_MODEL_OPTIONS = [
@@ -311,6 +320,10 @@ const contentLength = ref<number>(300)
 const autoEmoji = ref<boolean>(true)
 const autoTags = ref<boolean>(true)
 const autoPublish = ref<boolean>(true)
+   const enableWechatPush = ref<boolean>(false)
+const wechatTargetUserId = ref<string>('')
+const enableFeishuPush = ref<boolean>(false)
+const feishuChatId = ref<string>('')
 
 const weeklyStats = ref({
   published_count: 0,
@@ -340,6 +353,10 @@ const modelSettings = computed(() => {
     auto_emoji: autoEmoji.value,
     auto_tags: autoTags.value,
     auto_publish: autoPublish.value,
+    enable_wechat_push: enableWechatPush.value,
+    wechat_target_user_id: wechatTargetUserId.value,
+    enable_feishu_push: enableFeishuPush.value,
+    feishu_chat_id: feishuChatId.value,
   }
 })
 
@@ -427,11 +444,14 @@ function applyTemplate(t: SavedSkill) {
   if (expanded.auto_emoji !== undefined) autoEmoji.value = expanded.auto_emoji as boolean
   if (expanded.auto_tags !== undefined) autoTags.value = expanded.auto_tags as boolean
   if (expanded.auto_publish !== undefined) autoPublish.value = expanded.auto_publish as boolean
+  if (expanded.enable_wechat_push !== undefined) enableWechatPush.value = expanded.enable_wechat_push as boolean
+  if (expanded.wechat_target_user_id) wechatTargetUserId.value = expanded.wechat_target_user_id as string
+  if (expanded.enable_feishu_push !== undefined) enableFeishuPush.value = expanded.enable_feishu_push as boolean
+  if (expanded.feishu_chat_id) feishuChatId.value = expanded.feishu_chat_id as string
   if (expanded.text_model) selectedTextModel.value = expanded.text_model as string
   if (expanded.image_model) selectedImageModel.value = expanded.image_model as string
   if (expanded.search_limit) selectedSearchLimit.value = expanded.search_limit as number
 
-  nextTick(() => { try { createIcons({ icons }) } catch {} })
 }
 
 function clearTemplate() {

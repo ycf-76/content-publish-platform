@@ -1,4 +1,5 @@
 import apiClient from './client'
+import type { TargetPlatform } from '@/types'
 
 /** 用户在右侧工作区选择的模型/温度/风格配置（对齐后端 StartWorkflowRequest.model_settings） */
 export interface ModelSettings {
@@ -29,10 +30,32 @@ export interface SkillMeta {
   display_name: string
   description: string
   default_config: Record<string, any>
+  is_third_party?: boolean
+  is_prompt_skill?: boolean
 }
 
 /** Skill 注册结果（对齐后端 SkillRegisterResult） */
 export interface SkillRegisterResult {
+  filename: string
+  skill_name: string
+  node_type: string
+  display_name: string
+  description: string
+}
+
+/** 提示词型 Skill 创建请求（对齐后端 PromptSkillCreateRequest） */
+export interface PromptSkillCreateRequest {
+  node_type: string
+  name: string
+  display_name: string
+  description?: string
+  trigger_words?: string[]
+  prompt_guidance?: string
+  skill_body: string
+}
+
+/** 提示词型 Skill 创建结果（对齐后端 PromptSkillCreateResult） */
+export interface PromptSkillCreateResult {
   filename: string
   skill_name: string
   node_type: string
@@ -106,6 +129,7 @@ export type WorkflowControlAction = 'pause' | 'resume' | 'rollback' | 'terminate
 export interface WorkflowResumeRequest {
   selected_direction?: number
   direction_note?: string
+  targetPlatform?: TargetPlatform
 }
 
 export const workflowApi = {
@@ -150,6 +174,49 @@ export const workflowApi = {
   /** 注销第三方 Skill DELETE /api/skills/{node_type}/{skill_name} */
   async unregisterSkill(nodeType: string, skillName: string): Promise<{ success: boolean; message?: string }> {
     const resp: any = await apiClient.delete(`/skills/${encodeURIComponent(nodeType)}/${encodeURIComponent(skillName)}`)
+    return resp
+  },
+
+  /** 创建提示词型 Skill POST /api/skills/prompt */
+  async createPromptSkill(data: PromptSkillCreateRequest): Promise<{ success: boolean; data?: PromptSkillCreateResult; message?: string }> {
+    const resp: any = await apiClient.post('/skills/prompt', data)
+    return resp
+  },
+
+  /** 上传 .md 文件注册提示词型 Skill POST /api/skills/prompt/upload */
+  async uploadPromptSkill(file: File): Promise<{ success: boolean; data?: PromptSkillCreateResult; message?: string }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const resp: any = await apiClient.post('/skills/prompt/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    })
+    return resp
+  },
+
+  /** 删除提示词型 Skill DELETE /api/skills/prompt/{node_type}/{skill_name} */
+  async deletePromptSkill(nodeType: string, skillName: string): Promise<{ success: boolean; message?: string }> {
+    const resp: any = await apiClient.delete(`/skills/prompt/${encodeURIComponent(nodeType)}/${encodeURIComponent(skillName)}`)
+    return resp
+  },
+
+  /** 从 GitHub 安装 Skill POST /api/skills/install-github */
+  async installSkillFromGitHub(url: string, subpath?: string): Promise<{
+    success: boolean
+    data?: {
+      repo: string
+      skill_name: string
+      node_type: string
+      display_name: string
+      description: string
+      skill_md?: string
+      installed_files?: string[]
+    }
+    message?: string
+  }> {
+    const resp: any = await apiClient.post('/skills/install-github', { url, subpath: subpath || '' }, {
+      timeout: 120000,
+    })
     return resp
   },
 
@@ -243,7 +310,8 @@ export const workflowApi = {
 
   /** 注入卡片图片 POST /api/workflows/{id}/inject-card-images
    *  注意：base64 图片数据量可能很大（4张 1080×1440 PNG ≈ 15-25MB），
-   *  需要单独设置 120s 超时，避免默认 30s 超时导致注入失败。
+   *  加上后端 LangGraph aupdate_state 写 checkpoint 耗时，
+   *  需要单独设置 180s 超时，避免默认 30s 超时导致注入失败。
    */
   injectCardImages(
     workflowId: string,
@@ -260,7 +328,7 @@ export const workflowApi = {
         style: style || '',
         plan_context: planContext || {},
       },
-      { timeout: 120000 }, // 120s，大图片传输专用
+      { timeout: 180000 }, // 180s，大图片传输 + checkpoint 写入专用
     )
   },
 
@@ -414,5 +482,134 @@ export const workflowApi = {
   async getWeeklyStats(): Promise<{ published_count: number; total_workflows: number; completed_rate: number; active_count: number }> {
     const resp: any = await apiClient.get('/workflows/stats/weekly')
     return (resp?.data ?? resp) as any
+  },
+}
+
+/** Codex mode API */
+export const codexApi = {
+  /** POST /api/v1/codex/run — Synchronous run (returns full result) */
+  async run(params: {
+    intent: string
+    permissions?: string[]
+    maxIterations?: number
+    context?: Record<string, any>
+    sessionId?: string
+  }) {
+    return apiClient.post('/v1/codex/run', {
+      intent: params.intent,
+      permissions: params.permissions || [],
+      max_iterations: params.maxIterations || 12,
+      context: params.context,
+      session_id: params.sessionId,
+    })
+  },
+
+  /**
+   * POST /api/v1/codex/stream — SSE stream (real-time events)
+   *
+   * Events: workflow_started, agent_thinking, decision_made,
+   *         tool_call_start, tool_call_end, progress_update,
+   *         node_completed, workflow_completed
+   */
+  stream(
+    params: {
+      intent: string
+      permissions?: string[]
+      maxIterations?: number
+      context?: Record<string, any>
+      sessionId?: string
+    },
+    onEvent: (eventType: string, payload: any) => void,
+    onError?: (error: unknown) => void,
+  ): { close: () => void } {
+    const url = '/api/v1/codex/stream'
+    const controller = new AbortController()
+    let closed = false
+
+    let buffer = ''
+    let currentEvent = 'message'
+
+    async function consume() {
+      try {
+        const token = localStorage.getItem('token')
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        }
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          signal: controller.signal,
+          headers,
+          body: JSON.stringify({
+            intent: params.intent,
+            permissions: params.permissions || [],
+            max_iterations: params.maxIterations || 12,
+            context: params.context,
+            session_id: params.sessionId,
+          }),
+        })
+
+        if (!resp.ok) {
+          throw new Error(`Codex stream HTTP ${resp.status}`)
+        }
+
+        const reader = resp.body?.getReader()
+        if (!reader) throw new Error('Stream unavailable')
+
+        const decoder = new TextDecoder('utf-8')
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+
+          let sepIdx: number
+          while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+            const rawEvent = buffer.slice(0, sepIdx)
+            buffer = buffer.slice(sepIdx + 2)
+
+            currentEvent = 'message'
+            for (const line of rawEvent.split('\n')) {
+              if (line.startsWith('event: ')) {
+                currentEvent = line.slice(7).trim()
+              } else if (line.startsWith('data: ')) {
+                try {
+                  const payload = JSON.parse(line.slice(6))
+                  onEvent(currentEvent, payload)
+                } catch {
+                  onEvent(currentEvent, { raw: line.slice(6) })
+                }
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return
+        if (closed) return
+        if (onError) onError(err)
+      }
+    }
+
+    consume()
+
+    return {
+      close() {
+        closed = true
+        if (!controller.signal.aborted) {
+          controller.abort()
+        }
+      },
+    }
+  },
+
+  /** GET /api/v1/codex/info — List primitives and permissions */
+  async info() {
+    return apiClient.get('/v1/codex/info')
   },
 }

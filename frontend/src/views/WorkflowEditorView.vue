@@ -1,13 +1,29 @@
 <template>
-  <div class="mint-shell we-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }">
+<div class="min-h-screen" style="position: relative;">
+
+  <div class="mint-shell we-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }" :style="{ '--left-sidebar-width': leftSidebarWidth + 'px' }">
     <SidebarNav
       current-page="workflow-templates"
       :is-collapsed="isSidebarCollapsed"
       @nav-click="handleNavClick"
       @toggle-sidebar="toggleSidebar"
-      @go-eco="goEco"
+      @go-eco="goToEco"
       @open-settings="openSettings"
+      @new-workflow="goToNewWorkflow"
+      @new-chat="goToChat"
     />
+
+    <!-- left sidebar resize handle -->
+    <div
+      class="mint-left-resize-handle"
+      v-show="!isSidebarCollapsed"
+      :class="{ 'is-left-resizing': isLeftResizing }"
+      title="拖拽调整侧边栏宽度 · 双击恢复默认"
+      @mousedown="startLeftResize"
+      @dblclick.prevent="resetLeftSidebarWidth"
+    >
+      <div class="mint-resize-line"></div>
+    </div>
 
     <main class="mint-main we-page">
       <div class="mint-content-card-wrapper">
@@ -15,11 +31,11 @@
           <div class="we-topbar">
             <div class="we-title-group">
               <button class="mint-icon-btn" @click="goBack" title="返回">
-                <i data-lucide="arrow-left"></i>
+                <ArrowLeft :size="16" />
               </button>
               <div>
                 <div class="we-kicker">
-                  <i data-lucide="git-branch"></i>
+                  <GitBranch :size="13" />
                   Visual Flow Builder
                 </div>
                 <h1>{{ definitionName }}</h1>
@@ -27,16 +43,17 @@
             </div>
             <div class="we-top-actions">
               <button v-if="activeWorkflowId" class="mint-btn mint-btn-outline" @click="showRunPanel = !showRunPanel">
-                <i data-lucide="activity"></i>
+                <Activity :size="16" />
                 执行进度
                 <span v-if="workflowStatus" class="we-status-dot" :class="`we-dot-${workflowStatus}`"></span>
               </button>
               <button class="mint-btn mint-btn-outline" @click="showHelp = true">
-                <i data-lucide="help-circle"></i>
+                <HelpCircle :size="16" />
                 帮助
               </button>
               <button class="mint-btn mint-btn-primary" @click="toggleFullscreen">
-                <i :data-lucide="isFullscreen ? 'minimize-2' : 'maximize-2'"></i>
+                <Minimize2 v-if="isFullscreen" :size="16" />
+                <Maximize2 v-else :size="16" />
                 {{ isFullscreen ? '退出全屏' : '全屏' }}
               </button>
             </div>
@@ -58,10 +75,10 @@
               <div v-if="showRunPanel && activeWorkflowId" class="we-run-panel">
                 <div class="we-run-panel-header">
                   <div class="we-run-panel-title">
-                    <i data-lucide="play-circle"></i>
+                    <PlayCircle :size="16" />
                     <span>执行进度</span>
                   </div>
-                  <button class="mint-icon-btn" @click="showRunPanel = false"><i data-lucide="x"></i></button>
+                  <button class="mint-icon-btn" @click="showRunPanel = false"><X :size="16" /></button>
                 </div>
 
                 <div class="we-run-status-bar">
@@ -87,13 +104,13 @@
 
                 <div class="we-run-actions">
                   <button v-if="workflowStatus === 'running'" class="mint-btn mint-btn-outline" @click="controlWorkflow('pause')">
-                    <i data-lucide="pause"></i> 暂停
+                    <Pause :size="16" /> 暂停
                   </button>
                   <button v-if="workflowStatus === 'paused'" class="mint-btn mint-btn-primary" @click="controlWorkflow('resume')">
-                    <i data-lucide="play"></i> 继续
+                    <Play :size="16" /> 继续
                   </button>
                   <button v-if="['running', 'paused'].includes(workflowStatus)" class="mint-btn mint-btn-outline" style="color:#dc2626;border-color:#dc2626" @click="controlWorkflow('terminate')">
-                    <i data-lucide="square"></i> 终止
+                    <Square :size="16" /> 终止
                   </button>
                 </div>
               </div>
@@ -107,7 +124,7 @@
       <div class="we-modal">
         <div class="we-modal-header">
           <h3>可视化编辑器</h3>
-          <button class="mint-icon-btn" @click="showHelp = false"><i data-lucide="x"></i></button>
+          <button class="mint-icon-btn" @click="showHelp = false"><X :size="16" /></button>
         </div>
         <div class="we-modal-body">
           <div class="we-help-grid">
@@ -121,28 +138,48 @@
     </div>
 
     <div v-if="runWorkflowId && !showRunPanel" class="we-run-toast">
-      <i data-lucide="check-circle"></i>
+      <CheckCircle :size="16" />
       <span>工作流已启动</span>
       <button class="mint-btn mint-btn-primary" @click="openRunPanel(runWorkflowId)">查看进度</button>
     </div>
 
     <SettingsView v-if="showSettings" @close="showSettings = false" />
   </div>
+</div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createIcons, icons } from 'lucide'
+import {
+  ArrowLeft, GitBranch, Activity, HelpCircle,
+  Minimize2, Maximize2, PlayCircle, X, Pause, Play, Square, CheckCircle
+} from 'lucide-vue-next'
 import SidebarNav from '@/components/workbench/SidebarNav.vue'
-import SettingsView from '@/views/SettingsView.vue'
-import WorkflowEditor from '@/components/workflow/WorkflowEditor.vue'
 import workflowDefinitionsApi from '@/api/workflowDefinitions'
 import { workflowApi } from '@/api/workflow'
 import { useUIState } from '@/composables/useUIState'
+import { useAuthStore } from '@/stores/auth'
+
+const SettingsView = defineAsyncComponent(() => import('@/views/SettingsView.vue'))
+const WorkflowEditor = defineAsyncComponent(() => import('@/components/workflow/WorkflowEditor.vue'))
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+
+import { useResizeHandle } from '@/composables/useResizeHandle'
+const {
+  width: leftSidebarWidth,
+  isResizing: isLeftResizing,
+  startResize: startLeftResize,
+  resetWidth: resetLeftSidebarWidth,
+} = useResizeHandle({
+  direction: 'left',
+  minWidth: 170,
+  maxWidth: 520,
+  storageKey: 'mint-left-sidebar-width-v2',
+})
 
 const showSettings = ref(false)
 function openSettings() {
@@ -150,7 +187,7 @@ function openSettings() {
 }
 const { isSidebarCollapsed, toggleSidebar } = useUIState()
 
-const editorRef = ref<InstanceType<typeof WorkflowEditor> | null>(null)
+const editorRef = ref<any>(null)
 const showHelp = ref(false)
 const isFullscreen = ref(false)
 const runWorkflowId = ref<string | null>(null)
@@ -164,7 +201,8 @@ const showRunPanel = ref(false)
 const workflowStatus = ref<string>('')
 const workflowProgress = ref(0)
 const workflowNodes = ref<any[]>([])
-let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+let pollInterval = 5000
 
 const STATUS_MAP: Record<string, string> = {
   running: '运行中',
@@ -230,20 +268,30 @@ async function pollWorkflowStatus() {
 
     if (['completed', 'failed', 'terminated', 'error'].includes(workflowStatus.value)) {
       stopPolling()
+      return
     }
-  } catch (e) {
+
+    pollInterval = 5000
+  } catch (e: any) {
     console.warn('[WorkflowEditorView] poll error:', e)
+    if (e?.response?.status === 429) {
+      pollInterval = Math.min(pollInterval + 3000, 15000)
+    }
+  } finally {
+    if (pollTimer !== null) {
+      pollTimer = setTimeout(pollWorkflowStatus, pollInterval)
+    }
   }
 }
 
 function startPolling() {
   stopPolling()
+  pollInterval = 5000
   pollWorkflowStatus()
-  pollTimer = setInterval(pollWorkflowStatus, 3000)
 }
 
 function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
 }
 
 function openRunPanel(workflowId: string) {
@@ -272,11 +320,23 @@ watch(activeWorkflowId, (newId) => {
 
 function handleNavClick(pageName: string) {
   if (pageName === 'workflow-templates') return
-  router.push({ path: '/workbench', query: pageName === 'workflow' ? {} : { page: pageName } })
+  if (pageName === 'topic-pool' || pageName === 'my-works' || pageName === 'task-plans' || pageName === 'portfolio') {
+    router.push(`/${pageName}`).catch(() => {})
+    return
+  }
+  router.push({ path: '/workbench', query: { page: pageName } })
 }
 
 function goToEco() {
   router.push('/eco')
+}
+
+function goToNewWorkflow() {
+  router.push({ path: '/workbench', query: { page: 'workflow' } })
+}
+
+function goToChat() {
+  router.push({ path: '/workbench', query: { page: 'chat' } })
 }
 
 function goBack() {
@@ -319,6 +379,17 @@ async function loadDefinitionName() {
   }
 }
 
+async function loadWorkflow(workflowId: string) {
+  try {
+    const detail = await workflowApi.getDetail(workflowId)
+    const data = (detail as any)?.data ?? detail
+    if (data?.name) definitionName.value = data.name
+    if (data?.id) runWorkflowId.value = data.id
+  } catch {
+    console.error('[WorkflowEditorView] loadWorkflow failed:', workflowId)
+  }
+}
+
 function loadTemplateInitData() {
   const raw = sessionStorage.getItem('workflow-editor-init')
   if (!raw) return
@@ -355,11 +426,9 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
 
   if (route.query.workflow) {
-    showRunPanel.value = true
+    await loadWorkflow(route.query.workflow as string)
     startPolling()
   }
-
-  nextTick(() => createIcons({ icons }))
 })
 
 onUnmounted(() => {
@@ -390,8 +459,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 16px 20px;
-  border-bottom: 1px solid #ededed;
+  padding: 16px 24px;
+  border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 }
 
@@ -447,7 +516,7 @@ onUnmounted(() => {
 .we-editor-area {
   position: relative;
   flex: 1;
-  min-height: 500px;
+  min-height: 0;
   overflow: hidden;
   display: flex;
 }

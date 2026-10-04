@@ -1,4 +1,4 @@
-﻿"""Agent Harness 工厂。
+"""Agent Harness 工厂。
 
 负责把 LLM 适配器 + Skill 集合 + Executor + Observer 装配成 AgentHarness
 实例，供 graph.py 的节点调用。
@@ -58,7 +58,7 @@ _MOCK_LLM_RESPONSES: dict[str, dict[str, Any]] = {
     },
     "publish": {
         "content": '{"final": true, "output": {"post_id": "mock_post_001", "status": "published", "message": "发布成功"}}',
-        "reasoning_content": "调用 xhs_publish 工具完成发布",
+        "reasoning_content": "发布节点（xhs_publish 已移除）",
         "token_usage": 50,
     },
     "default": {
@@ -146,24 +146,32 @@ def get_deepseek_llm(
     避免覆盖系统默认实例。
 
     无 API key 返回 None。
+    熔断器开启时返回 None（防止余额不足时继续烧钱）。
     """
+    from app.engine.governance.llm_circuit import get_llm_circuit
+
+    circuit = get_llm_circuit()
+    if not circuit.allow_request():
+        logger.warning(
+            f"[factory] LLM circuit OPEN, refusing request. "
+            f"reason={circuit.open_reason}, total_failures={circuit.total_failures}"
+        )
+        return None
+
     temp_val = 0.7 if temperature is None else float(max(0.0, min(1.0, temperature)))
-    model_val = model or ""  # 空字符串占位，下面会用 settings 默认值替换
+    model_val = model or ""
     cache_key = f"deepseek|{temp_val:.3f}|{model_val}"
     if cache_key in _llm_cache:
         return _llm_cache[cache_key]
 
-    # 测试模式：model 以 "mock-" 开头时返回 _MockLLM，不连真实 API、不消耗 token
-    # 用于工作流链路联调（搜索→分析→文案→审核→发布全流程），仅消耗本地计算
     if model_val.startswith("mock-"):
         adapter = _MockLLM(model=model_val)
         _llm_cache[cache_key] = adapter
         logger.info(f"[mock-mode] LLM 使用 _MockLLM (model={model_val})，不消耗 token")
         return adapter
 
-    # 收敛：具体 adapter 由 ModelRouter 解析（含 api_key 校验与降级）
     normalized = _normalize_deepseek_model(model_val) if model_val else None
-    from app.core.sandbox.model_router import get_model_router
+    from app.adapters.model_router import get_model_router
 
     llm = get_model_router().resolve_llm(model=normalized, temperature=temp_val)
     if llm is not None:
@@ -202,6 +210,20 @@ def _make_observer(workflow_id: str) -> Observer:
     async def _emit(node_id: str, event_type: str, payload: dict[str, Any]) -> None:
         await sse_bus.publish(
             workflow_id,
+            event_type,
+            {"node_id": node_id, **payload},
+        )
+
+    return Observer(emit_callback=_emit)
+
+
+def _make_chat_observer(session_id: str) -> "Observer":
+    """构造以 session_id 为 SSE 频道的 Observer（供 ChatAgent 使用）。"""
+    from app.services.sse_bus import sse_bus
+
+    async def _emit(node_id: str, event_type: str, payload: dict[str, Any]) -> None:
+        await sse_bus.publish(
+            session_id,
             event_type,
             {"node_id": node_id, **payload},
         )
@@ -310,25 +332,16 @@ def build_search_harness(workflow_id: str) -> AgentHarness:
 
 
 def build_publish_harness(workflow_id: str) -> AgentHarness:
-    """publish 节点：LoopExecutor + XhsPublishSkill。
-
-    发布虽是确定性动作，但走 Loop 让 LLM 拿到 tool 失败原因后能回报清晰状态。
-    publish 权限高危，必须 env PERMISSIONS_ALLOW=xhs:publish 才会真正调用。
-    """
-    from app.tools.xhs_publish import XhsPublishSkill
-
-    skills: list[Skill] = [XhsPublishSkill()]
-
+    """publish 节点：已移除 xhs_publish，返回空技能 harness。"""
     return AgentHarness(
         agent_id="publish",
-        role="xhs_publish_agent",
+        role="publish_agent",
         llm=get_deepseek_llm(),
-        skills=skills,
+        skills=[],
         memory=AgentMemory(),
         prompt_template=_PUBLISH_PROMPT,
         observer=_make_observer(workflow_id),
         executor=LoopExecutor(max_iterations=2),
-        recovery_loop=_make_publish_recovery(workflow_id),
     )
 
 
@@ -364,7 +377,7 @@ _PUBLISH_PROMPT = (
     "图片数：{image_count}\n"
     "账号：{account_id}\n"
     "\n"
-    "调用 xhs_publish 工具完成发布，把工具返回的 post_id/status/message 原样回传。\n"
+    "发布节点（xhs_publish 已移除，直接返回成功状态）。\n"
 )
 
 

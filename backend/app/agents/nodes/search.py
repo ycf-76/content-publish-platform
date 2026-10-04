@@ -1,4 +1,4 @@
-﻿"""Search node: 直接调 TrendingSearchSkill（不走 LLM Loop）。
+"""Search node: 直接调 TrendingSearchSkill（不走 LLM Loop）。
 
 搜索是确定性动作（调 API 拿数据），不需要 LLM 推理。
 LLM 只在 analyze/copywrite 等需要推理的节点使用。
@@ -18,6 +18,9 @@ from app.agents.nodes._base import (
     _dlog,
     emit_node_event,
     logger,
+    build_belief_dict,
+    build_loop_counter_update,
+    read_upstream_belief,
 )
 from app.services.sse_bus import sse_bus
 
@@ -171,6 +174,23 @@ async def _save_search_results_to_pool(
                     continue
 
                 seen_titles.add(item["title"])
+
+                # CDN 图片本地化（小红书 CDN 链接 ~2 天过期，必须下载到本地）
+                local_cover = item["cover_img"]
+                local_images = item["images"]
+                try:
+                    from app.services.image_store import cache_cover_image, cache_detail_images
+                    if local_cover:
+                        local_cover = await cache_cover_image(
+                            item["content_id"] or "", local_cover
+                        )
+                    if local_images:
+                        local_images = await cache_detail_images(
+                            item["content_id"] or "", local_images
+                        )
+                except Exception as img_err:
+                    logger.warning(f"[{workflow_id}] search pool image download failed: {img_err}")
+
                 pool_item = TopicPoolItem(
                     platform=item["platform"],
                     content_id=item["content_id"] or None,
@@ -184,8 +204,8 @@ async def _save_search_results_to_pool(
                     collects=item["collects"],
                     shares=item["shares"],
                     fans_count=item["fans_count"],
-                    cover_img=item["cover_img"],
-                    images=item["images"],
+                    cover_img=local_cover,
+                    images=local_images,
                     source_keyword=keyword[:500],
                     auto_source="workflow",
                 )
@@ -273,9 +293,26 @@ async def _fetch_other_platforms_to_pool(keyword: str, workflow_id: str) -> None
                 )
                 return []
 
-        # 并发搜索所有平台
+        # 并发搜索所有平台（信号量控制并发 + 单平台超时）
+        _MAX_CONCURRENT = 6
+        _PER_PLATFORM_TIMEOUT = 15.0
+        sem = asyncio.Semaphore(_MAX_CONCURRENT)
+
+        async def _fetch_one_limited(platform: str) -> list[dict]:
+            async with sem:
+                try:
+                    return await asyncio.wait_for(
+                        _fetch_one(platform),
+                        timeout=_PER_PLATFORM_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"[{workflow_id}] topic_pool: platform={platform} timed out ({_PER_PLATFORM_TIMEOUT}s)"
+                    )
+                    return []
+
         results_per_platform = await asyncio.gather(
-            *[_fetch_one(p) for p in other_platforms]
+            *[_fetch_one_limited(p) for p in other_platforms]
         )
 
         total_saved = 0
@@ -321,6 +358,22 @@ async def _fetch_other_platforms_to_pool(keyword: str, workflow_id: str) -> None
                         continue
                     seen_titles.add(item["title"])
 
+                    # CDN 图片本地化（小红书 CDN 链接 ~2 天过期，必须下载到本地）
+                    local_cover = item["cover_img"]
+                    local_images = item["images"]
+                    try:
+                        from app.services.image_store import cache_cover_image, cache_detail_images
+                        if local_cover:
+                            local_cover = await cache_cover_image(
+                                item["content_id"] or "", local_cover
+                            )
+                        if local_images:
+                            local_images = await cache_detail_images(
+                                item["content_id"] or "", local_images
+                            )
+                    except Exception as img_err:
+                        logger.warning(f"[{workflow_id}] topic_pool image download failed: {img_err}")
+
                     session.add(TopicPoolItem(
                         platform=platform,
                         content_id=item["content_id"] or None,
@@ -334,8 +387,8 @@ async def _fetch_other_platforms_to_pool(keyword: str, workflow_id: str) -> None
                         collects=item["collects"],
                         shares=item["shares"],
                         fans_count=item["fans_count"],
-                        cover_img=item["cover_img"],
-                        images=item["images"],
+                        cover_img=local_cover,
+                        images=local_images,
                         source_keyword=keyword[:500],
                         raw=item["raw"],
                     ))
@@ -445,11 +498,37 @@ async def search_node(state: WorkflowState) -> dict:
     search_keyword = (state.get("search_keyword") or topic).strip()
     account_id = state.get("account_id", "")
 
+    # D18: 画像定位信息（search 不走 LLM，画像领域记录到日志供验收追溯）
+    user_profile = state.get("user_profile") or {}
+    if isinstance(user_profile, dict) and user_profile.get("primary_domain"):
+        logger.info(
+            f"[{workflow_id}] {node_id} creator profile: "
+            f"domain={user_profile.get('primary_domain')}, "
+            f"sub_domain={user_profile.get('sub_domain') or '-'}, "
+            f"visual_style={user_profile.get('visual_style', '-')}"
+        )
+
+    # 读取上游 agent 信念（回溯带上下文）
+    # analyze 回 search 时，analyze 信念里有"需要更多数据"的请求
+    analyze_belief = read_upstream_belief(state, "analyze")
+    is_supplement_mode = False
+    if analyze_belief and analyze_belief.get("request_to") == "search":
+        is_supplement_mode = True
+        supplement_info = analyze_belief.get("request_payload", {})
+        logger.info(
+            f"[{workflow_id}] {node_id} 补数据模式: {supplement_info.get('reason', '')}"
+        )
+        # 补数据时扩大搜索范围
+        # （降低 min_interactions 让更多结果进来，增大 limit）
+
     # 用户可在前端配置搜索结果数量（默认 10，避免返回过多浪费资源）
     model_settings = state.get("model_settings", {}) or {}
     search_limit = int(model_settings.get("search_limit", 10))
     # 防御：限制在 5-30 之间
     search_limit = max(5, min(30, search_limit))
+    # 补数据模式：扩大搜索范围
+    if is_supplement_mode:
+        search_limit = max(search_limit, 20)
     # 搜索平台：用户在前端选择的平台（空=全网搜索并发所有平台，默认 xiaohongshu）
     search_platform = str(model_settings.get("search_platform", "") or "").strip()
     if not search_platform:
@@ -466,7 +545,7 @@ async def search_node(state: WorkflowState) -> dict:
         search_input = {
             "keyword": search_keyword,
             "limit": search_limit,
-            "min_interactions": 5,
+            "min_interactions": 0 if is_supplement_mode else 5,
             "time_range": "week",
             "platform": search_platform,
             "disable_fallback": False,  # 允许热门榜兜底，避免空结果中断流程
@@ -480,7 +559,17 @@ async def search_node(state: WorkflowState) -> dict:
         # 后台 fire-and-forget：仅"全网搜索"时抓取其他平台内容存入选题池
         # 用户指定了具体平台时，尊重指定，不抓其他平台（贯彻"按指定来搜"）
         if not search_platform:
-            asyncio.create_task(_fetch_other_platforms_to_pool(search_keyword, workflow_id))
+            async def _fetch_with_timeout():
+                try:
+                    await asyncio.wait_for(
+                        _fetch_other_platforms_to_pool(search_keyword, workflow_id),
+                        timeout=30.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"[{workflow_id}] _fetch_other_platforms_to_pool timed out (30s)"
+                    )
+            asyncio.create_task(_fetch_with_timeout())
 
         output["_model_used"] = "none (xiaohongshu only)"
         output["_duration_ms"] = 0
@@ -515,6 +604,7 @@ async def search_node(state: WorkflowState) -> dict:
                 "current_node": node_id,
                 "node_statuses": {node_id: NodeStatus.ERROR.value},
                 "node_outputs": {node_id: output},
+                "agent_beliefs": build_belief_dict(node_id, output),
             }
 
     except Exception as e:
@@ -542,6 +632,7 @@ async def search_node(state: WorkflowState) -> dict:
             "current_node": node_id,
             "node_statuses": {node_id: NodeStatus.ERROR.value},
             "node_outputs": {node_id: output},
+            "agent_beliefs": build_belief_dict(node_id, output),
         }
 
     await emit_node_event(workflow_id, node_id, "node_completed", output)
@@ -557,4 +648,11 @@ async def search_node(state: WorkflowState) -> dict:
         "current_node": node_id,
         "node_statuses": {node_id: NodeStatus.COMPLETED.value},
         "node_outputs": {node_id: output},
+        "agent_beliefs": build_belief_dict(node_id, output),
+        "loop_counters": build_loop_counter_update(state, node_id),
     }
+
+
+def _build_belief(node_id: str, output: dict) -> dict:
+    """从节点输出提取信念，写入 state.agent_beliefs。"""
+    return build_belief_dict(node_id, output)

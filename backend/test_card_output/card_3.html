@@ -1,0 +1,117 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1080,initial-scale=1">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  .xhs-card {
+    width: 1080px; height: 1440px; overflow: hidden; position: relative;
+    display: flex; flex-direction: column;
+    padding: 96px 80px 80px 80px;
+    background: #fafaf8;
+    font-family: 'Helvetica Neue', 'PingFang SC', 'Noto Sans SC', sans-serif;
+    color: #0a0a0a;
+  }
+  .method-head { display: flex; align-items: baseline; gap: 28px; }
+  .method-num {
+    font-size: 96px; font-weight: 200; color: #002FA7;
+    line-height: 1; letter-spacing: -0.03em;
+  }
+  .method-tag {
+    font-size: 24px; font-weight: 400; letter-spacing: 0.18em;
+    color: #737373; text-transform: uppercase;
+  }
+  .method-title {
+    font-size: 72px; font-weight: 300; line-height: 1.15;
+    margin-top: 40px; letter-spacing: -0.01em;
+  }
+  .method-title .hl { border-bottom: 6px solid #002FA7; padding-bottom: 4px; }
+  .divider { height: 1px; background: #d4d4d2; margin: 56px 0; }
+  .lede { font-size: 32px; font-weight: 400; line-height: 1.75; color: #262626; }
+  .lede strong { font-weight: 600; color: #0a0a0a; }
+  .ledger { display: flex; flex-direction: column; margin-top: 56px; }
+  .ledger-row {
+    display: flex; align-items: flex-start; gap: 32px;
+    padding: 30px 0; border-bottom: 1px solid #e4e4e2;
+  }
+  .ledger-row:first-child { border-top: 1px solid #e4e4e2; }
+  .ledger-ico {
+    flex: 0 0 44px; height: 44px; display: flex;
+    align-items: center; justify-content: center; margin-top: 2px;
+  }
+  .ledger-ico svg { width: 30px; height: 30px; stroke: #002FA7; stroke-width: 1.5; fill: none; }
+  .ledger-body { flex: 1; }
+  .ledger-h { font-size: 36px; font-weight: 500; line-height: 1.35; }
+  .ledger-d { font-size: 25px; color: #737373; line-height: 1.55; margin-top: 8px; }
+  .spacer { flex: 1; }
+  .info-bar {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-top: 1px solid #d4d4d2; padding-top: 28px;
+  }
+  .info-left { font-size: 24px; color: #737373; }
+  .info-right { font-size: 24px; color: #737373; font-variant-numeric: tabular-nums; }
+  .watermark {
+    position: absolute; bottom: 32px; right: 80px;
+    font-size: 20px; color: #b0b0ae; letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+<div class="xhs-card">
+  <div class="method-head">
+    <div class="method-num">03</div>
+    <div class="method-tag">Method · 方法</div>
+  </div>
+  <div class="method-title">把<span class="hl">干扰源</span><br>提前清出场</div>
+  <div class="divider"></div>
+  <div class="lede">
+    专注不是靠「忍住不看手机」，而是<strong>让手机根本不在可及范围内</strong>。减少一次诱惑，就少消耗一份意志力。
+  </div>
+  <div class="ledger">
+    <div class="ledger-row">
+      <div class="ledger-ico">
+        <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
+      </div>
+      <div class="ledger-body">
+        <div class="ledger-h">手机放到另一个房间</div>
+        <div class="ledger-d">物理距离比「静音」有效 10 倍</div>
+      </div>
+    </div>
+    <div class="ledger-row">
+      <div class="ledger-ico">
+        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
+      </div>
+      <div class="ledger-body">
+        <div class="ledger-h">关掉所有非必要通知</div>
+        <div class="ledger-d">只留电话和日历，其余全部关闭</div>
+      </div>
+    </div>
+    <div class="ledger-row">
+      <div class="ledger-ico">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </div>
+      <div class="ledger-body">
+        <div class="ledger-h">浏览器只留一个标签页</div>
+        <div class="ledger-d">多余的标签 = 随时可跳走的出口</div>
+      </div>
+    </div>
+    <div class="ledger-row">
+      <div class="ledger-ico">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </div>
+      <div class="ledger-body">
+        <div class="ledger-h">桌面只放当前任务相关物品</div>
+        <div class="ledger-d">视线所及，越干净越容易进入状态</div>
+      </div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="info-bar">
+    <div class="info-left">方法三 · 环境设计</div>
+    <div class="info-right">04 / 07</div>
+  </div>
+  <div class="watermark">@专注力笔记</div>
+</div>
+</body>
+</html>
