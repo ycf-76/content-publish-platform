@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 <div class="min-h-screen" style="position: relative;">
 
   <div class="mint-shell tp-shell" :class="{ 'mint-collapsed': isSidebarCollapsed, 'settings-blur': showSettings }" :style="{ '--left-sidebar-width': leftSidebarWidth + 'px' }">
@@ -407,16 +407,16 @@ function handleNavClick(pageName: string) {
   if (pageName === 'my-works') { router.push('/my-works').catch(() => {}); return }
   if (pageName === 'portfolio') { router.push('/portfolio').catch(() => {}); return }
   if (pageName === 'task-plans') { router.push('/task-plans').catch(() => {}); return }
-  router.push({ path: '/workbench', query: { page: pageName } })
+  router.push('/chat')
 }
 function goToEco() {
   router.push('/eco')
 }
 function goToWorkbench() {
-  router.push({ path: '/workbench', query: { page: 'workflow' } })
+  router.push('/chat')
 }
 function goToChat() {
-  router.push({ path: '/workbench', query: { page: 'chat' } })
+  router.push('/chat')
 }
 
 // ===== 状态 =====
@@ -668,7 +668,7 @@ function startWorkflowFromTopic(item: TopicPoolItem) {
     source_keyword: item.source_keyword || '',
   }
   sessionStorage.setItem('pending_topic_reference', JSON.stringify(reference))
-  router.push('/workbench')
+  router.push('/chat')
 }
 
 // ===== 筛选联动 =====

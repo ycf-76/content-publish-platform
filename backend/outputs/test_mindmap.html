@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mindmap</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  #root { width: 100vw; height: 100vh; }
+  svg { width: 100%; height: 100%; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.17.0/dist/index.min.js"></script>
+</head>
+<body>
+<div id="root">
+<script>
+window.markmap = {
+  options: {
+    duration: 300,
+    maxWidth: 300,
+    autoFit: true,
+  },
+};
+</script>
+<textarea style="display:none" id="markdown">
+# 小红书运营
+## 内容创作
+- 选题策划
+- 文案撰写
+- 封面设计
+## 数据分析
+- 爆款分析
+- 竞品监控
+
+</textarea>
+<script>
+const md = document.getElementById('markdown').value;
+const { Markmap } = window.markmap;
+const root = document.getElementById('root');
+if (Markmap && Markmap.create) {
+  Markmap.create(root, window.markmap.options, md);
+} else if (window.markmap.autoLoader) {
+  window.markmap.autoLoader.render(root, md);
+}
+</script>
+</body>
+</html>

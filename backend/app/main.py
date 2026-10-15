@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.routers import accounts, agents, assets, auth, browser, chat, chat_agent, chat_file, chat_session, codex, config, creative_artifact, dashboard, feishu_bot, feishu_oauth, governance, memory, my_works, plugins, profile, proxy, quality_gate, review, search, skills, sse, topic_pool, workflow, workspace
+from app.api.routers import accounts, agents, assets, auth, browser, cards, chat, chat_agent, chat_file, chat_session, codex, config, creative_artifact, dashboard, feishu_bot, feishu_oauth, governance, memory, my_works, plugins, profile, proxy, quality_gate, review, search, skills, sse, topic_pool, workspace
 from app.config import get_settings
 from app.db.session import engine, Base
 from sqlalchemy import inspect as _sa_inspect, text as _sa_text
@@ -85,18 +85,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("LangSmith tracing disabled (set LANGCHAIN_TRACING_V2=true + LANGCHAIN_API_KEY to enable)")
         _hstep("LangSmith", True, "disabled")
 
-    # 初始化 LangGraph checkpointer（AsyncSqliteSaver 持久化 checkpoint）
-    # 必须在 lifespan（async context）中初始化，aiosqlite.connect 需要 await
-    logger.info("[lifespan] step 1: init LangGraph checkpointer...")
-    try:
-        from app.agents.graph import init_global_checkpointer
-        await init_global_checkpointer()
-        logger.info("LangGraph checkpointer initialized (AsyncSqliteSaver)")
-        _hstep("Checkpointer", True)
-    except Exception as e:
-        import traceback
-        logger.warning(f"LangGraph checkpointer init failed: {e}\n{traceback.format_exc()}")
-        _hstep("Checkpointer", False, str(e))
+    # LangGraph checkpointer — MIGRATED to workflow-engine project
+    logger.info("LangGraph checkpointer skipped (migrated to workflow-engine)")
+    _hstep("Checkpointer", True, "migrated")
 
     # 初始化 MCP clients（注册 PluginMCPClient 到 mcp_manager）
     logger.info("[lifespan] step 2: init MCP clients...")
@@ -168,27 +159,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning(f"Performance collector scheduler init failed: {e}")
         _hstep("Perf collector", False, str(e))
 
-    # 工作流僵尸清理：PAUSED 超时终止 + running 卡死挂起
-    logger.info("[lifespan] step 4.6: init workflow cleanup scheduler...")
-    try:
-        from apscheduler.triggers.interval import IntervalTrigger
-        from app.pool_monitor.scheduler import scheduler
-        from app.services.workflow_cleanup import cleanup_stale_workflows
-
-        scheduler.add_job(
-            cleanup_stale_workflows,
-            IntervalTrigger(minutes=10),
-            id="workflow_cleanup",
-            name="工作流僵尸清理",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
-        logger.info("Workflow cleanup scheduler registered (every 10 min)")
-        _hstep("WF cleanup", True)
-    except Exception as e:
-        logger.warning(f"Workflow cleanup scheduler init failed: {e}")
-        _hstep("WF cleanup", False, str(e))
+    # 工作流僵尸清理 — MIGRATED to workflow-engine project
+    logger.info("Workflow cleanup scheduler skipped (migrated)")
+    _hstep("WF cleanup", True, "migrated")
 
     # 任务清单定时扫描：到期任务执行 + 挂起工作流处理（审核三档/服务端渲染）
     logger.info("[lifespan] step 4.7: init task plan scheduler...")
@@ -226,44 +199,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning(f"Redis cache init failed: {e}")
         _hstep("Redis cache", False, str(e))
 
-    # Phase 5: 初始化节点注册中心（动态工作流编排支持）
-    try:
-        from app.core.node_registry import register_default_workflow_nodes
-        success = register_default_workflow_nodes()
-        if success:
-            logger.info("✅ NodeRegistry initialized with default workflow nodes")
-            _hstep("NodeRegistry", True)
-        else:
-            logger.warning("⚠️ NodeRegistry initialization failed (some nodes may not be registered)")
-            _hstep("NodeRegistry", False, "partial")
-    except Exception as e:
-        logger.warning(f"NodeRegistry init failed: {e} (dynamic workflow features may be limited)")
-        _hstep("NodeRegistry", False, str(e))
+    # NodeRegistry — MIGRATED to workflow-engine project
+    logger.info("NodeRegistry skipped (migrated)")
+    _hstep("NodeRegistry", True, "migrated")
 
-    # Phase 5.5: 初始化插件→工作流节点桥接（扫描并注册所有 workflow_node 插件）
-    logger.info("[lifespan] step 5.5: init plugin-workflow bridge...")
-    try:
-        from app.core.plugin_node_bridge import initialize_plugin_nodes
-        bridge_result = await initialize_plugin_nodes()
-        
-        if bridge_result["success"]:
-            logger.info(
-                f"✅ Plugin-Workflow bridge initialized: "
-                f"{bridge_result['registered_count']}/{bridge_result['plugins_scanned']} nodes registered"
-            )
-            _hstep("Plugin bridge", True, f"{bridge_result['registered_count']}/{bridge_result['plugins_scanned']}")
-            
-            if bridge_result["errors"]:
-                for err in bridge_result["errors"][:3]:  # 只打印前3个错误
-                    logger.warning(f"   ⚠️ {err}")
-        else:
-            logger.warning(
-                f"⚠️ Plugin-Workflow bridge init failed: {bridge_result['errors'][:1]}"
-            )
-            _hstep("Plugin bridge", False, str(bridge_result["errors"][:1]))
-    except Exception as e:
-        logger.warning(f"Plugin-Workflow bridge init failed: {e} (plugin nodes unavailable)")
-        _hstep("Plugin bridge", False, str(e))
+    # Plugin-Workflow bridge — MIGRATED to workflow-engine project
+    logger.info("Plugin-Workflow bridge skipped (migrated)")
+    _hstep("Plugin bridge", True, "migrated")
 
     # Phase 5.6: 同步插件到数据库（扫描 plugins/builtin/ + plugins/third_party/ → upsert DB）
     logger.info("[lifespan] step 5.6: sync all plugins (builtin + third_party) to DB...")
@@ -280,21 +222,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning(f"Plugins sync failed: {e} (plugin list may be incomplete)")
         _hstep("Plugin sync", False, str(e))
 
-    # Phase 5.7: 预置内置工作流模板到数据库
-    logger.info("[lifespan] step 5.7: seed builtin workflow definitions...")
-    try:
-        from app.db.seed_workflow_definitions import seed_builtin_workflow_definitions
-        from app.db.session import AsyncSessionLocal
-        async with AsyncSessionLocal() as seed_db:
-            seed_result = await seed_builtin_workflow_definitions(seed_db)
-            logger.info(
-            f"✅ Builtin workflow definitions seeded: "
-            f"{seed_result['seeded']} new, {seed_result['skipped']} existing"
-        )
-        _hstep("WF seed", True, f"{seed_result['seeded']} new")
-    except Exception as e:
-        logger.warning(f"Builtin workflow definitions seed failed: {e} (templates may be unavailable)")
-        _hstep("WF seed", False, str(e))
+    # Workflow definitions seed — MIGRATED to workflow-engine project
+    logger.info("Builtin workflow definitions seed skipped (migrated)")
+    _hstep("WF seed", True, "migrated")
 
     # 飞书集成：验证配置并初始化适配器
     logger.info("[lifespan] step 5.8: init Feishu integration...")
@@ -650,7 +580,6 @@ app.include_router(chat_agent.router)
 app.include_router(chat_session.router)
 app.include_router(chat_file.router)
 app.include_router(search.router)
-app.include_router(workflow.router)
 app.include_router(sse.router)
 app.include_router(review.router)
 app.include_router(profile.router)  # 用户画像 API (D18 创作者画像)
@@ -666,8 +595,6 @@ app.include_router(accounts.router)  # 平台账号管理 API（账号绑定 + �
 app.include_router(workspace.router)
 app.include_router(plugins.router)  # Plugin system API (v2.0)
 app.include_router(governance.router)  # Governance Stats API
-from app.api.routers import workflow_definitions
-app.include_router(workflow_definitions.router)  # Workflow Definitions API (v5.0 - Dynamic Orchestration)
 from app.api.routers import wechat_bot
 app.include_router(wechat_bot.router)  # WeChat Bot API (v6.0 - iLink协议)
 from app.api.routers import feishu_bot
@@ -682,6 +609,7 @@ app.include_router(task_plan.router)  # Task Plan API (多日定时发布)
 app.include_router(creative_artifact.router)  # CreativeArtifact API (统一创作对象)
 app.include_router(quality_gate.router)  # 共享质量门禁 API (P1-3)
 app.include_router(dashboard.router)  # 数据看板 API (P0-2)
+app.include_router(cards.router)  # 卡片 DSL HTTP 服务（图文渲染链路）
 
 # 挂载 uploads 目录为静态文件服务（选题池封面图/详情图 + 用户头像）
 _upload_dir = Path(os.environ.get("UPLOAD_DIR", "uploads"))

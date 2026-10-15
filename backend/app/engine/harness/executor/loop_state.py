@@ -56,17 +56,81 @@ def save_loop_state(
     return str(path)
 
 
+def _validate_state_path(path: str) -> Path:
+    """Validate that path resolves inside _state_dir() to prevent traversal."""
+    resolved = Path(path).resolve()
+    state_root = _state_dir().resolve()
+    try:
+        resolved.relative_to(state_root)
+    except ValueError:
+        raise FileNotFoundError(
+            f"loop state path escapes state dir: {path} -> {resolved} "
+            f"(allowed root: {state_root})"
+        )
+    if not resolved.is_file():
+        raise FileNotFoundError(f"loop state not found: {path}")
+    return resolved
+
+
 def load_loop_state(path: str) -> dict[str, Any]:
-    """Load loop state from file."""
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """Load loop state from file (path-traversal safe + schema validated)."""
+    resolved = _validate_state_path(path)
+    with open(resolved, "r", encoding="utf-8") as f:
+        state = json.load(f)
+    _validate_state_schema(state)
+    return state
+
+
+_MAX_MESSAGES = 500
+_MAX_ITERATIONS = 200
+_ALLOWED_ROLES = frozenset({"system", "user", "assistant", "tool"})
+
+
+def _validate_state_schema(state: dict[str, Any]) -> None:
+    """Validate critical fields of loaded loop state to prevent injection.
+
+    Guards against tampered state files that could inject forged system
+    messages or corrupt iteration counters.
+    """
+    if not isinstance(state, dict):
+        raise ValueError("loop state must be a JSON object")
+
+    messages = state.get("messages")
+    if messages is not None:
+        if not isinstance(messages, list):
+            raise ValueError("loop state 'messages' must be a list")
+        if len(messages) > _MAX_MESSAGES:
+            raise ValueError(
+                f"loop state has {len(messages)} messages, max allowed: {_MAX_MESSAGES}"
+            )
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                raise ValueError(f"message[{i}] must be a dict")
+            role = msg.get("role", "")
+            if role not in _ALLOWED_ROLES:
+                raise ValueError(f"message[{i}] has invalid role: {role!r}")
+
+    iteration = state.get("iteration")
+    if iteration is not None:
+        if not isinstance(iteration, int) or iteration < 0 or iteration > _MAX_ITERATIONS:
+            raise ValueError(
+                f"loop state 'iteration' out of range: {iteration}"
+            )
+
+    max_iter = state.get("max_iterations")
+    if max_iter is not None:
+        if not isinstance(max_iter, int) or max_iter < 1 or max_iter > _MAX_ITERATIONS:
+            raise ValueError(
+                f"loop state 'max_iterations' out of range: {max_iter}"
+            )
 
 
 def cleanup_loop_state(path: str) -> None:
-    """Delete a loop state file."""
+    """Delete a loop state file (path-traversal safe)."""
     try:
-        os.remove(path)
-    except OSError:
+        resolved = _validate_state_path(path)
+        os.remove(resolved)
+    except (OSError, FileNotFoundError):
         pass
 
 
@@ -98,12 +162,13 @@ def check_clarification_timeout(state: dict[str, Any]) -> str | None:
 
 
 def mark_loop_state_expired(path: str) -> None:
-    """标记 loop_state 为 expired（§5.3 v2.2 超时清理竞争修复）。"""
+    """标记 loop_state 为 expired（§5.3 v2.2 超时清理竞争修复，path-traversal safe）。"""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        resolved = _validate_state_path(path)
+        with open(resolved, "r", encoding="utf-8") as f:
             state = json.load(f)
         state["_clarification_expired"] = True
-        with open(path, "w", encoding="utf-8") as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, default=str)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, FileNotFoundError):
         pass

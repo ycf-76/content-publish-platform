@@ -1,4 +1,4 @@
-"""
+﻿"""
 Plugin API Router
 插件系统 RESTful API 端点
 
@@ -417,11 +417,7 @@ async def upload_plugin(
         except Exception as e:
             logger.warning(f"[upload_plugin] PluginManager hot-load skipped: {e}")
 
-        try:
-            from app.agents.graph import refresh_node_func_map
-            refresh_node_func_map()
-        except Exception:
-            pass
+        pass
 
         return {
             "success": True,
@@ -576,11 +572,7 @@ async def install_plugin(
     try:
         result = await service.install_plugin(user_id, plugin_id, request)
 
-        try:
-            from app.agents.graph import refresh_node_func_map
-            refresh_node_func_map()
-        except Exception:
-            pass
+        pass
 
         return PluginActionResponse(
             success=result["success"],
@@ -647,11 +639,7 @@ async def uninstall_plugin(
         except Exception as e:
             logger.warning(f"Failed to unload plugin from PluginManager: {e}")
 
-        try:
-            from app.agents.graph import refresh_node_func_map
-            refresh_node_func_map()
-        except Exception:
-            pass
+        pass
 
         return PluginActionResponse(
             success=result["success"],
@@ -1133,11 +1121,7 @@ async def install_from_github(
             except Exception as e:
                 logger.warning(f"[plugins] 自动加载新插件失败: {e}")
 
-            try:
-                from app.agents.graph import refresh_node_func_map
-                refresh_node_func_map()
-            except Exception:
-                pass
+            pass
             
             # 记录安装历史（可选）
             logger.info(f"[plugins] 用户 {user_id} 从 GitHub 安装插件: {result}")
@@ -1204,11 +1188,7 @@ async def update_from_github(
             except Exception as e:
                 logger.warning(f"[plugins] 重新加载插件失败: {e}")
 
-            try:
-                from app.agents.graph import refresh_node_func_map
-                refresh_node_func_map()
-            except Exception:
-                pass
+            pass
             
             logger.info(f"[plugins] 用户 {user_id} 更新 GitHub 插件: {plugin_id}")
         

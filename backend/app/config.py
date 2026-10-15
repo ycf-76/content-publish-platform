@@ -53,6 +53,72 @@ class Settings(BaseSettings):
     wanx_model: str = "wanx2.1-t2i-turbo"
     jimeng_api_key: str = Field(default="", description="即梦 API Key（备用生图）")
 
+    # ===== 视频生成（通义万相 / 可灵 / 火山方舟）=====
+    # 默认 provider：dashscope（与万相图片同生态，复用 DASHSCOPE_API_KEY）
+    video_provider: str = Field(
+        default="dashscope",
+        description="默认视频生成 provider（dashscope / kling / ark）",
+    )
+    dashscope_video_model: str = Field(
+        default="wanx2.1-t2v-turbo", description="DashScope 文生视频模型（t2v）"
+    )
+    dashscope_i2v_model: str = Field(
+        default="wanx2.1-i2v-turbo", description="DashScope 图生视频模型（i2v）"
+    )
+    kling_access_key: str = Field(default="", description="可灵 Access Key（video_provider=kling 时用，JWT 鉴权）")
+    kling_secret_key: str = Field(default="", description="可灵 Secret Key（video_provider=kling 时用，JWT 鉴权）")
+    kling_model: str = Field(default="kling-v1", description="可灵模型名（kling-v1 / kling-v1-5）")
+    ark_api_key: str = Field(default="", description="火山引擎 ARK API Key（video_provider=ark 时用）")
+    ark_model: str = Field(
+        default="", description="火山方舟视频生成模型 / endpoint id（video_provider=ark 时必填）"
+    )
+
+    # ===== 视频生成并发控制 =====
+    dashscope_max_concurrent: int = Field(default=2, description="DashScope 视频生成最大并发")
+    kling_max_concurrent: int = Field(default=2, description="可灵视频生成最大并发")
+    ark_max_concurrent: int = Field(default=3, description="火山方舟视频生成最大并发")
+    video_global_max_concurrent: int = Field(default=6, description="视频生成全局最大并发")
+
+    # ===== 离线 TTS（piper）=====
+    # PATH 里的 piper 缺 espeak-ng-data 不可用，必须用 om-runtime 自带依赖的完整版
+    piper_binary: str = Field(
+        default=r"D:\om-runtime\piper\piper.exe", description="piper 可执行路径（离线配音降级）"
+    )
+    piper_model_path: str = Field(
+        default=r"D:\om-runtime\model.onnx", description="piper 语音模型 onnx 路径（cmn 中文）"
+    )
+
+    # ===== 多图视频流水线 =====
+    multi_image_video_total_timeout: float = Field(
+        default=600.0,
+        description=(
+            "多图视频流水线：逐镜生成视频的总体超时（秒）。串行循环在镜头边界检查，"
+            "超时后剩余镜头全部退化为 ken-burns 兜底出片，避免无限卡住。"
+            "注意单镜内部轮询上限另有 300s，故最坏耗时约为本值 + 300s。设为 0 表示不限制。"
+        ),
+    )
+    multi_image_video_max_concurrent_frames: int = Field(
+        default=2, description="多图视频单镜内并发帧生成上限"
+    )
+
+    # ===== 模型分级调度（TieredModelRouter）=====
+    # 规划阶段用便宜模型，生成阶段用强模型，实现算力均衡分配
+    # economy 级：规划阶段（VL理解 + LLM编排），省钱优先
+    tier_economy_vl: str = Field(default="qwen-vl-plus", description="economy 级 VL 模型（便宜，用于规划）")
+    tier_economy_llm: str = Field(default="deepseek-chat", description="economy 级 LLM 模型（便宜，用于编排）")
+    tier_economy_t2i: str = Field(default="wanx2.1-t2i-turbo", description="economy 级文生图模型")
+    tier_economy_i2v: str = Field(default="wanx2.1-i2v-turbo", description="economy 级图生视频模型")
+    # standard 级：后处理阶段，性价比平衡
+    tier_standard_vl: str = Field(default="qwen-vl-max", description="standard 级 VL 模型")
+    tier_standard_llm: str = Field(default="deepseek-chat", description="standard 级 LLM 模型")
+    tier_standard_t2i: str = Field(default="wanx2.1-t2i-turbo", description="standard 级文生图模型")
+    tier_standard_i2v: str = Field(default="wanx2.1-i2v-turbo", description="standard 级图生视频模型")
+    # quality 级：核心生成阶段（生图 + 生视频），质量优先
+    tier_quality_vl: str = Field(default="qwen-vl-max", description="quality 级 VL 模型（最强，用于关键生成）")
+    tier_quality_llm: str = Field(default="deepseek-chat", description="quality 级 LLM 模型")
+    tier_quality_t2i: str = Field(default="wanx2.1-t2i-plus", description="quality 级文生图模型（高质量版）")
+    tier_quality_i2v: str = Field(default="wanx2.1-i2v-plus", description="quality 级图生视频模型（高质量版）")
+
     # ===== LLM: OpenAI（GPT 系列，官方 API）=====
     openai_api_key: str = Field(default="", description="OpenAI API Key")
     openai_base_url: str = "https://api.openai.com/v1"

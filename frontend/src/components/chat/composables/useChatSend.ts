@@ -23,6 +23,10 @@ export interface ChatSendDeps {
   transitionTurn: (phase: string, label?: string) => void
   highlightEnabled: Ref<boolean>
   lastStats: Ref<ChatStats | null>
+  // 渲染层 L3：chat 直连路径的 delta 也灌进同一个播放引擎（与 agent SSE 路径速率一致）
+  pushStreamDelta: (msg: ChatMessage, delta: string) => void
+  pushReasoningDelta: (msg: ChatMessage, delta: string) => void
+  finishStream: (msg: ChatMessage, onDone?: () => void) => void
 }
 
 export function useChatSend(deps: ChatSendDeps) {

@@ -15,43 +15,16 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: '数据看板' },
   },
   {
+    path: '/chat',
+    name: 'Chat',
+    component: () => import('@/views/ChatViewPage.vue'),
+    meta: { requiresAuth: true, title: '对话' },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/LoginView.vue'),
     meta: { requiresAuth: false }
-  },
-  {
-    path: '/workflow',
-    name: 'WorkflowShowcase',
-    component: () => import('@/views/WorkflowShowcaseView.vue'),
-    meta: {
-      title: '工作流',
-      requiresAuth: true
-    }
-  },
-  {
-    path: '/workbench/:workflowId?',
-    name: 'Workbench',
-    component: () => import('@/views/WorkbenchView.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/workflow-templates',
-    name: 'WorkflowTemplates',
-    component: () => import('@/views/WorkflowTemplatesView.vue'),
-    meta: { 
-      title: '工作流模板 - 动态编排',
-      requiresAuth: true 
-    }
-  },
-  {
-    path: '/workflow-editor',
-    name: 'WorkflowEditor',
-    component: () => import('@/views/WorkflowEditorView.vue'),
-    meta: { 
-      title: '可视化工作流编辑器',
-      requiresAuth: true 
-    }
   },
   {
     path: '/eco',
@@ -130,12 +103,10 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫：requiresAuth 路由未登录跳 /login
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
-  // DEV: 登录验证已暂停，无 token 也放行
   if (to.name === 'Login' && token && !to.query.force) {
-    const redirect = (to.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/workflow'
+    const redirect = (to.query.redirect as string) || sessionStorage.getItem('redirect_after_login') || '/'
     sessionStorage.removeItem('redirect_after_login')
     next(redirect)
   } else {

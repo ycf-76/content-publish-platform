@@ -680,6 +680,33 @@ class ImageAsset(Base):
     )
 
 
+class VideoAsset(Base):
+    """AI 生成的视频素材（短视频/视频流水线产物）。
+
+    与 ImageAsset 平级：落盘 uploads/videos/{user_id}/ + 落库。
+    extra 字段存链路元数据（topic/ratio/shots_count/degradation 等）。
+    """
+
+    __tablename__ = "video_assets"
+    __table_args__ = (
+        Index("ix_video_assets_user_id", "user_id"),
+        Index("ix_video_assets_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=generate_ulid)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), default="video/mp4", nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    original_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    thumbnail_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="ai", nullable=False)
+    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PublishedContentPerformance(Base):
     """发布内容的表现记录（T+7 回采）。
 

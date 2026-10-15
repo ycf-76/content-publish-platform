@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <main class="eco-page" :class="{ 'dark-theme': darkTheme }">
     <!-- 粒子背景层 -->
     <canvas class="magic-particles" ref="particlesCanvas" aria-hidden="true"></canvas>
@@ -64,10 +64,10 @@ function toggleTheme() {
 }
 
 function goBack() {
-  router.push('/workbench')
+  router.push('/chat')
 }
 function goWorkbench() {
-  router.push('/workbench')
+  router.push('/chat')
 }
 
 const liked = ref(false)

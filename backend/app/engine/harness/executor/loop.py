@@ -2191,6 +2191,25 @@ class LoopExecutor(ExecutorBase):
         if skill is None:
             return f'{{"error": "unknown tool: {tool_name}"}}', None
 
+        _callable_names = getattr(self, "_callable_skill_names", None)
+        if _callable_names and tool_name not in _callable_names:
+            logger.warning(
+                f"[{context.node_id}] tool '{tool_name}' not in Agent's callable catalog "
+                f"(catalog size={len(_callable_names)}), blocking LLM attempt to call "
+                f"out-of-scope skill"
+            )
+            return json.dumps(
+                {
+                    "error": "tool_not_in_catalog",
+                    "tool": tool_name,
+                    "hint": (
+                        f"工具 {tool_name} 不在当前 Agent 的可用工具列表中，"
+                        "请仅使用 AVAILABLE TOOLS 中列出的工具。"
+                    ),
+                },
+                ensure_ascii=False,
+            ), None
+
         # ---- Stage 0: Clarification check (Progressive Clarification Protocol) ----
         # 在 Guardian 之前：如果 Skill 声明了 clarify_meta 且有未回答字段，
         # 暂停循环，返回澄清请求让用户填写。
@@ -2394,8 +2413,7 @@ class LoopExecutor(ExecutorBase):
                     "permission": e.permission.value,
                     "hint": (
                         "该权限未开放，这不是任务终点：向用户说明缺少权限 "
-                        f"{e.permission.value}，告知开启方法（backend/.env 的 "
-                        "PERMISSIONS_ALLOW 加入该值并重启后端），并明确询问用户"
+                        f"{e.permission.value}，并明确询问用户"
                         "是否开启后继续。不要默默放弃或只字不提地结束任务。"
                     ),
                 },

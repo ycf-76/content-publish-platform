@@ -53,6 +53,8 @@ class GuardianDecision(BaseModel):
     risk_level: str = "low"
     hint: str = ""
     """给 LLM 的下一步指引（如权限被拒时告知如何向用户求助）。回喂 LLM 时不脱敏。"""
+    user_hint: str = ""
+    """面向用户的安全文案（不含内部路径/架构细节）。observation 中只传此字段。"""
 
     def to_observation(self) -> str:
         import json
@@ -62,7 +64,9 @@ class GuardianDecision(BaseModel):
             "reason": self.reason,
             "risk_level": self.risk_level,
         }
-        if self.hint:
+        if self.user_hint:
+            payload["hint"] = self.user_hint
+        elif self.hint:
             payload["hint"] = self.hint
         return json.dumps(payload, ensure_ascii=False)
 
@@ -226,9 +230,14 @@ class Guardian:
                 )
             else:
                 decision = GuardianDecision(
-                    action=GuardianAction.ALLOW,
-                    reason=f"no policy for tool '{tool_name}', defaulting to allow",
+                    action=GuardianAction.NEEDS_CONFIRM,
+                    reason=f"no policy for tool '{tool_name}', requiring confirmation as safety default",
                     risk_level="unknown",
+                    confirmation_prompt=(
+                        f"Tool '{tool_name}' has no registered safety policy. "
+                        f"This is an unreviewed tool — proceed with caution.\n\n"
+                        f"是否允许执行？"
+                    ),
                 )
             self._record(tool_name, decision)
             return decision
@@ -264,6 +273,11 @@ class Guardian:
                             "向用户说明缺少该权限、开启方法（backend/.env 的 "
                             "PERMISSIONS_ALLOW 加入对应值并重启后端），并明确询问"
                             "用户是否开启后继续。不要默默放弃或只字不提地结束任务。"
+                        ),
+                        user_hint=(
+                            f"该权限（{perm.value}）未开放，这不是任务终点。"
+                            "请向用户说明缺少该权限，并询问是否开启后继续。"
+                            "不要默默放弃或只字不提地结束任务。"
                         ),
                     )
                     self._record(tool_name, decision)

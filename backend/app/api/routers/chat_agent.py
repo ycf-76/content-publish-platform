@@ -1,4 +1,4 @@
-"""Agent Chat 适配层端点（ReAct 模式）。
+﻿"""Agent Chat 适配层端点（ReAct 模式）。
 
 流程：获取/创建 Session → 写用户消息 → 守卫 → 直接走 ReAct Loop →
 LLM 自己选工具、自己执行、自己观察、自己决定下一步。
@@ -210,6 +210,8 @@ class AgentChatRequest(BaseModel):
     folder_context: dict | None = Field(default=None, description="当前文件夹的对话文件/工作区文件列表")
     model_settings: dict | None = Field(default=None, description="模型和推送设置，包含 enable_wechat_push, wechat_target_user_id, enable_feishu_push, feishu_chat_id 等")
     auto_approve: bool = Field(default=True, description="工具调用是否自动放行（True=自动放行，False=需要用户确认）")
+    image_asset_ids: list[str] = Field(default_factory=list, description="用户在聊天中附带/上传的图片 asset_id 列表，供视频生成等 Skill 直接使用")
+    turn_id: str | None = Field(default=None, description="回合 ID（前端发送前生成）。SSE 事件按回合隔离，防上一轮输出窜显；不传则后端生成")
 
 
 _LOCAL_FILE_HINTS = ("本地文件", "本地文件夹", "本地文档", "本地目录", "文件夹", "工作区文件", "工作区里", "文件中的", "文件里", "找文件", "查文件")
@@ -529,6 +531,13 @@ async def agent_chat(
         session = await chat_session.create_session(user_id)
         session_id = session["id"]
 
+    # 1.1 回合 ID：前端传来则复用（发送前生成），否则后端生成。
+    # 本回合所有 SSE 事件（chat_turn_started / decision_made / observer 全量 /
+    # workflow_completed）均盖章该值，响应体回传供前端对账。
+    import uuid as _uuid
+    _turn_id = request.turn_id or f"turn_{_uuid.uuid4().hex[:16]}"
+    logger.info(f"[chat_agent] turn_id={_turn_id} session={session_id}")
+
     # 1.5 注入作品上下文（强化版：强制AI必须使用）
     logger.info(f"[chat_agent] DEBUG: work_context={request.work_context is not None}, message={str(request.message)[:60]}")
     if request.work_context:
@@ -698,7 +707,7 @@ async def agent_chat(
                 await sse_bus.publish(session_id, "decision_made", {
                     "decision": f"正在更新对话摘要…",
                     "iteration": 0,
-                })
+                }, turn_id=_turn_id)
             except Exception as _sse_err:
                 logger.warning(f"[chat_agent] SSE publish failed: {_sse_err}")
             _new_summary = await _generate_session_summary(
@@ -792,7 +801,7 @@ async def agent_chat(
                 logger.info(f"[chat_agent] SSE emit: {event_type}, node={node_id}, delta_len={len(payload.get('delta', ''))}, preview={delta_preview!r}")
             else:
                 logger.info(f"[chat_agent] SSE emit: {event_type}, node={node_id}, keys={list(payload.keys())}")
-            await sse_bus.publish(session_id, event_type, payload)
+            await sse_bus.publish(session_id, event_type, payload, turn_id=_turn_id)
         except Exception as _cb_err:
             logger.warning(f"[chat_agent] SSE emit callback error: {_cb_err}")
 
@@ -803,7 +812,14 @@ async def agent_chat(
     await sse_bus.publish(session_id, "chat_turn_started", {
         "session_id": session_id,
         "message_preview": sanitized_message[:60],
-    })
+        "turn_id": _turn_id,
+    }, turn_id=_turn_id)
+    # 注入 image_asset_ids 到消息上下文
+    if request.image_asset_ids:
+        _asset_hint = f"\n\n[用户附带了 {len(request.image_asset_ids)} 张图片，asset_ids: {request.image_asset_ids}]"
+        sanitized_message = sanitized_message + _asset_hint
+        logger.info(f"[chat_agent] image_asset_ids injected: {request.image_asset_ids}")
+
     result = await agent.process(
         sanitized_message,
         session_id,
@@ -836,6 +852,7 @@ async def agent_chat(
             "session_id": session_id,
             "workflow_id": workflow_id,
             "status": "workflow_started",
+            "turn_id": _turn_id,
         }
 
     if result.status == "awaiting_clarification":
@@ -858,6 +875,7 @@ async def agent_chat(
             "clarification_skill": output_data.get("_clarification_skill", ""),
             "clarification_batches": output_data.get("_clarification_batches", []),
             "loop_state_path": output_data.get("_loop_state_path", ""),
+            "turn_id": _turn_id,
         }
 
     if result.status == "awaiting_confirmation":
@@ -878,6 +896,7 @@ async def agent_chat(
             "confirmation_prompt": output_data.get("_confirmation_prompt", ""),
             "confirmation_skill": output_data.get("_confirmation_skill", ""),
             "loop_state_path": output_data.get("_loop_state_path", ""),
+            "turn_id": _turn_id,
         }
 
     output_data = result.output.output if result.output else None
@@ -892,7 +911,7 @@ async def agent_chat(
     try:
         await sse_bus.publish(session_id, "workflow_completed", {
             "workflow_id": session_id,
-        })
+        }, turn_id=_turn_id)
         logger.info(f"[chat_agent] workflow_completed published to SSE bus for session={session_id}")
     except Exception as _sse_finish_err:
         logger.warning(f"[chat_agent] failed to publish workflow_completed: {_sse_finish_err}")
@@ -908,6 +927,7 @@ async def agent_chat(
         "message": humanized_message,
         "thinking": thinking or None,
         "creative_state": creative_state_data,
+        "turn_id": _turn_id,
     }
 
 # Confirm API

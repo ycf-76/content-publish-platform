@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 <div class="min-h-screen" style="position: relative;">
 
   <div class="mint-shell mint-right-collapsed" :class="{ 'mint-collapsed': isSidebarCollapsed, 'is-left-resizing': isLeftResizing }" :style="{ '--left-sidebar-width': leftSidebarWidth + 'px' }">
@@ -173,15 +173,15 @@ function handleNavClick(pageName: string) {
   if (pageName === 'topic-pool') { router.push('/topic-pool').catch(() => {}); return }
   if (pageName === 'my-works') { router.push('/my-works').catch(() => {}); return }
   if (pageName === 'task-plans') { router.push('/task-plans').catch(() => {}); return }
-  router.push({ path: '/workbench', query: { page: pageName } })
+  router.push('/chat')
 }
 
 function goToEco() { router.push('/eco') }
 function openSettings() {
   window.dispatchEvent(new Event('open-settings'))
 }
-function goToWorkbench() { router.push({ path: '/workbench', query: { page: 'workflow' } }) }
-function goToChat() { router.push('/workbench') }
+function goToWorkbench() { router.push('/chat') }
+function goToChat() { router.push('/chat') }
 function goBack() { router.push('/portfolio').catch(() => {}) }
 
 import { useResizeHandle } from '@/composables/useResizeHandle'
@@ -252,7 +252,7 @@ function formatFullDate(ts: number): string {
 function onEdit() {
   if (source.value === 'draft' || source.value === 'published') {
     workStore.setActiveWork(artifactId.value)
-    router.push('/workbench').catch(() => {})
+    router.push('/chat').catch(() => {})
   }
 }
 

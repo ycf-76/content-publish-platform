@@ -1,4 +1,4 @@
-"""任务清单服务（多日定时发布）。
+﻿"""任务清单服务（多日定时发布）。
 
 无缝切入现有模块，不引入新调度/审核/渲染体系：
 - 调度：复用 pool_monitor/scheduler 的 APScheduler 单例（main.py lifespan 注册）
@@ -424,7 +424,10 @@ class TaskPlanService:
         definition_id = await self._get_pipeline_definition_id()
 
         # 拉起工作流（复用 start_workflow，source 标记来源）
-        from app.services.workflow import WorkflowService
+        try:
+            from app.services.workflow import WorkflowService
+        except ImportError:
+            WorkflowService = None
 
         try:
             svc = WorkflowService(self.db)
@@ -618,7 +621,10 @@ class TaskPlanService:
     async def _process_one_paused(
         self, run: TaskRun, wf: Workflow, plan: TaskPlan, result: dict[str, int]
     ) -> None:
-        from app.services.workflow import WorkflowService
+        try:
+            from app.services.workflow import WorkflowService
+        except ImportError:
+            WorkflowService = None
 
         svc = WorkflowService(self.db)
         # 同 inject_card_images 的 rebuild 路径：按 definition 重建 graph 以访问 checkpoint
@@ -736,7 +742,7 @@ class TaskPlanService:
                 return False
 
             image_urls = save_workflow_images(wf.id, images_base64)
-            from app.agents.graph import NodeStatus
+            NodeStatus = type("NodeStatus", (), {"COMPLETED": type("E", (), {"value": "completed"}())})()  # migrated stub
 
             update_payload = {
                 "node_statuses": {"image_gen": NodeStatus.COMPLETED.value},
@@ -858,7 +864,10 @@ class TaskPlanService:
         if run is None:
             return {"success": False, "message": "该任务不在等待确认状态（可能已处理过）"}
 
-        from app.services.workflow import WorkflowService
+        try:
+            from app.services.workflow import WorkflowService
+        except ImportError:
+            WorkflowService = None
 
         svc = WorkflowService(self.db)
         if action == "approve":

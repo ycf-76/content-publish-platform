@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 <div class="min-h-screen" style="position: relative;">
 
   <div class="mint-shell da-shell" :class="{ 'mint-collapsed': isSidebarCollapsed }" :style="{ '--left-sidebar-width': leftSidebarWidth + 'px' }">
@@ -275,16 +275,16 @@ function handleNavClick(pageName: string) {
   if (pageName === 'topic-pool') { router.push('/topic-pool').catch(() => {}); return }
   if (pageName === 'my-works') { router.push('/my-works').catch(() => {}); return }
   if (pageName === 'portfolio') { router.push('/portfolio').catch(() => {}); return }
-  router.push({ path: '/workbench', query: { page: pageName } })
+  router.push('/chat')
 }
 function goToEco() { router.push('/eco') }
 function openSettings() {
   window.dispatchEvent(new Event('open-settings'))
 }
-function goToWorkbench() { router.push({ path: '/workbench', query: { page: 'workflow' } }) }
-function goToChat() { router.push('/workbench') }
+function goToWorkbench() { router.push('/chat') }
+function goToChat() { router.push('/chat') }
 function goToWorkflow(workflowId: string) {
-  router.push({ path: '/workbench', query: { page: 'workflow', workflow: workflowId } })
+  router.push('/chat')
 }
 import { useResizeHandle } from '@/composables/useResizeHandle'
 const {

@@ -1,0 +1,1 @@
+"""Copywrite skills: lively_girl, elegant, professional, casual."""

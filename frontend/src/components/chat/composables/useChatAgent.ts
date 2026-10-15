@@ -20,6 +20,8 @@ export interface ChatAgentDeps {
   modelSettings: any
   autoApproveEnabled: Ref<boolean>
   sendMessageReal: (conv: Conversation, startTime: number, sid: string | null, assistantMsg: ChatMessage) => Promise<void>
+  ensureSession: (title?: string) => Promise<string | null>
+  linkSession: (sid: string) => void
   transitionTurn: (phase: string, label?: string) => void
 }
 
@@ -28,10 +30,10 @@ export function useChatAgent(deps: ChatAgentDeps) {
     activeWork, activeFile, workStore, fileStore, workspaceStore,
     pickers, sse, stream,
     showWorkDetail, creativePhase, modelSettings, autoApproveEnabled,
-    sendMessageReal, transitionTurn,
+    sendMessageReal, ensureSession, linkSession, transitionTurn,
   } = deps
 
-  async function sendAgentMessage(conv: Conversation, text: string, startTime: number) {
+  async function sendAgentMessage(conv: Conversation, text: string, startTime: number, imageAssetIds: string[] = []) {
     let assistantMsg: ChatMessage = {
       role: 'assistant',
       content: '',
@@ -64,7 +66,11 @@ export function useChatAgent(deps: ChatAgentDeps) {
         if (sessRes.ok) {
           const sessData = await sessRes.json()
           sid = sessData.data?.id || sessData.id || sessData.session_id
-          if (sid) sse.activeSessionId.value = sid
+          if (sid) {
+            sse.activeSessionId.value = sid
+            // 草稿会话对上真实 session_id（进历史、不再丢消息）
+            linkSession(sid)
+          }
         }
       } catch {
       }
@@ -116,6 +122,7 @@ export function useChatAgent(deps: ChatAgentDeps) {
           model_settings: modelSettings || undefined,
           creation_type: workStore.activeCreationType || undefined,
           auto_approve: autoApproveEnabled.value,
+          image_asset_ids: imageAssetIds.length > 0 ? imageAssetIds : undefined,
         }),
         signal: stream.getAbortController()?.signal,
       })

@@ -193,6 +193,22 @@ export function useChatActions(deps: ChatActionsDeps) {
     heroMode.value = true
   }
 
+  // 发送前确保 session 存在：已有 activeSessionId 直接复用，否则按标题创建。
+  // 返回真实 session_id；后端不可用时返回 null（调用方走本地草稿态兜底）。
+  async function ensureSession(title?: string): Promise<string | null> {
+    if (activeSessionId.value) return activeSessionId.value
+    try {
+      const sess = await chatSessionsApi.createSession(title || '新会话', undefined, 'chat-files')
+      if (sess?.id) {
+        activeSessionId.value = sess.id
+        return sess.id
+      }
+    } catch {
+      // session creation failed, caller falls back to local draft
+    }
+    return null
+  }
+
   function resetToInitial() {
     activeConvId.value = ''
     heroMode.value = true
@@ -209,6 +225,7 @@ export function useChatActions(deps: ChatActionsDeps) {
     switchToConversation,
     enterHeroMode,
     resetToInitial,
+    ensureSession,
     scrollToBottom,
     normalizeAgentMeta,
   }

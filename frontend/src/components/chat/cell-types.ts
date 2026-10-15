@@ -226,6 +226,7 @@ export interface ChatMessage {
   agentMeta?: AgentMeta
   _persisted?: boolean
   _streamHtml?: string
+  timestamp?: number
 }
 
 export interface Conversation {
@@ -233,6 +234,9 @@ export interface Conversation {
   title: string
   messages: ChatMessage[]
   createdAt: number
+  _isDraft?: boolean
+  _folderId?: string
+  _workId?: string | null
 }
 
 export interface ChatStats {

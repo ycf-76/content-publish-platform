@@ -16,7 +16,7 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
-from app.db.models import ImageAsset, generate_ulid
+from app.db.models import ImageAsset, VideoAsset, generate_ulid
 from app.db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
@@ -142,6 +142,62 @@ async def save_asset(
         await session.commit()
         await session.refresh(asset)
         return _asset_to_dict(asset)
+
+
+_VIDEO_BASE_DIR = _BASE_DIR / "videos"
+
+
+def _video_asset_to_dict(asset: VideoAsset) -> dict[str, Any]:
+    return {
+        "asset_id": asset.id,
+        "id": asset.id,
+        "filename": asset.filename,
+        "content_type": asset.content_type,
+        "file_size": asset.file_size,
+        "original_url": asset.original_url,
+        "thumbnail_url": asset.thumbnail_url,
+        "source": asset.source,
+        "metadata": asset.extra or {},
+    }
+
+
+async def save_video_asset(
+    user_id: str,
+    filename: str,
+    content_type: str,
+    data: bytes,
+    source: str = "ai",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """保存 AI 生成的视频素材：落盘 uploads/videos/ + 落库 VideoAsset。
+
+    返回结构同时带 asset_id 与 id 两个键，兼容两种调用方约定
+    （video_pipeline 用 asset["original_url"]，auto_short_video 用 asset["id"]）。
+    """
+    asset_id = generate_ulid()
+    ext = Path(filename).suffix or ".mp4"
+    user_dir = _VIDEO_BASE_DIR / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    original_name = f"{asset_id}{ext}"
+    (user_dir / original_name).write_bytes(data)
+
+    async with AsyncSessionLocal() as session:
+        asset = VideoAsset(
+            id=asset_id,
+            user_id=user_id,
+            filename=filename,
+            content_type=content_type,
+            file_size=len(data),
+            original_url=f"/uploads/videos/{user_id}/{original_name}",
+            thumbnail_url="",
+            source=source,
+            extra=metadata or {},
+        )
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+        return _video_asset_to_dict(asset)
 
 
 async def list_assets(user_id: str) -> list[dict[str, Any]]:

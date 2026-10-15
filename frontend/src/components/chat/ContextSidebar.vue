@@ -243,7 +243,7 @@ const historyIndex = ref(-1)
 const addrInputRef = ref<HTMLInputElement>()
 const brIframeRef = ref<HTMLIFrameElement>()
 
-const browserMode = ref<'iframe' | 'remote'>('remote')
+const browserMode = ref<'iframe' | 'remote'>('iframe')
 const remoteScreenshot = ref('')
 const isLoadingPage = ref(false)
 const remoteInputText = ref('')

@@ -1,0 +1,1 @@
+"""Search & collection skills: xhs_search, trending_search, bilibili_search, spider_sync, url_collect."""

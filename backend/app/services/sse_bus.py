@@ -46,6 +46,10 @@ class SSEEvent(BaseModel):
     event_type: str
     payload: dict[str, Any]
     timestamp: str
+    # 回合隔离信封（渲染层重构 L1）：同一 session 连续多轮对话时，
+    # 订阅方带 turn_id 只回放/接收本回合事件，杜绝上一轮输出窜显。
+    # None = 旧行为（不传 turn_id 的兼容路径）。
+    turn_id: str | None = None
 
 
 class SSEEventBus:
@@ -90,6 +94,7 @@ class SSEEventBus:
         workflow_id: str,
         event_type: str,
         payload: dict[str, Any],
+        turn_id: str | None = None,
     ) -> str:
         """Publish event to all subscribers of a workflow.
 
@@ -97,6 +102,7 @@ class SSEEventBus:
             workflow_id: Workflow ID
             event_type: Event type (27 types defined in protocol)
             payload: Event payload
+            turn_id: 回合 ID（可选）。传入后订阅方可按回合过滤回放/实时事件。
 
         Returns:
             event_id: Generated event ID (evt_ + ULID)
@@ -109,6 +115,7 @@ class SSEEventBus:
             event_type=event_type,
             payload=payload,
             timestamp=datetime.now(UTC).isoformat(),
+            turn_id=turn_id,
         )
 
         # Persist to history (for Last-Event-ID continuation)
@@ -167,18 +174,26 @@ class SSEEventBus:
         self,
         workflow_id: str,
         last_event_id: str | None = None,
+        turn_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Subscribe to workflow events.
 
         Args:
             workflow_id: Workflow ID
             last_event_id: Last received event ID (for continuation)
+            turn_id: 回合 ID（可选）。传入后：
+                - 回放只含本回合事件（断线重连同样只续本回合）
+                - 实时推送也只放行本回合事件（并发回合不互窜）
+                不传则维持旧行为（回放全部历史、实时不过滤）。
 
         Yields:
             SSE formatted strings: "id: {event_id}\\nevent: {type}\\ndata: {json}\\n\\n"
         """
         queue: asyncio.Queue = asyncio.Queue()
         self._subscribers[workflow_id].add(queue)
+
+        def _of_this_turn(ev: SSEEvent) -> bool:
+            return turn_id is None or ev.turn_id == turn_id
 
         try:
             # Replay missed events.
@@ -188,12 +203,15 @@ class SSEEventBus:
             #   graph 执行可能极快（search 调 API + 其他节点 stub），
             #   事件在前端 SSE 连接建立前就发完了。首次订阅 replay 全部历史，
             #   保证前端不丢事件。若 history 中已有 terminal 事件，replay 后直接结束。
+            # - 带 turn_id：只回放本回合事件（回合隔离，见 SSEEvent.turn_id）。
             history = self._event_history.get(workflow_id, [])
             if last_event_id:
                 replay_list = self._replay_events(workflow_id, last_event_id)
             else:
                 replay_list = list(history)
             for event in replay_list:
+                if not _of_this_turn(event):
+                    continue
                 yield self._format_sse(event)
                 if event.event_type in _TERMINAL_TYPES:
                     logger.debug(
@@ -208,6 +226,13 @@ class SSEEventBus:
                     # Wait for event with timeout for heartbeat
                     event = await asyncio.wait_for(queue.get(), timeout=5.0)
                     heartbeat_counter = 0
+                    if not _of_this_turn(event):
+                        # 异回合事件（同一 session 上的并发/后续回合）：不转发
+                        logger.debug(
+                            f"[{workflow_id}] Dropped off-turn event {event.event_type} "
+                            f"(event turn={event.turn_id}, subscriber turn={turn_id})"
+                        )
+                        continue
                     yield self._format_sse(event)
                     # 终态事件：结束订阅，关闭 SSE 流
                     if event.event_type in _TERMINAL_TYPES:
@@ -245,6 +270,7 @@ class SSEEventBus:
                 "type": event.event_type,
                 "payload": event.payload,
                 "timestamp": event.timestamp,
+                "turn_id": event.turn_id,
             }
         )
         return f"id: {event.event_id}\nevent: {event.event_type}\ndata: {data}\n\n"

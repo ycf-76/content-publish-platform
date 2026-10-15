@@ -754,18 +754,9 @@ def register_default_workflow_nodes():
         return
     
     try:
-        # 导入现有的节点函数
-        from app.agents.nodes.search import search_node
-        from app.agents.nodes.analyze import analyze_node
-        from app.agents.nodes.copywrite import copywrite_node
-        from app.agents.nodes.image_plan import image_plan_node
-        from app.agents.nodes.image_gen import image_gen_node
-        from app.agents.nodes.image_review import image_review_node
-        from app.agents.nodes.audit import audit_node
-        from app.agents.nodes.final_review import final_review_node
-        from app.agents.nodes.publish import publish_node
-        from app.agents.nodes.card_gen import card_gen_node
-        from app.agents.nodes.wechat_push import wechat_push_node
+        # DAG nodes migrated to workflow-engine project
+        logger.info("Default workflow nodes registration skipped (migrated to workflow-engine)")
+        return True
         
         # ===== 数据源类节点 =====
         node_registry.register_builtin_node(

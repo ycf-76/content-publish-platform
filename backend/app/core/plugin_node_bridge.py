@@ -188,13 +188,8 @@ async def initialize_plugin_nodes(
                     result["errors"].append(error_msg)
                     continue
         
-        # 5. 刷新工作流引擎的节点映射缓存
-        try:
-            from app.agents.graph import refresh_node_func_map
-            refresh_node_func_map()
-            logger.info("[plugin_node_bridge] 🔄 Refreshed node function map cache")
-        except Exception as e:
-            logger.warning(f"[plugin_node_bridge] ⚠️ Failed to refresh node map: {e}")
+        # 5. 刷新工作流引擎的节点映射缓存 — MIGRATED
+        logger.info("[plugin_node_bridge] Node function map refresh skipped (migrated)")
         
         _initialized = True
         logger.info(

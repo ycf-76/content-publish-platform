@@ -51,7 +51,6 @@ BUILTIN_SKILL_MODULES = (
     "app.tools.xhs_search",
     "app.tools.dev_tools",
     "app.tools.file_tools",
-    "app.tools.workflow_skill",
     "app.tools.wechat_send_file_skill",
     "app.tools.wechat_send_text_skill",
     "app.tools.feishu_file_ops_skill",
@@ -290,6 +289,12 @@ class SkillRegistry:
 
         模块名前缀 _third_party_skill_ 避免与 app 内模块冲突。
         文件用 _file 后缀、包用 _pkg 后缀避免同名冲突。
+
+        安全红线：
+        - 仅加载 skills_dir 内的文件（防止路径穿越）
+        - 检查文件权限：仅 owner 可写（防止被其他用户篡改后注入恶意代码）
+        - 模块级代码在主进程中执行，无法完全沙箱隔离——
+          生产环境应确保 skills/ 目录仅限受信用户写入
         """
         if path.is_file():
             module_name = f"_third_party_skill_{path.stem}_file"
@@ -297,6 +302,26 @@ class SkillRegistry:
         else:
             module_name = f"_third_party_skill_{path.name}_pkg"
             file_path = path / "__init__.py"
+
+        if not file_path.exists():
+            logger.warning(f"[SkillRegistry] third-party skill entry not found: {file_path}")
+            return None
+
+        try:
+            resolved = file_path.resolve()
+            backend_root = Path(__file__).resolve().parent.parent.parent
+            skills_dir = backend_root / "skills"
+            try:
+                resolved.relative_to(skills_dir.resolve())
+            except ValueError:
+                logger.warning(
+                    f"[SkillRegistry] SECURITY: third-party skill path escapes "
+                    f"skills dir: {resolved} (allowed: {skills_dir})"
+                )
+                return None
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] path validation failed for {file_path}: {e}")
+            return None
 
         try:
             spec = importlib.util.spec_from_file_location(module_name, file_path)

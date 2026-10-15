@@ -4,7 +4,7 @@ Covers:
 1. Default policies: auto-allow tools (trending_search, xhs_search, etc.)
 2. High-risk tools requiring confirmation (file_write, bash_exec, bash)
 3. Strict mode: unknown tools are denied
-4. Non-strict mode: unknown tools are allowed by default
+4. Non-strict mode: unknown tools require confirmation (safety default)
 5. Argument validation: too-long arguments, denied patterns, injection patterns
 6. Permission gate: skill with required_permissions denied
 7. Audit log: every decision is recorded
@@ -35,10 +35,21 @@ class TestGuardianDecision:
             action=GuardianAction.DENY,
             reason="permission denied",
             risk_level="medium",
-            hint="请向用户求助开启权限",
+            hint="内部详细指引",
+            user_hint="请向用户求助开启权限",
         )
         obs = d.to_observation()
         assert '"hint": "请向用户求助开启权限"' in obs
+
+    def test_to_observation_hint_fallback_when_no_user_hint(self):
+        d = GuardianDecision(
+            action=GuardianAction.DENY,
+            reason="permission denied",
+            risk_level="medium",
+            hint="回退到 hint",
+        )
+        obs = d.to_observation()
+        assert '"hint": "回退到 hint"' in obs
 
     def test_to_observation_no_hint(self):
         d = GuardianDecision(action=GuardianAction.ALLOW, reason="ok", risk_level="low")
@@ -130,9 +141,10 @@ class TestGuardianStrictMode:
         assert "strict mode" in decision.reason
 
     @pytest.mark.asyncio
-    async def test_unknown_tool_allowed_in_non_strict_mode(self, guardian):
+    async def test_unknown_tool_needs_confirm_in_non_strict_mode(self, guardian):
         decision = await guardian.check("unknown_tool", {})
-        assert decision.action == GuardianAction.ALLOW
+        assert decision.action == GuardianAction.NEEDS_CONFIRM
+        assert "no policy" in decision.reason
 
 
 class TestGuardianArgumentValidation:
